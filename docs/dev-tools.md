@@ -8,7 +8,8 @@
 | `crates/ckscene` | Decoders for scene classes on top of `ckfile`: `Mesh`, `Material`, `Texture`, `Entity3d` (3D objects, lights, cameras), `Group` |
 | `crates/ckscript` | Decoders for behaviour graphs on top of `ckfile`: behaviours, pins, links, parameters, operations, plus a resolved tree/DOT view. Embeds the building-block catalogue (`data/bb-catalogue.json`: names, GUIDs, pin and parameter declarations, parameter types; regenerated from the research repo with `export_catalogue.py`) |
 | `crates/ballistic-bundle` | Bundle format: manifest and scene types, zip reader/writer. The engine's only data dependency |
-| `crates/ballistic-pack` | The packer (library and CLI): install verification, scene/texture/audio conversion |
+| `crates/ballistic-pack` | The packer (library and CLI): install verification, scene/texture/audio conversion, physics parameter extraction |
+| `crates/ballistic-physics` | Deterministic fixed-step physics: sphere bodies, static level meshes, per-step pushes ([physics.md](physics.md)) |
 | `crates/ballistic-render` | wgpu renderer for bundle scenes (fixed-function-style shading in gamma space), camera, off-screen targets |
 | `apps/ballistic-viewer` | Level viewer (winit window or headless `--screenshot`) |
 | `tools/ckinspect` | CLI for looking inside those files while reverse-engineering |
@@ -55,3 +56,10 @@ BALLANCE_DIR="/path/to/Ballance" cargo test --workspace
 ```
 
 Without the variable, those tests skip themselves and pass.
+
+Physics tests on real level geometry read a bundle instead. Point
+`BALLISTIC_BUNDLE` at one built by `ballistic-pack`:
+
+```bash
+BALLISTIC_BUNDLE=ballance.bpk cargo test -p ballistic-physics
+```

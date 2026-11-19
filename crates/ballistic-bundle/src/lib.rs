@@ -8,6 +8,7 @@ use flate2 as _;
 
 mod archive;
 mod manifest;
+mod physics;
 mod scene;
 
 pub use archive::{BundleReader, BundleWriter};
@@ -15,6 +16,7 @@ pub use manifest::{
     AudioEncoding, Manifest, PackOptions, SceneEntry, SoundEntry, SourceInfo, TextureEncoding,
     TextureEntry, TextureFormat,
 };
+pub use physics::{BallParams, BallShape, PhysicsData, PropParams, SurfaceParams};
 pub use scene::{
     AddressMode, BlendFactor, CompareFunc, Group, Material, Mesh, ObjectKind, Scene, SceneObject,
     Submesh, TextureBlend, Vertex,
@@ -23,13 +25,15 @@ pub use scene::{
 /// Value of [`Manifest::format`].
 pub const FORMAT_NAME: &str = "ballistic-bundle";
 /// Version of the bundle layout. Bump on any incompatible change.
-pub const FORMAT_VERSION: u32 = 1;
+/// v2: adds `data/physics.json`.
+pub const FORMAT_VERSION: u32 = 2;
 /// Version of the `.bscn` scene encoding.
 pub const SCENE_VERSION: u32 = 1;
 /// Magic at the start of every `.bscn` entry.
 pub const SCENE_MAGIC: &[u8; 8] = b"BLSCENE\0";
 
 pub const MANIFEST_PATH: &str = "manifest.json";
+pub const PHYSICS_PATH: &str = "data/physics.json";
 
 /// Zip entry path of a scene.
 pub fn scene_path(key: &str) -> String {

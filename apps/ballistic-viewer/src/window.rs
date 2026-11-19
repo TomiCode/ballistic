@@ -27,7 +27,11 @@ controls:
   PageUp / PageDown, [ ]     previous / next scene
   Home                       reset camera
   H  toggle hidden objects   B  cycle face culling   V  toggle vsync
-  F11  fullscreen            P  print camera pose    Esc  release mouse / quit";
+  F11  fullscreen            P  print camera pose    Esc  release mouse / quit
+play mode (--play):
+  arrows                     roll the ball (relative to the camera)
+  Shift + Left / Right       turn the camera 90°
+  R  respawn                 1  next ball type";
 
 pub fn run(args: Args, bundle: Bundle) -> Result<()> {
     println!("{HELP}");
@@ -62,6 +66,9 @@ struct State {
     gpu: Gpu,
     depth: wgpu::TextureView,
     scene: LoadedScene,
+    play: Option<crate::play::Play>,
+    /// `--play` given: rebuild play mode on every scene switch.
+    play_mode: bool,
     scene_keys: Vec<String>,
     camera: ballistic_render::Camera,
     opts: RenderOptions,
@@ -128,6 +135,16 @@ impl App {
             None => scene.home,
         };
         let depth = ballistic_render::gpu_depth_view(&gpu, config.width, config.height);
+        let play = if self.args.play {
+            Some(new_play(
+                &gpu,
+                &mut self.bundle,
+                &self.args.scene,
+                view_format,
+            )?)
+        } else {
+            None
+        };
         Ok(State {
             window,
             surface,
@@ -135,6 +152,8 @@ impl App {
             view_format,
             depth,
             scene,
+            play,
+            play_mode: self.args.play,
             scene_keys,
             camera,
             opts: options(&self.args),
@@ -156,6 +175,16 @@ impl App {
         self.error = Some(e);
         event_loop.exit();
     }
+}
+
+fn new_play(
+    gpu: &Gpu,
+    bundle: &mut Bundle,
+    scene: &str,
+    format: wgpu::TextureFormat,
+) -> Result<crate::play::Play> {
+    let level = bundle.scene(scene)?;
+    crate::play::Play::new(gpu, bundle, &level, format)
 }
 
 fn present_mode(caps: &wgpu::SurfaceCapabilities, vsync: bool) -> wgpu::PresentMode {
@@ -210,6 +239,12 @@ impl State {
         let key = self.scene_keys[next].clone();
         self.scene = load_scene(&self.gpu, bundle, &key, self.view_format)?;
         self.camera = self.scene.home;
+        if self.play_mode {
+            // Levels have a start marker; other scenes fall back to free-fly.
+            self.play = new_play(&self.gpu, bundle, &key, self.view_format)
+                .inspect_err(|e| eprintln!("play mode off for {key}: {e:#}"))
+                .ok();
+        }
         Ok(())
     }
 
@@ -222,6 +257,32 @@ impl State {
         let PhysicalKey::Code(code) = ev.physical_key else {
             return Ok(());
         };
+        if let Some(play) = self.play.as_mut()
+            && !ev.repeat
+        {
+            use crate::play::PlayKey as K;
+            let pressed = ev.state == ElementState::Pressed;
+            let k = match code {
+                KeyCode::ArrowUp => Some(K::Up),
+                KeyCode::ArrowDown => Some(K::Down),
+                KeyCode::ArrowLeft => Some(K::Left),
+                KeyCode::ArrowRight => Some(K::Right),
+                KeyCode::ShiftLeft | KeyCode::ShiftRight => Some(K::Rotate),
+                _ => None,
+            };
+            if let Some(k) = k {
+                play.input(k, pressed);
+                return Ok(());
+            }
+            if pressed && code == KeyCode::KeyR {
+                play.respawn();
+                return Ok(());
+            }
+            if pressed && code == KeyCode::Digit1 {
+                play.cycle_ball();
+                return Ok(());
+            }
+        }
         if ev.state == ElementState::Released {
             self.keys.remove(&code);
             return Ok(());
@@ -272,6 +333,11 @@ impl State {
     }
 
     fn update(&mut self, dt: f32) {
+        if let Some(play) = self.play.as_mut() {
+            play.update(dt);
+            self.camera = play.camera(dt, self.camera);
+            return;
+        }
         let held = |k: &[KeyCode]| k.iter().any(|c| self.keys.contains(c));
         let mut v = Vec3::ZERO;
         if held(&[KeyCode::KeyW, KeyCode::ArrowUp]) {
@@ -334,6 +400,17 @@ impl State {
             aspect,
             &self.opts,
         );
+        if let Some(play) = self.play.as_mut() {
+            play.render(
+                &self.gpu,
+                &mut encoder,
+                &view,
+                &self.depth,
+                &self.camera,
+                aspect,
+                &self.opts,
+            );
+        }
         self.gpu.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
         self.gpu.queue.present(frame);
@@ -359,8 +436,12 @@ impl State {
             self.fps = self.frames as f32 / elapsed;
             self.frames = 0;
             self.fps_timer = Instant::now();
+            let play = self
+                .play
+                .as_ref()
+                .map_or(String::new(), |p| format!(" — {}", p.status()));
             self.window.set_title(&format!(
-                "Ballistic viewer — {} — {:.0} fps — {}×{} — {} tris",
+                "Ballistic viewer — {} — {:.0} fps — {}×{} — {} tris{play}",
                 self.scene.key,
                 self.fps,
                 self.config.width,

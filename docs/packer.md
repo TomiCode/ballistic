@@ -43,6 +43,8 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      right-handed coordinate system
    - textures (BMP/TGA) → KTX2 with a full mip chain, BC1 (opaque) or BC3 (alpha)
    - sounds (WAV) → Ogg Vorbis
+   - physics parameters (gravity, time factor, ball types, level surfaces,
+     props) read from the original's scripts and tables → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a
@@ -55,7 +57,6 @@ source files).
 
 - Low-detail variants (`Textures/sky_low`, `Sounds_low`): not needed on current hardware
 - The intro video (`Textures/atari.avi`)
-- Game logic data from the original scripts (physics parameters, scores, timings):
-  coming with script decoding
+- Other game logic data from the original scripts (scores, timings, level flow)
 - Gameplay meaning of level groups (spawn, checkpoints, sectors) is kept as group
   names for now, not yet resolved into structures

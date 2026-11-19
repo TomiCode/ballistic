@@ -2,7 +2,8 @@
 
 Flies a free camera around any scene in your bundle: levels, prefabs, ball
 models, the menu scene. It's the first piece of the engine (winit + wgpu)
-and is used to check rendering against the original.
+and is used to check rendering against the original. With `--play` it puts a
+physics ball on the level (see [Play mode](#play-mode)).
 
 ## Usage
 
@@ -23,6 +24,8 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--cull back\|none\|front` | Face culling (debugging) |
 | `--screenshot out.png [--size 1920x1080]` | Render one frame off-screen and exit, no window |
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
+| `--play` | Play mode: roll a ball on the level |
+| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3` |
 
 The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 
@@ -43,6 +46,41 @@ The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 | **P** | Print camera pose |
 | **Esc** | Release mouse, or quit |
 
+## Play mode
+
+```bash
+ballistic-viewer ballance.bpk --play --scene level/level_03
+```
+
+A wooden ball spawns at the level's first reset point and the camera starts
+behind it, both as the original sets them. Control works like the original:
+
+| Input | Action |
+|---|---|
+| Arrows | Push the ball forward / back / left / right, relative to the camera |
+| **Shift** + **Left / Right** | Turn the camera 90° |
+| **R** | Respawn |
+| **1** | Next ball type (wood, stone, paper) |
+
+Details carried over from the original's scripts:
+
+- Holding **Shift** switches ball control off. You can't push while turning.
+- A push's direction is fixed when you press the key. After a camera turn,
+  directions you're holding are re-aimed one frame after the turn finishes.
+- The ball respawns when it falls 50 units below the lowest level geometry.
+
+Level 1 starts facing away from the path, as in the original (its tutorial
+teaches turning first): press Shift + Left twice.
+
+Physics is described in [physics.md](physics.md). The camera's follow
+smoothing and the turn's easing curve are approximations for now.
+
+Headless check of the same thing:
+
+```bash
+ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wait:1,up:1.5" --screenshot play.png
+```
+
 ## How it renders
 
 - Fixed-function-style shading: one directional light plus ambient, material
@@ -60,3 +98,4 @@ The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time
 - Debug overlay UI
+- In play mode: moving level parts, props, checkpoints, the level end

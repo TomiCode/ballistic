@@ -204,6 +204,9 @@ pub fn build(opts: &Options) -> Result<Report> {
         sound_entries.push(s.entry);
     }
 
+    let physics = crate::physics::extract(&install).context("extracting physics data")?;
+    writer.add_physics(&physics)?;
+
     let manifest = bb::Manifest {
         format: bb::FORMAT_NAME.into(),
         format_version: bb::FORMAT_VERSION,

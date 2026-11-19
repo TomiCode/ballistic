@@ -203,6 +203,7 @@ dependencies = [
  "ballistic-bundle",
  "ckfile",
  "ckscene",
+ "ckscript",
  "clap",
  "hound",
  "image",
@@ -211,6 +212,14 @@ dependencies = [
  "sha2",
  "texpresso",
  "vorbis_rs",
+]
+
+[[package]]
+name = "ballistic-physics"
+version = "0.1.0"
+dependencies = [
+ "ballistic-bundle",
+ "glam",
 ]
 
 [[package]]
@@ -233,6 +242,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ballistic-bundle",
+ "ballistic-physics",
  "ballistic-render",
  "clap",
  "glam",

@@ -55,6 +55,11 @@ impl<W: Write + Seek> BundleWriter<W> {
         self.add(&crate::scene_path(key), &bytes, true)
     }
 
+    pub fn add_physics(&mut self, physics: &crate::PhysicsData) -> Result<()> {
+        let json = serde_json::to_vec_pretty(physics)?;
+        self.add(crate::PHYSICS_PATH, &json, true)
+    }
+
     /// Writes the manifest and finishes the archive.
     pub fn finish(mut self, manifest: &Manifest) -> Result<W> {
         let json = serde_json::to_vec_pretty(manifest)?;
@@ -115,6 +120,11 @@ impl<R: Read + Seek> BundleReader<R> {
             return Err(Error::Corrupt(path, "unsupported scene version"));
         }
         Ok(postcard::from_bytes(&bytes[12..])?)
+    }
+
+    pub fn physics(&mut self) -> Result<crate::PhysicsData> {
+        let bytes = self.read(crate::PHYSICS_PATH)?;
+        Ok(serde_json::from_slice(&bytes)?)
     }
 
     /// KTX2 file bytes of a texture.

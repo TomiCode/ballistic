@@ -27,6 +27,8 @@ pub struct RenderOptions {
     pub show_hidden: bool,
     pub cull: CullMode,
     pub clear_color: [f64; 4],
+    /// Clear colour and depth before drawing (false to draw over a previous scene).
+    pub clear: bool,
     /// Direction *towards* the light.
     pub light_dir: Vec3,
     pub light_color: Vec3,
@@ -41,6 +43,7 @@ impl Default for RenderOptions {
             show_hidden: false,
             cull: CullMode::Back,
             clear_color: [0.30, 0.36, 0.45, 1.0],
+            clear: true,
             light_dir: Vec3::new(0.35, 1.0, 0.25).normalize(),
             light_color: Vec3::splat(0.85),
             ambient: Vec3::splat(0.45),
@@ -101,10 +104,14 @@ struct GpuMesh {
 }
 
 struct DrawObject {
+    /// Index in `Scene::objects`.
+    scene_index: u32,
     mesh: u32,
     uniform_offset: u32,
     hidden: bool,
     center: Vec3,
+    /// Local-space bounds centre (to recompute `center` after moves).
+    local_center: Vec3,
 }
 
 pub struct SceneRenderer {
@@ -115,6 +122,7 @@ pub struct SceneRenderer {
     globals_buffer: wgpu::Buffer,
     globals_group: wgpu::BindGroup,
     object_group: wgpu::BindGroup,
+    object_buffer: wgpu::Buffer,
     materials: Vec<GpuMaterial>,
     default_material: GpuMaterial,
     meshes: Vec<GpuMesh>,
@@ -322,7 +330,7 @@ impl SceneRenderer {
         let (mut bmin, mut bmax) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
         // Fallback bounds over hidden objects too (prefab files hide everything).
         let (mut amin, mut amax) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
-        for o in &scene.objects {
+        for (scene_index, o) in scene.objects.iter().enumerate() {
             let Some(mesh) = o.mesh else { continue };
             let model = Mat4::from_cols_array_2d(&o.transform);
             let normal = Mat4::from_mat3(Mat3::from_mat4(model).inverse().transpose());
@@ -348,10 +356,12 @@ impl SceneRenderer {
                 }
             }
             objects.push(DrawObject {
+                scene_index: scene_index as u32,
                 mesh,
                 uniform_offset: offset,
                 hidden: o.hidden,
                 center,
+                local_center: (lo + hi) * 0.5,
             });
         }
         if bmin.x > bmax.x {
@@ -367,7 +377,7 @@ impl SceneRenderer {
         let object_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("objects"),
             contents: &object_bytes,
-            usage: wgpu::BufferUsages::UNIFORM,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
         let object_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("objects"),
@@ -398,6 +408,7 @@ impl SceneRenderer {
                 globals_buffer,
                 globals_group,
                 object_group,
+                object_buffer,
                 materials,
                 default_material,
                 meshes,
@@ -408,6 +419,35 @@ impl SceneRenderer {
             },
             warnings,
         ))
+    }
+
+    /// Moves a scene object (by its index in `Scene::objects`). No-op for
+    /// objects without a mesh.
+    pub fn set_object_transform(&mut self, gpu: &Gpu, scene_index: usize, model: Mat4) {
+        let Some(o) = self
+            .objects
+            .iter_mut()
+            .find(|o| o.scene_index as usize == scene_index)
+        else {
+            return;
+        };
+        let normal = Mat4::from_mat3(Mat3::from_mat4(model).inverse().transpose());
+        o.center = model.transform_point3(o.local_center);
+        gpu.queue.write_buffer(
+            &self.object_buffer,
+            u64::from(o.uniform_offset),
+            bytemuck::bytes_of(&ObjectUniform { model, normal }),
+        );
+    }
+
+    /// Shows or hides a scene object regardless of its saved hidden flag
+    /// (`RenderOptions::show_hidden` still shows everything).
+    pub fn set_object_hidden(&mut self, scene_index: usize, hidden: bool) {
+        for o in &mut self.objects {
+            if o.scene_index as usize == scene_index {
+                o.hidden = hidden;
+            }
+        }
     }
 
     fn material(&self, idx: Option<u32>) -> &GpuMaterial {
@@ -552,14 +592,22 @@ impl SceneRenderer {
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a }),
+                    load: if opts.clear {
+                        wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a })
+                    } else {
+                        wgpu::LoadOp::Load
+                    },
                     store: wgpu::StoreOp::Store,
                 },
             })],
             depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                 view: depth,
                 depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
+                    load: if opts.clear {
+                        wgpu::LoadOp::Clear(1.0)
+                    } else {
+                        wgpu::LoadOp::Load
+                    },
                     store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,

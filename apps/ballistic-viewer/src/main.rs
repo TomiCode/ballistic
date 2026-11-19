@@ -1,5 +1,6 @@
 //! `ballistic-viewer`: fly around the scenes of a Ballistic bundle.
 
+mod play;
 mod window;
 
 use std::path::PathBuf;
@@ -47,6 +48,13 @@ pub struct Args {
     /// Start with vsync off.
     #[arg(long)]
     no_vsync: bool,
+    /// Play mode: a physics ball on the level (arrows move, Shift + Left/Right turns).
+    #[arg(long)]
+    play: bool,
+    /// Scripted input for play mode in screenshots: `up:2,rotate+left:0.4,wait:1`
+    /// (keys held for seconds; keys: up down left right rotate wait).
+    #[arg(long)]
+    play_script: Option<String>,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -169,6 +177,37 @@ pub fn options(args: &Args) -> RenderOptions {
     }
 }
 
+/// Parses `up:2,rotate+left:0.4,wait:1` into (held keys, seconds) segments.
+pub fn parse_play_script(s: &str) -> Result<Vec<(Vec<play::PlayKey>, f32)>> {
+    use play::PlayKey as K;
+    s.split(',')
+        .filter(|p| !p.trim().is_empty())
+        .map(|part| {
+            let (keys, secs) = part
+                .split_once(':')
+                .with_context(|| format!("segment {part:?}: expected keys:seconds"))?;
+            let seconds: f32 = secs
+                .trim()
+                .parse()
+                .with_context(|| format!("segment {part:?}"))?;
+            anyhow::ensure!(seconds >= 0.0, "segment {part:?}: negative duration");
+            let keys = keys
+                .split('+')
+                .filter_map(|k| match k.trim() {
+                    "up" => Some(Ok(K::Up)),
+                    "down" => Some(Ok(K::Down)),
+                    "left" => Some(Ok(K::Left)),
+                    "right" => Some(Ok(K::Right)),
+                    "rotate" => Some(Ok(K::Rotate)),
+                    "wait" => None,
+                    other => Some(Err(anyhow::anyhow!("unknown key {other:?}"))),
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok((keys, seconds))
+        })
+        .collect()
+}
+
 fn screenshot(
     args: &Args,
     mut bundle: BundleReader<std::io::BufReader<std::fs::File>>,
@@ -187,9 +226,40 @@ fn screenshot(
     );
     let format = ballistic_render::OFFSCREEN_FORMAT;
     let mut scene = load_scene(&gpu, &mut bundle, &args.scene, format)?;
-    let camera = match &args.camera {
+    let mut camera = match &args.camera {
         Some(s) => parse_camera(s, scene.home)?,
         None => scene.home,
+    };
+    let mut play = if args.play {
+        let level = bundle.scene(&args.scene)?;
+        let mut p = play::Play::new(&gpu, &mut bundle, &level, format)?;
+        let dt = 1.0 / 60.0;
+        for (keys, seconds) in parse_play_script(args.play_script.as_deref().unwrap_or("wait:1"))? {
+            for &k in &keys {
+                p.input(k, true);
+            }
+            #[expect(
+                clippy::cast_sign_loss,
+                reason = "durations are checked to be non-negative"
+            )]
+            let frames = (seconds / dt).round() as u32;
+            for _ in 0..frames {
+                p.update(dt);
+                camera = p.camera(dt, camera);
+            }
+            for &k in &keys {
+                p.input(k, false);
+            }
+        }
+        eprintln!(
+            "play: {} after {} steps, {} respawns",
+            p.status(),
+            p.world.steps,
+            p.respawns
+        );
+        Some(p)
+    } else {
+        None
     };
     let target = RenderTarget::new(&gpu, w, h, format);
     let mut encoder = gpu
@@ -204,6 +274,17 @@ fn screenshot(
         w as f32 / h as f32,
         &options(args),
     );
+    if let Some(p) = play.as_mut() {
+        p.render(
+            &gpu,
+            &mut encoder,
+            &target.color_view,
+            &target.depth_view,
+            &camera,
+            w as f32 / h as f32,
+            &options(args),
+        );
+    }
     gpu.queue.submit([encoder.finish()]);
     let rgba = target.read_rgba(&gpu)?;
     image::save_buffer(path, &rgba, w, h, image::ExtendedColorType::Rgba8)

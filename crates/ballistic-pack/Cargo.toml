@@ -10,6 +10,7 @@ authors.workspace = true
 [dependencies]
 ckfile.workspace = true
 ckscene.workspace = true
+ckscript.workspace = true
 ballistic-bundle = { path = "../ballistic-bundle" }
 image.workspace = true
 texpresso = "2"

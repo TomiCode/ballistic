@@ -1,4 +1,4 @@
-# Bundle format (`.bpk`), version 1
+# Bundle format (`.bpk`), version 2
 
 The bundle is the only thing the Ballistic engine reads. `ballistic-pack`
 builds it from a user's own Ballance installation. Original formats (NMO, BMP,
@@ -15,6 +15,7 @@ is already compressed and is stored. Paths use `/` and are lowercase.
 
 ```
 manifest.json
+data/physics.json
 scenes/<key>.bscn
 textures/<key>.ktx2
 sounds/<key>.ogg
@@ -29,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 1,
+  "format_version": 2,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -96,7 +97,44 @@ Ogg Vorbis at the source sample rate and channel count, quality-based VBR
 (default 0.6). `--audio-encoding wav` stores 16-bit PCM WAV instead
 (debugging). Low-quality variants (`Sounds_low/`) are not packed.
 
+## Physics data (`data/physics.json`)
+
+Physics parameters extracted from the original's scripts, as JSON (it's tiny
+and useful to read). Since version 2.
+
+```json
+{
+  "gravity": [0.0, -20.0, 0.0],
+  "time_factor": 2.0,
+  "balls": [
+    { "name": "Ball_Wood", "friction": 0.8, "elasticity": 0.2, "mass": 1.9,
+      "linear_damping": 0.9, "rotational_damping": 0.1, "force": 0.43,
+      "collision_group": "Ball", "shape": { "kind": "sphere", "radius": 2.0 } }
+  ],
+  "surfaces": [
+    { "group": "Phys_Floors", "friction": 0.7, "elasticity": 0.3,
+      "collision_group": "Floor", "collision": true }
+  ],
+  "props": [
+    { "group": "P_Box", "fixed": false, "friction": 0.7, "elasticity": 0.3,
+      "mass": 1.0, "collision_group": "", "start_frozen": false, "collision": true,
+      "auto_mass_center": false, "linear_damping": 0.1, "rotational_damping": 0.1,
+      "sphere_radius": null }
+  ]
+}
+```
+
+- `gravity` is in bundle space (right-handed, Y up), units per second².
+- `time_factor`: simulated seconds per real second.
+- `balls`: one entry per ball type, named after its object in the `balls`
+  scene. `force` is the per-step push impulse. `shape.kind` is `sphere` or
+  `convex` (the radius is then the hull's bounding radius).
+- `surfaces`: level groups that become static collision geometry.
+- `props`: physics settings per prefab group (`P_Box`, `P_Dome`, …).
+  `sphere_radius` is set for props simulated as spheres.
+
 ## Versioning rules
 
 - Any change to entry layout or to a serialised type bumps `format_version`.
 - Older bundles are never migrated; the player just re-runs the packer.
+- History: **1** first release. **2** adds `data/physics.json`.
