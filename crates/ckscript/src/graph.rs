@@ -13,7 +13,7 @@ use crate::{
 /// Section on scene objects (entities, groups, levels…) listing attached scripts.
 const SECTION_SCRIPTS: u32 = 0x800;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub enum ScriptObject {
     Behavior(Behavior),
@@ -25,6 +25,7 @@ pub enum ScriptObject {
     /// A free-standing `Parameter` (same storage as a local).
     Parameter(ParameterLocal),
     Operation(ParameterOperation),
+    Array(crate::DataArray),
 }
 
 /// Decodes `obj` if it is one of the script classes.
@@ -41,6 +42,7 @@ pub fn decode_script_object(obj: &FileObject) -> Option<Result<ScriptObject>> {
         ClassId::PARAMETER_OPERATION => {
             ParameterOperation::decode(chunk).map(ScriptObject::Operation)
         }
+        ClassId::DATA_ARRAY => crate::DataArray::decode(chunk).map(ScriptObject::Array),
         _ => return None,
     })
 }

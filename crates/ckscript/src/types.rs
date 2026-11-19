@@ -202,7 +202,7 @@ pub fn type_name(g: Guid) -> String {
 
 /// How to decode a type's bytes: the built-in table for the type itself,
 /// else for its root type in the catalogue's derivation chain.
-fn value_kind(g: Guid) -> Option<ValueKind> {
+pub fn value_kind(g: Guid) -> Option<ValueKind> {
     let cat = Catalogue::builtin();
     match cat.param_type(g).map(|t| t.kind) {
         Some(TypeKind::Enum) => return Some(ValueKind::Enum),
@@ -299,5 +299,23 @@ pub fn object_label(file: &CkFile, r: usize) -> String {
             o.class_id
         ),
         None => format!("@#{r}?"),
+    }
+}
+
+/// Human-readable data-array cell; parameter cells show their parameter's value.
+pub fn format_cell(file: &CkFile, scripts: &crate::Scripts, c: &crate::Cell) -> String {
+    match c {
+        crate::Cell::Int(v) => v.to_string(),
+        crate::Cell::Float(v) => fmt_f(*v),
+        crate::Cell::String(v) => format!("{v:?}"),
+        crate::Cell::Object(None) | crate::Cell::Parameter(None) => "null".into(),
+        crate::Cell::Object(Some(r)) => object_label(file, *r),
+        crate::Cell::Parameter(Some(r)) => match scripts.objects.get(*r) {
+            Some(Some(crate::ScriptObject::Parameter(p) | crate::ScriptObject::Local(p))) => {
+                format_value(file, p.type_guid, &p.value)
+            }
+            Some(Some(crate::ScriptObject::Out(p))) => format_value(file, p.type_guid, &p.value),
+            _ => object_label(file, *r),
+        },
     }
 }

@@ -32,6 +32,8 @@ ckinspect scene-check <dir>                   # decode every scene object, repor
 ckinspect scene <file> [--class Material]     # decoded scene objects as JSON
 ckinspect script-check <dir>                  # decode + validate every script object
 ckinspect scripts <file> [--filter name] [--format tree|json|dot]
+ckinspect arrays <file> [--filter name]       # data arrays (script tables) with resolved cells
+ckinspect physics <install> [--json out.json] # physics nodes + Physicalize_* tables, values traced to their source
 ckinspect render <file> --out x.png [--textures <install>/Textures]
           [--azimuth 35 --elevation 35 --size 2048 --include-hidden]
 ```

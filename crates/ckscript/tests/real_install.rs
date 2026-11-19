@@ -121,3 +121,62 @@ fn slider_module_physics_parameters() {
     );
     assert!(node.links.iter().any(|l| l.from == "this.Start"));
 }
+
+#[test]
+fn physics_tables_and_globals() {
+    use ckscript::extract::{Extractor, Resolved, Value};
+    use ckscript::{Cell, DataArray};
+    let Some(dir) = install_dir() else {
+        eprintln!("skipping: BALLANCE_DIR not set");
+        return;
+    };
+    // Ball table.
+    let f = CkFile::open(dir.join("3D Entities/Balls.nmo")).unwrap();
+    let arr = f
+        .objects
+        .iter()
+        .find(|o| o.name.as_deref() == Some("Physicalize_GameBall"))
+        .unwrap();
+    let a = DataArray::decode(arr.chunk.as_ref().unwrap()).unwrap();
+    let force = a.column("Force").unwrap();
+    let mass = a.column("Mass").unwrap();
+    let wood = a.row_by_key("Ball_Wood").unwrap();
+    assert_eq!(wood[force], Cell::Float(0.43));
+    assert_eq!(wood[mass], Cell::Float(1.9));
+    assert_eq!(a.row_by_key("Ball_Stone").unwrap()[mass], Cell::Float(10.0));
+
+    // Gravity and the ball's force traced back to the table.
+    let f = CkFile::open(dir.join("3D Entities/Gameplay.nmo")).unwrap();
+    let s = Scripts::decode(&f).unwrap();
+    let ex = Extractor::new(&f, &s);
+    let nodes = ex.nodes(&|bb| bb.dll == "physics_RT");
+    let globals = nodes
+        .iter()
+        .find(|n| {
+            n.building_block == "Set Physics Globals" && n.path.iter().any(|p| p == "Init Ingame")
+        })
+        .unwrap();
+    assert_eq!(
+        globals.inputs[0].value,
+        Resolved::Constant {
+            value: Value::Vector(vec![0.0, -20.0, 0.0])
+        }
+    );
+    let force_nodes: Vec<_> = nodes
+        .iter()
+        .filter(|n| {
+            n.building_block == "Physics Force" && n.path.iter().any(|p| p == "Ball Navigation")
+        })
+        .collect();
+    assert_eq!(force_nodes.len(), 5);
+    let from_table = force_nodes
+        .iter()
+        .filter(|n| {
+            n.inputs.iter().any(|i| {
+                i.name == "Force Value"
+                    && matches!(&i.value, Resolved::Dynamic { from, .. } if from.contains("Physicalize_GameBall"))
+            })
+        })
+        .count();
+    assert_eq!(from_table, 4);
+}

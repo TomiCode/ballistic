@@ -11,14 +11,17 @@
 //! The layouts were derived from the game's own files; see the research
 //! repository (`findings/08-script-graphs.md`).
 
+mod array;
 mod behavior;
 pub mod catalogue;
 pub mod conform;
 pub mod describe;
+pub mod extract;
 mod graph;
 mod param;
 pub mod types;
 
+pub use array::{Cell, Column, ColumnType, DataArray};
 pub use behavior::{Behavior, BehaviorIo, BehaviorLink, Prototype, behavior_flags, list_flags};
 pub use catalogue::{BuildingBlock, Catalogue, ParamDecl, ParamType, TypeKind};
 pub use graph::{ScriptObject, Scripts, decode_script_object, script_lists};

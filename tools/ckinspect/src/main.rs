@@ -53,6 +53,21 @@ enum Command {
     SceneCheck { dir: PathBuf },
     /// Decode and validate every script object under a directory.
     ScriptCheck { dir: PathBuf },
+    /// Extract physics parameters from every script under a directory
+    /// (physics building blocks plus the `Physicalize_*` tables).
+    Physics {
+        dir: PathBuf,
+        /// Write the full result as JSON here (derived from game data: keep it out of the repos).
+        #[arg(long)]
+        json: Option<PathBuf>,
+    },
+    /// Print a file's data arrays (script tables) with resolved cells.
+    Arrays {
+        file: PathBuf,
+        /// Only arrays whose name contains this text.
+        #[arg(long)]
+        filter: Option<String>,
+    },
     /// Print a file's scripts as an indented tree (or JSON / Graphviz DOT).
     Scripts {
         file: PathBuf,
@@ -123,6 +138,8 @@ fn main() -> Result<()> {
             filter,
             format,
         } => scripts(&file, filter.as_deref(), format),
+        Command::Arrays { file, filter } => arrays(&file, filter.as_deref()),
+        Command::Physics { dir, json } => physics(&dir, json.as_deref()),
         Command::Scene { file, class } => scene(&file, class.as_deref()),
         Command::Render {
             file,
@@ -171,6 +188,119 @@ fn scene_check(dir: &Path) -> Result<()> {
     }
     if failures > 0 {
         bail!("{failures} object(s) failed to decode");
+    }
+    Ok(())
+}
+
+fn physics(dir: &Path, json: Option<&Path>) -> Result<()> {
+    let mut all_nodes = Vec::new();
+    let mut tables = serde_json::Map::new();
+    for p in walk(dir)? {
+        let f = open(&p)?;
+        let s = ckscript::Scripts::decode(&f)?;
+        let rel = p
+            .strip_prefix(dir)
+            .unwrap_or(&p)
+            .to_string_lossy()
+            .replace('\\', "/");
+        for (i, o) in s.objects.iter().enumerate() {
+            let Some(ckscript::ScriptObject::Array(a)) = o else {
+                continue;
+            };
+            let name = f.objects[i].name.clone().unwrap_or_default();
+            if !name.starts_with("Physicalize") {
+                continue;
+            }
+            println!("== table {name} ({rel})");
+            let rows: Vec<serde_json::Value> = a
+                .rows
+                .iter()
+                .map(|row| {
+                    let mut m = serde_json::Map::new();
+                    for (c, cell) in a.columns.iter().zip(row) {
+                        m.insert(
+                            c.name.clone(),
+                            serde_json::Value::String(ckscript::types::format_cell(&f, &s, cell)),
+                        );
+                    }
+                    serde_json::Value::Object(m)
+                })
+                .collect();
+            for r in &rows {
+                println!("   {r}");
+            }
+            tables.insert(name, serde_json::Value::Array(rows));
+        }
+        let ex = ckscript::extract::Extractor::new(&f, &s);
+        for n in ex.nodes(&|bb| bb.dll == "physics_RT") {
+            all_nodes.push((rel.clone(), n));
+        }
+    }
+    println!();
+    let mut last = String::new();
+    for (file, n) in &all_nodes {
+        if *file != last {
+            println!("== {file}");
+            last.clone_from(file);
+        }
+        let target = n
+            .target
+            .as_ref()
+            .map_or(String::new(), |t| format!(" on {}", t.value));
+        println!(
+            "  {} [{}]{target}  ({})",
+            n.building_block,
+            n.path.join(" > "),
+            n.owner.as_deref().unwrap_or("?")
+        );
+        for v in &n.inputs {
+            println!("      {:<32} {}", v.name, v.value);
+        }
+    }
+    println!("{} physics nodes, {} tables", all_nodes.len(), tables.len());
+    if let Some(out) = json {
+        let nodes: Vec<serde_json::Value> = all_nodes
+            .iter()
+            .map(|(file, n)| serde_json::json!({ "file": file, "node": n }))
+            .collect();
+        let doc = serde_json::json!({ "tables": tables, "nodes": nodes });
+        std::fs::write(out, serde_json::to_string_pretty(&doc)?)?;
+        println!("wrote {}", out.display());
+    }
+    Ok(())
+}
+
+fn arrays(path: &Path, filter: Option<&str>) -> Result<()> {
+    let f = open(path)?;
+    let s = ckscript::Scripts::decode(&f)?;
+    for (i, o) in s.objects.iter().enumerate() {
+        let Some(ckscript::ScriptObject::Array(a)) = o else {
+            continue;
+        };
+        let name = f.objects[i].name.clone().unwrap_or_default();
+        if filter.is_some_and(|q| !name.contains(q)) {
+            continue;
+        }
+        println!("== {name} (#{i}, {} rows)", a.rows.len());
+        let header: Vec<String> = a
+            .columns
+            .iter()
+            .map(|c| match c.ty {
+                ckscript::ColumnType::Parameter(g) => {
+                    format!("{} <{}>", c.name, ckscript::types::type_name(g))
+                }
+                t => format!("{} <{t:?}>", c.name),
+            })
+            .collect();
+        println!("   {}", header.join(" | "));
+        for row in &a.rows {
+            let cells: Vec<String> = row
+                .iter()
+                .map(|c| ckscript::types::format_cell(&f, &s, c))
+                .collect();
+            println!("   {}", cells.join(" | "));
+        }
+        println!();
     }
     Ok(())
 }
@@ -243,6 +373,7 @@ fn script_check(dir: &Path) -> Result<()> {
                 ckscript::ScriptObject::Local(_) => "param local",
                 ckscript::ScriptObject::Parameter(_) => "parameter",
                 ckscript::ScriptObject::Operation(_) => "operation",
+                ckscript::ScriptObject::Array(_) => "data array",
             };
             *kinds.entry(k).or_default() += 1;
         }

@@ -214,3 +214,44 @@ fn inputs_links_and_operations() {
         (Some(450), Some(451), None)
     );
 }
+
+fn string_words(s: &str) -> Vec<u32> {
+    let mut b = s.as_bytes().to_vec();
+    b.push(0);
+    let len = b.len() as u32;
+    b.resize(b.len().next_multiple_of(4), 0);
+    let mut v = vec![len];
+    v.extend(
+        b.chunks(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])),
+    );
+    v
+}
+
+#[test]
+fn data_array_columns_and_rows() {
+    let bool_guid = Guid(0x1ad5_2a8e, 0x5e74_1920);
+    let mut cols = vec![3];
+    cols.extend(string_words("Ballname"));
+    cols.push(3);
+    cols.extend(string_words("Force"));
+    cols.push(2);
+    cols.extend(string_words("Active?"));
+    cols.extend([5, bool_guid.0, bool_guid.1]);
+    let mut rows = vec![1];
+    rows.extend(string_words("Ball_Wood"));
+    rows.push(0.43f32.to_bits());
+    rows.push(17);
+    let c = chunk(
+        ClassId::DATA_ARRAY,
+        &[(0x400, vec![0x49]), (0x1000, cols), (0x2000, rows)],
+        vec![],
+    );
+    let a = DataArray::decode(&c).unwrap();
+    assert_eq!(a.columns.len(), 3);
+    assert_eq!(a.columns[2].ty, ColumnType::Parameter(bool_guid));
+    let row = a.row_by_key("Ball_Wood").unwrap();
+    assert_eq!(row[1], Cell::Float(0.43));
+    assert_eq!(row[2], Cell::Parameter(Some(17)));
+    assert_eq!(a.column("Force"), Some(1));
+}
