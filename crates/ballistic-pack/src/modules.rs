@@ -438,7 +438,7 @@ fn hinge(n: &NodeParams) -> Option<bb::HingeParams> {
     })
 }
 
-fn proximity(n: &NodeParams, bodies: Vec<String>) -> Option<bb::WakeParams> {
+pub(crate) fn proximity(n: &NodeParams, bodies: Vec<String>) -> Option<bb::WakeParams> {
     let axes = int(local(n, "Check Axis:")).unwrap_or(7);
     Some(bb::WakeParams {
         object: text(input(n, "ObjectB"))?,

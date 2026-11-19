@@ -25,7 +25,7 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--screenshot out.png [--size 1920x1080]` | Render one frame off-screen and exit, no window |
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
 | `--play` | Play mode: roll a ball on the level |
-| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), and `trafo` puts the ball on the nearest transformer of another type (shown ones first), all at the start of their segment. With `--camera` too, the camera stays at that view instead of following the ball |
+| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), `trafo` puts the ball on the nearest transformer of another type (shown ones first), and `pickup` on the nearest extra life or extra point, all at the start of their segment. The summary then also prints the points, lives and score. With `--camera` too, the camera stays at that view instead of following the ball |
 
 The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 
@@ -122,6 +122,21 @@ good, and the window title shows the time since the level started.
 - There's no end sequence or score screen yet, and the last level's UFO isn't
   drawn.
 
+**Points and lives**, as the original counts them (research findings 16):
+- A level starts with 1000 points and 3 lives.
+- One point goes every 500 ms until the finish.
+- Falling out costs a life. With none left the game is over: the ball stays
+  lost and control is off.
+- **Extra lives** (+1) and **extra points** (+100, then +20 for each of its
+  six small balls as they reach the ball: 220 in all) are only there while
+  their sector is active. The level's placeholder markers stand in for them
+  until their particle effects exist. An extra life comes back when its
+  sector is entered again; an extra point doesn't.
+- At the finish the score is printed: the level's bonus (100 × its number) +
+  the points left + 200 per life left.
+- The status line shows the points and lives. There's no HUD or score screen
+  yet.
+
 **Transformers** (`P_Trafo_Paper`, `_Stone`, `_Wood`) stand at their
 placeholders, shown while their sector is active. They work like the
 original's script (research findings 14):
@@ -203,6 +218,7 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: pickups, checkpoint flames and fan particles, the other
+- In play mode: the HUD and score screen, the pickups' looks and sounds,
+  checkpoint flames and fan particles, the other
   sounds (events, the wooden flaps, music), the paper pieces' wind, the end
   sequence (and the last level's UFO) and score

@@ -57,7 +57,9 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      `Sound.nmo`, and the pieces' collision sounds. The ball's hit and roll
      sounds come from `Sound.nmo`'s `Sound_Manager` and its `BallSound` table,
      the level sound groups from `Levelinit.nmo`, and the prefab objects'
-     hit and roll IDs from their attributes → `data/physics.json`
+     hit and roll IDs from their attributes. Points, lives and score from the
+     `Energy` and `AllLevel` tables, and the extra lives' and extra points'
+     settings from their prefab scripts → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

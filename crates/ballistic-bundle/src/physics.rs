@@ -21,6 +21,56 @@ pub struct PhysicsData {
     pub transformers: TransformerParams,
     /// The ball's hit and roll sounds (`Sound.nmo`'s `Sound_Manager`).
     pub sounds: BallSounds,
+    /// Points, lives and score (`Gameplay_Energy`, the pickups).
+    pub energy: EnergyParams,
+}
+
+/// Points, lives and score.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnergyParams {
+    /// A level starts with these.
+    pub start_points: i32,
+    pub start_lives: i32,
+    /// One point less every this long (real time, while the counter runs).
+    pub tick_ms: f32,
+    /// The score at the end: the level's bonus + the points left + the lives
+    /// left × this.
+    pub life_bonus: i32,
+    /// Each level's bonus (`AllLevel`), in level order.
+    pub level_bonus: Vec<i32>,
+    pub extra_life: ExtraLife,
+    pub extra_point: ExtraPoint,
+}
+
+/// `P_Extra_Life`: one life more when the ball comes within `reach`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExtraLife {
+    /// Prefab group.
+    pub group: String,
+    pub reach: WakeParams,
+}
+
+/// `P_Extra_Point` (`TT Extra`): `activation_points` when the ball comes
+/// within `activation_distance` of it. Then its small balls fly off (`away_*`
+/// for `away_ms`) and chase the ball (`force`, `damping`, varied by
+/// `force_width` per ball); each that comes within `hit_distance` is
+/// `hit_points` more.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExtraPoint {
+    pub group: String,
+    pub small_balls: u32,
+    pub activation_distance: f32,
+    pub hit_distance: f32,
+    pub away_force: f32,
+    pub away_damping: f32,
+    pub away_ms: f32,
+    pub force: f32,
+    pub damping: f32,
+    pub force_width: f32,
+    pub activation_points: i32,
+    pub hit_points: i32,
+    /// Where the hits show (a group of the prefab).
+    pub hit_frames: String,
 }
 
 /// The ball's hit and roll sounds. Hit IDs: 1 stone, 2 wood, 3 metal, 4 dome;

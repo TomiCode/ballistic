@@ -190,7 +190,7 @@ fn new_play(
     format: wgpu::TextureFormat,
 ) -> Result<crate::play::Play> {
     let level = bundle.scene(&scene.key)?;
-    let play = crate::play::Play::new(gpu, bundle, &level, format)?;
+    let play = crate::play::Play::new(gpu, bundle, &scene.key, &level, format)?;
     for i in play.placeholders() {
         scene.renderer.set_object_hidden(i, true);
     }
@@ -350,6 +350,9 @@ impl State {
     fn update(&mut self, dt: f32) {
         if let Some(play) = self.play.as_mut() {
             play.update(dt);
+            for (i, show) in play.take_level_visibility() {
+                self.scene.renderer.set_object_hidden(i, !show);
+            }
             self.camera = play.camera(self.camera);
             return;
         }

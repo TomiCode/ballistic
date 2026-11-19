@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 10,
+  "format_version": 11,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -185,7 +185,17 @@ and useful to read). Since version 2.
     "roll_volume": 0.05, "roll_pitch": [0.5, 0.01],
     "hit_groups": [ { "group": "Sound_HitID_01", "id": 1 }, "…" ],
     "roll_groups": [ { "group": "Sound_RollID_01", "id": 1 }, "…" ],
-    "objects": [ { "scene": "ph/p_box", "object": "P_Box_MF", "hit": 2, "roll": 0 }, "…" ] }
+    "objects": [ { "scene": "ph/p_box", "object": "P_Box_MF", "hit": 2, "roll": 0 }, "…" ] },
+  "energy": {
+    "start_points": 1000, "start_lives": 3, "tick_ms": 500.0, "life_bonus": 200,
+    "level_bonus": [100, 200, "…", 1200],
+    "extra_life": { "group": "P_Extra_Life",
+      "reach": { "object": "P_Extra_Life_MF", "distance": 4.5, "…": "…" } },
+    "extra_point": { "group": "P_Extra_Point", "small_balls": 6,
+      "activation_distance": 3.0, "hit_distance": 4.0, "away_force": 1.0,
+      "away_damping": 0.3, "away_ms": 1000.0, "force": 0.12, "damping": 0.95,
+      "force_width": 0.08, "activation_points": 100, "hit_points": 20,
+      "hit_frames": "P_Extra_Point_Hitframes" } }
 }
 ```
 
@@ -277,6 +287,17 @@ and useful to read). Since version 2.
   - `hit_groups`, `roll_groups`: level groups whose members get that ID.
   - `objects`: prefab objects' IDs (their attributes), by prefab scene key
     and object name.
+- `energy`: points, lives and score (`Gameplay_Energy`, `Menu_Score`).
+  - A level starts with `start_points` and `start_lives`. While the counter
+    runs, one point goes every `tick_ms` of real time.
+  - The score is the level's `level_bonus` (in level order) + the points
+    left + the lives left × `life_bonus`.
+  - `extra_life`: one life more when the ball passes the `reach` proximity
+    test of a `P_Extra_Life`.
+  - `extra_point`: `activation_points` when the ball comes within
+    `activation_distance`, then `hit_points` per small ball (of
+    `small_balls`) that reaches it. The rest are *TT Extra*'s flight
+    settings.
 
 ## Versioning rules
 
@@ -289,4 +310,5 @@ and useful to read). Since version 2.
   (`PE_Balloon`), hinge `breakable`, force `graph`, and own-mesh bodies.
   **7** adds `transformers`. **8** adds the transformer `animation`, the
   ball `pieces` and `pieces_fade_after_ms`. **9** adds the transformer
-  `sound` and the pieces' `sounds`. **10** adds the ball's `sounds`.
+  `sound` and the pieces' `sounds`. **10** adds the ball's `sounds`. **11**
+  adds `energy`.

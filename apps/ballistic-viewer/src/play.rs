@@ -24,8 +24,10 @@ use ballistic_render::{Camera, Gpu, RenderOptions};
 use glam::Mat4;
 
 use crate::ballsounds::BallSoundsPlayer;
+use crate::energy::{Energy, Score};
 use crate::follow::Follow;
 use crate::modules::Modules;
+use crate::pickups::{self, Pickups};
 use crate::pieces::Pieces;
 use crate::progress::{self, Progress};
 use crate::props::Props;
@@ -90,6 +92,10 @@ pub struct Play {
     transformers: Transformers,
     pieces: Pieces,
     ball_sounds: BallSoundsPlayer,
+    energy: Energy,
+    pickups: Pickups,
+    /// The score, once the level is finished.
+    score: Option<Score>,
     /// Roll sounds looping at the last frame (for counting starts).
     looping: Vec<String>,
     /// Sounds to play (bundle key, volume), taken by the window.
@@ -118,9 +124,11 @@ fn key_index(k: PlayKey) -> usize {
 }
 
 impl Play {
+    /// `key` is the level's scene key (its number gives the level bonus).
     pub fn new(
         gpu: &Gpu,
         bundle: &mut Bundle,
+        key: &str,
         level: &ballistic_bundle::Scene,
         format: wgpu::TextureFormat,
     ) -> Result<Self> {
@@ -157,6 +165,11 @@ impl Play {
         // Start Level, then the new ball's BallNav activate.
         let mut ball_sounds = BallSoundsPlayer::new(&physics);
         ball_sounds.set_active(true);
+        let energy = Energy::new(
+            &physics.energy,
+            crate::energy::level_index(key).unwrap_or(0),
+        );
+        let pickups = Pickups::new(&physics.energy, level);
 
         let balls = load_scene(gpu, bundle, "balls", format)?;
         let ball_scene = bundle.scene("balls")?;
@@ -196,6 +209,9 @@ impl Play {
             transformers,
             pieces,
             ball_sounds,
+            energy,
+            pickups,
+            score: None,
             looping: Vec::new(),
             sounds: Vec::new(),
             sound_counts: std::collections::BTreeMap::new(),
@@ -351,6 +367,18 @@ impl Play {
         }
     }
 
+    /// Development aid: puts the ball, at rest, on the nearest pickup.
+    pub fn warp_to_pickup(&mut self) {
+        let Some(id) = self.ball_id() else { return };
+        let Some(ball) = self.world.body(id).map(|b| b.position) else {
+            return;
+        };
+        if let Some(target) = self.pickups.nearest(ball) {
+            self.world.reset_body(id, target);
+            self.follow.reset(target, self.heading_view);
+        }
+    }
+
     /// Development aid: wakes every active moving element.
     pub fn wake_modules(&mut self) {
         self.modules.wake_all(&mut self.world);
@@ -391,6 +419,30 @@ impl Play {
             *self.sound_counts.entry(key.clone()).or_default() += 1;
             self.sounds.push((key, volume));
         }
+    }
+
+    /// Level objects to show (`true`) or hide since the last call (pickups'
+    /// markers).
+    pub fn take_level_visibility(&mut self) -> Vec<(usize, bool)> {
+        self.pickups.take_visibility()
+    }
+
+    /// Points, lives, pickups and score, for headless runs.
+    pub fn energy_summary(&self) -> String {
+        let (lives, points) = self.pickups.count();
+        format!(
+            "energy: {} points, {} lives{}{}; {lives} extra lives, {points} extra points in the level",
+            self.energy.points,
+            self.energy.lives,
+            if self.energy.game_over {
+                ", game over"
+            } else {
+                ""
+            },
+            self.score
+                .map(|s| format!(", score {}", s.total))
+                .unwrap_or_default(),
+        )
     }
 
     /// Roll sounds that should be looping now: key, volume, pitch.
@@ -461,7 +513,14 @@ impl Play {
 
     /// Back to the spawn point; the camera rig is reset with the ball.
     pub fn respawn(&mut self) {
-        if self.held.is_some() {
+        if self.held.is_some() || self.energy.game_over {
+            return;
+        }
+        // Deactivate Ball: with no lives left, the game is over.
+        if !self.energy.ball_lost() {
+            self.nav_off();
+            self.ball_sounds.set_active(false);
+            eprintln!("game over");
             return;
         }
         // The ball comes back at the current reset point (the start, until a
@@ -490,6 +549,7 @@ impl Play {
         for (sector, on) in self.progress.take_changes() {
             self.props.set_sector_active(&mut self.world, sector, on);
             self.transformers.set_sector_active(sector, on);
+            self.pickups.set_sector_active(sector, on);
             self.modules.set_sector_active(&mut self.world, sector, on);
         }
     }
@@ -527,6 +587,7 @@ impl Play {
 
         self.world.advance(real_dt);
         self.props.update(&mut self.world, self.fall_y);
+        self.energy.frame(real_dt);
         let hits = self.world.take_collisions();
         let s = self.pieces.frame(&mut self.world, &hits, real_dt);
         self.queue_sounds(s);
@@ -551,6 +612,14 @@ impl Play {
                     self.modules.level_finished(&mut self.world);
                     self.nav_off();
                     self.ball_sounds.set_active(false);
+                    // Counter inactive; the score screen's sum.
+                    self.energy.set_counting(false);
+                    let s = self.energy.score();
+                    self.score = Some(s);
+                    eprintln!(
+                        "score {}: level bonus {} + points {} + lives {}",
+                        s.total, s.level_bonus, s.points, s.life_bonus
+                    );
                     eprintln!(
                         "level finished after {:.2} s ({} physics steps)",
                         self.elapsed, self.world.steps
@@ -560,6 +629,12 @@ impl Play {
             }
             let events = self.transformers.frame(ball, self.active_ball, real_dt);
             self.transformer_events(events);
+            for e in self.pickups.frame(ball, real_dt) {
+                match e {
+                    pickups::Event::LifeUp => self.energy.add_life(),
+                    pickups::Event::Points(n) => self.energy.add_points(n),
+                }
+            }
         }
         self.apply_sector_changes();
 
@@ -687,14 +762,21 @@ impl Play {
     pub fn status(&self) -> String {
         let b = self.ball_id().and_then(|id| self.world.body(id));
         format!(
-            "{} speed {:.1} checkpoint {}/{} {}{}{}{}{}",
+            "{} speed {:.1} points {} lives {} checkpoint {}/{} {}{}{}{}{}{}",
             self.ball_name(),
             b.map_or(0.0, |b| b.velocity.length()),
+            self.energy.points,
+            self.energy.lives,
             self.progress.reached(),
             self.progress.checkpoint_count(),
             self.finished_at
                 .map(|(t, _)| format!("[finished {t:.2} s] "))
                 .unwrap_or_default(),
+            match (self.score, self.energy.game_over) {
+                (Some(s), _) => format!("[score {}] ", s.total),
+                (None, true) => "[game over] ".to_owned(),
+                _ => String::new(),
+            },
             if self.nav_on { "" } else { "[no control] " },
             if self.turn.is_some() {
                 "[turning] "

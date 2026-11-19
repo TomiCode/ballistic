@@ -66,10 +66,19 @@ impl Row<'_> {
         Ok(&self.cells[i])
     }
 
-    fn f32(&self, col: &str) -> Result<f32> {
+    pub(crate) fn f32(&self, col: &str) -> Result<f32> {
         match self.cell(col)? {
             Cell::Float(v) => Ok(*v),
             Cell::Int(v) => Ok(*v as f32),
+            // A Time (milliseconds as a float) or similar typed cell.
+            Cell::Parameter(Some(p)) => match self.owner.scripts.objects.get(*p) {
+                Some(Some(ScriptObject::Out(o))) => buffer_f32(&o.value),
+                Some(Some(ScriptObject::Local(l) | ScriptObject::Parameter(l))) => {
+                    buffer_f32(&l.value)
+                }
+                _ => None,
+            }
+            .with_context(|| format!("column {col:?}: parameter cell not decodable")),
             c => bail!("column {col:?}: expected number, got {c:?}"),
         }
     }
@@ -216,6 +225,7 @@ pub fn extract(install: &Install) -> Result<bb::PhysicsData> {
             &balls,
         )?,
         sounds: crate::ballsounds::extract(install, &balls)?,
+        energy: crate::energy::extract(install)?,
         balls,
     })
 }
@@ -305,4 +315,11 @@ fn mesh_radius(file: &CkFile, object: &str) -> Result<f32> {
         .iter()
         .map(|p| (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt())
         .fold(0.0, f32::max))
+}
+
+fn buffer_f32(v: &ckscript::ParamValue) -> Option<f32> {
+    match v {
+        ckscript::ParamValue::Buffer(b) => b.first_chunk::<4>().map(|c| f32::from_le_bytes(*c)),
+        _ => None,
+    }
 }

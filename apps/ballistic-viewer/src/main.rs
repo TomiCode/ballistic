@@ -2,8 +2,10 @@
 
 mod audio;
 mod ballsounds;
+mod energy;
 mod follow;
 mod modules;
+mod pickups;
 mod pieces;
 mod play;
 mod progress;
@@ -188,6 +190,10 @@ pub fn options(args: &Args) -> RenderOptions {
 /// One segment of a play script: keys held for some seconds, after an
 /// optional warp to the next checkpoint (`next`).
 #[derive(Debug, Clone, PartialEq)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent development aids, each at the start of a segment"
+)]
 pub struct Segment {
     pub keys: Vec<play::PlayKey>,
     pub seconds: f32,
@@ -196,6 +202,8 @@ pub struct Segment {
     pub wake: bool,
     /// Put the ball on the nearest transformer of another type first.
     pub trafo: bool,
+    /// Put the ball on the nearest pickup first.
+    pub pickup: bool,
 }
 
 /// Parses `up:2,rotate+left:0.4,wait:1,next:1` into segments.
@@ -215,6 +223,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
             let warp = keys.split('+').any(|k| k.trim() == "next");
             let wake = keys.split('+').any(|k| k.trim() == "wake");
             let trafo = keys.split('+').any(|k| k.trim() == "trafo");
+            let pickup = keys.split('+').any(|k| k.trim() == "pickup");
             let keys = keys
                 .split('+')
                 .filter_map(|k| match k.trim() {
@@ -224,7 +233,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                     "right" => Some(Ok(K::Right)),
                     "rotate" => Some(Ok(K::Rotate)),
                     "lift" => Some(Ok(K::Lift)),
-                    "wait" | "next" | "wake" | "trafo" => None,
+                    "wait" | "next" | "wake" | "trafo" | "pickup" => None,
                     other => Some(Err(anyhow::anyhow!("unknown key {other:?}"))),
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -234,6 +243,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                 warp,
                 wake,
                 trafo,
+                pickup,
             })
         })
         .collect()
@@ -264,7 +274,7 @@ fn screenshot(
     };
     let mut play = if args.play {
         let level = bundle.scene(&args.scene)?;
-        let mut p = play::Play::new(&gpu, &mut bundle, &level, format)?;
+        let mut p = play::Play::new(&gpu, &mut bundle, &args.scene, &level, format)?;
         for i in p.placeholders() {
             scene.renderer.set_object_hidden(i, true);
         }
@@ -280,6 +290,9 @@ fn screenshot(
             if seg.trafo {
                 p.warp_to_transformer();
             }
+            if seg.pickup {
+                p.warp_to_pickup();
+            }
             for &k in &keys {
                 p.input(k, true);
             }
@@ -290,6 +303,9 @@ fn screenshot(
             let frames = (seconds / dt).round() as u32;
             for _ in 0..frames {
                 p.update(dt);
+                for (i, show) in p.take_level_visibility() {
+                    scene.renderer.set_object_hidden(i, !show);
+                }
                 // Headless: counted, not played.
                 p.take_sounds();
                 p.loops();
@@ -315,6 +331,7 @@ fn screenshot(
             p.progress().1,
             p.progress().2
         );
+        eprintln!("{}", p.energy_summary());
         if !p.sound_counts.is_empty() {
             let s: Vec<String> = p
                 .sound_counts
