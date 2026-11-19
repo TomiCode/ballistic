@@ -4,6 +4,8 @@ This folder documents **Ballistic itself**: what it can do, how to set it up and
 how to develop on it. Research into the original game lives in a separate
 repository.
 
+- [dev-tools.md](dev-tools.md): workspace layout, `ckinspect`, tests against your own install
+
 Planned pages:
 
 - `getting-started.md`: building the asset bundle, running the game
