@@ -111,9 +111,16 @@ swing or tip by themselves.
 **The level end** is the balloon, part of the last sector. The level is
 finished when the ball settles in the middle of its platform (within 1 of the
 platform's centre, as in the original). Ball control then switches off for
-good, and the window title shows the time since the level started. The
-balloon doesn't move yet: its platform and bridge are solid but fixed, and
-there's no end sequence or score screen.
+good, and the window title shows the time since the level started.
+- The balloon is simulated like a moving element. Its platform hangs from
+  four balloons on ropes, on a slider and spring under a hidden slide box, and
+  a plank bridge leads to it.
+- When the ball comes within 70, the platform wakes and the balloons pull up
+  and out.
+- At the finish, the bridge's last hinge breaks and the slide box is pushed
+  along its slider: the balloon drifts away with the ball.
+- There's no end sequence or score screen yet, and the last level's UFO isn't
+  drawn.
 A prop that falls out of the level is gone until its sector is entered again.
 
 The camera follows like the original: a point chases the ball, and the camera
@@ -150,5 +157,5 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: the balloon's moving parts, pickups, transformers, checkpoint
-  flames and fan particles, the end sequence and score
+- In play mode: pickups, transformers, checkpoint flames and fan particles,
+  the end sequence (and the last level's UFO) and score

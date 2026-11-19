@@ -1,5 +1,5 @@
-//! Extracts the moving elements' physics (`3D Entities/PH/P_Modul_*.nmo`)
-//! from their prefab scripts: the Physicalize nodes (bodies), Set Physics
+//! Extracts the moving elements' physics (`3D Entities/PH/P_Modul_*.nmo`,
+//! and the level end's balloon `PE_Balloon.nmo`) from their prefab scripts: the Physicalize nodes (bodies), Set Physics
 //! Hinge nodes, and the proximity test that wakes frozen bodies. Other
 //! physics building blocks are listed as unsupported (research findings 09, 13).
 
@@ -8,8 +8,8 @@ use std::collections::BTreeSet;
 use anyhow::{Context, Result};
 use ballistic_bundle as bb;
 use ckfile::CkFile;
-use ckscript::Scripts;
 use ckscript::extract::{Extractor, NamedValue, NodeParams, Resolved, Value};
+use ckscript::{ObjRef, ScriptObject, Scripts};
 
 use crate::install::Install;
 
@@ -38,7 +38,7 @@ pub fn extract(install: &Install) -> Result<Vec<bb::ModuleSetup>> {
         else {
             continue;
         };
-        if !stem.starts_with("p_modul_") {
+        if !stem.starts_with("p_modul_") && stem != "pe_balloon" {
             continue;
         }
         let file = CkFile::open(path).with_context(|| format!("reading {key}"))?;
@@ -46,8 +46,20 @@ pub fn extract(install: &Install) -> Result<Vec<bb::ModuleSetup>> {
             Scripts::decode(&file).with_context(|| format!("decoding scripts of {key}"))?;
         let ex = Extractor::new(&file, &scripts);
         let nodes = ex.nodes(&|b| {
-            SUPPORTED.contains(&b.name.as_str()) || b.dll.eq_ignore_ascii_case(PHYSICS_DLL)
+            SUPPORTED.contains(&b.name.as_str())
+                || b.name == "Parameter Selector"
+                || b.dll.eq_ignore_ascii_case(PHYSICS_DLL)
         });
+        // The last level's UFO end sequence isn't simulated.
+        let nodes: Vec<NodeParams> = nodes
+            .into_iter()
+            .filter(|n| !n.path.iter().any(|p| p == "UFO" || p == "Hyperspace"))
+            .collect();
+        let breakable: Vec<ObjRef> = nodes
+            .iter()
+            .filter(|n| destroyed_from(&file, &scripts, n.node, "Break"))
+            .map(|n| n.node)
+            .collect();
         let group = file
             .objects
             .iter()
@@ -59,12 +71,12 @@ pub fn extract(install: &Install) -> Result<Vec<bb::ModuleSetup>> {
                     .map(str::to_owned)
             })
             .with_context(|| format!("{key}: no All_<group> group"))?;
-        out.push(setup(group, &nodes).with_context(|| format!("extracting {key}"))?);
+        out.push(setup(group, &nodes, &breakable).with_context(|| format!("extracting {key}"))?);
     }
     Ok(out)
 }
 
-fn setup(group: String, nodes: &[NodeParams]) -> Result<bb::ModuleSetup> {
+fn setup(group: String, nodes: &[NodeParams], breakable: &[ObjRef]) -> Result<bb::ModuleSetup> {
     let mut bodies = Vec::new();
     let mut hinges = Vec::new();
     let mut sliders = Vec::new();
@@ -87,12 +99,17 @@ fn setup(group: String, nodes: &[NodeParams]) -> Result<bb::ModuleSetup> {
             "Physicalize" => {
                 if let Some(b) = body(n)? {
                     bodies.push(b);
+                } else if let Some(list) = selected_bodies(n, nodes)? {
+                    bodies.extend(list);
                 } else {
                     unsupported.insert("Physicalize (computed target or shape)".to_owned());
                 }
             }
             "Physics Hinge" => match hinge(n) {
-                Some(h) => hinges.push(h),
+                Some(mut h) => {
+                    h.breakable = breakable.contains(&n.node);
+                    hinges.push(h);
+                }
                 None => {
                     unsupported.insert("Physics Hinge (computed objects)".to_owned());
                 }
@@ -126,18 +143,23 @@ fn setup(group: String, nodes: &[NodeParams]) -> Result<bb::ModuleSetup> {
                     unsupported.insert("Set Physics Spring (computed objects)".to_owned());
                 }
             },
-            "TT Scaleable Proximity" => {
-                if has_wakeup && wake.is_none() {
-                    wake = proximity(n, wake_bodies.clone());
-                }
-                proximities.extend(proximity(n, Vec::new()));
-            }
+            "TT Scaleable Proximity" => proximities.extend(proximity(n, Vec::new())),
             "Box Box Intersection" => boxes.extend(text(input(n, "Entity 2"))),
-            "Physics WakeUp" => {}
+            "Physics WakeUp" | "Parameter Selector" => {}
             other => {
                 unsupported.insert(other.to_owned());
             }
         }
+    }
+    // The wake-up test: the widest one (the balloon also has its finish test).
+    if has_wakeup {
+        wake = proximities
+            .iter()
+            .max_by(|a, b| a.distance.total_cmp(&b.distance))
+            .map(|p| bb::WakeParams {
+                bodies: wake_bodies.clone(),
+                ..p.clone()
+            });
     }
     Ok(bb::ModuleSetup {
         group,
@@ -205,6 +227,66 @@ fn target(n: &NodeParams) -> Option<String> {
     n.target.as_ref().and_then(|t| text(Some(t)))
 }
 
+/// A Physicalize node whose target is a Parameter Selector's choice (the
+/// balloon physicalizes its planks, ropes and balloons in a loop): one body per
+/// constant `pIn` of the selector in the same graph, each from its own mesh.
+fn selected_bodies(n: &NodeParams, nodes: &[NodeParams]) -> Result<Option<Vec<bb::ModuleBody>>> {
+    let from_selector = matches!(
+        n.target.as_ref().map(|t| &t.value),
+        Some(Resolved::Dynamic { from, .. }) if from.contains("Parameter Selector")
+    );
+    if !from_selector {
+        return Ok(None);
+    }
+    let Some(sel) = nodes
+        .iter()
+        .find(|s| s.building_block == "Parameter Selector" && s.path == n.path)
+    else {
+        return Ok(None);
+    };
+    let objects: Vec<String> = sel
+        .inputs
+        .iter()
+        .filter(|i| i.name.starts_with("pIn"))
+        .filter_map(|i| text(Some(i)))
+        .collect();
+    let mut out = Vec::new();
+    for object in objects {
+        if let Some(b) = body_for(n, object, Vec::new())? {
+            out.push(b);
+        }
+    }
+    Ok(Some(out))
+}
+
+/// Whether a node's Destroy input is wired to its graph's input `graph_input`.
+fn destroyed_from(file: &CkFile, scripts: &Scripts, node: ObjRef, graph_input: &str) -> bool {
+    let name = |i: ObjRef| file.objects.get(i).and_then(|o| o.name.as_deref());
+    let (Some(&parent), Some(b)) = (scripts.owner.get(&node), scripts.behavior(node)) else {
+        return false;
+    };
+    let Some(pb) = scripts.behavior(parent) else {
+        return false;
+    };
+    let destroy = b
+        .inputs
+        .iter()
+        .copied()
+        .find(|&p| name(p) == Some("Destroy"));
+    let source = pb
+        .inputs
+        .iter()
+        .copied()
+        .find(|&p| name(p) == Some(graph_input));
+    let (Some(destroy), Some(source)) = (destroy, source) else {
+        return false;
+    };
+    pb.links.iter().any(|&l| {
+        matches!(scripts.objects.get(l), Some(Some(ScriptObject::Link(k)))
+            if k.source == Some(source) && k.target == Some(destroy))
+    })
+}
+
 /// A Physicalize node with a constant target and constant convex meshes.
 fn body(n: &NodeParams) -> Result<Option<bb::ModuleBody>> {
     let Some(object) = target(n) else {
@@ -220,6 +302,12 @@ fn body(n: &NodeParams) -> Result<Option<bb::ModuleBody>> {
     if convex.is_empty() {
         return Ok(None);
     }
+    body_for(n, object, convex)
+}
+
+/// The body a Physicalize node makes of `object`, from `convex` meshes (empty:
+/// the object's own mesh).
+fn body_for(n: &NodeParams, object: String, convex: Vec<String>) -> Result<Option<bb::ModuleBody>> {
     let f = |name: &str| float(input(n, name)).with_context(|| format!("{object}: {name}"));
     let b = |name: &str| boolean(input(n, name)).with_context(|| format!("{object}: {name}"));
     let shift = match local(n, "Shift Mass Center").and_then(constant) {
@@ -323,6 +411,7 @@ fn force(n: &NodeParams) -> Option<bb::ForceParams> {
         direction: vector(input(n, "Direction"))?,
         direction_frame: text(input(n, "Direction Ref")),
         value: float(input(n, "Force Value"))?,
+        graph: n.path.last().cloned().unwrap_or_default(),
     })
 }
 
@@ -345,6 +434,7 @@ fn hinge(n: &NodeParams) -> Option<bb::HingeParams> {
         other,
         frame,
         limits,
+        breakable: false,
     })
 }
 

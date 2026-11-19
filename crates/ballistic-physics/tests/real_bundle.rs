@@ -194,6 +194,7 @@ fn modules_hold_together_on_every_level() {
     );
     let mut placed = 0;
     let mut simulated = 0;
+    let mut balloons = 0;
     for level in 1..=12 {
         let scene = b.scene(&format!("level/level_{level:02}")).unwrap();
         let (mut statics, _) = build_level(&scene, &physics);
@@ -207,15 +208,32 @@ fn modules_hold_together_on_every_level() {
         let mut pivots = Vec::new();
         let mut sliding = Vec::new();
         for setup in &physics.modules {
-            let spawns = props::placeholders(&scene, &setup.group);
-            if spawns.is_empty() {
+            // The level end (PE_Balloon) stands at the PE_Levelende member.
+            let transforms: Vec<Mat4> = if setup.group.starts_with("PE_") {
+                scene
+                    .groups
+                    .iter()
+                    .filter(|g| g.name == "PE_Levelende")
+                    .filter_map(|g| g.members.first())
+                    .map(|&m| Mat4::from_cols_array_2d(&scene.objects[m as usize].transform))
+                    .collect()
+            } else {
+                props::placeholders(&scene, &setup.group)
+                    .iter()
+                    .map(|s| s.transform)
+                    .collect()
+            };
+            if transforms.is_empty() {
                 continue;
             }
             let prefab = b
                 .scene(&format!("ph/{}", setup.group.to_lowercase()))
                 .unwrap();
-            for s in &spawns {
-                let plan = modules::plan(setup, &prefab, s.transform)
+            for &transform in &transforms {
+                if setup.group.starts_with("PE_") {
+                    balloons += 1;
+                }
+                let plan = modules::plan(setup, &prefab, transform)
                     .unwrap_or_else(|e| panic!("level {level} {}: {e:#}", setup.group));
                 placed += 1;
                 if !modules::simulated(setup) {
@@ -334,4 +352,5 @@ fn modules_hold_together_on_every_level() {
         placed > 10 && simulated > 5,
         "placed {placed}, simulated {simulated}"
     );
+    assert_eq!(balloons, 12, "a level end on every level");
 }

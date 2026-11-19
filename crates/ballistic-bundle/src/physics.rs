@@ -70,6 +70,7 @@ pub struct ModuleBody {
     pub linear_damping: f32,
     pub rotational_damping: f32,
     /// Meshes whose convex hulls make up the body, in the object's frame.
+    /// Empty: the object's own mesh (the script physicalizes "Get Current").
     pub convex: Vec<String>,
 }
 
@@ -82,6 +83,9 @@ pub struct HingeParams {
     pub frame: String,
     /// Angle limits in degrees, if enabled.
     pub limits: Option<[f32; 2]>,
+    /// The script breaks it (its Destroy is wired to the graph's "Break"
+    /// input: the balloon's bridge, at the level's end).
+    pub breakable: bool,
 }
 
 /// `Set Physics Slider`: `body` moves relative to `other` only along the axis
@@ -135,6 +139,8 @@ pub struct ForceParams {
     pub direction: [f32; 3],
     pub direction_frame: Option<String>,
     pub value: f32,
+    /// The script graph the force is in (e.g. the balloon's `Balloon Forces`).
+    pub graph: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

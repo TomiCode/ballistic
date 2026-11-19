@@ -12,13 +12,18 @@
 //!   within 80 of it (on X/Z) an inner test runs; while the ball is within 7,
 //!   each check tests the ball's box against the fan's box, and a hit switches
 //!   an upward push on the ball on, a miss switches it off.
+//! - The level end's balloon (`PE_Balloon`, research findings 12, 13) is a
+//!   module of the last sector: when the ball comes within 70 its platform
+//!   wakes (and with it everything joined to it), and the balloons pull up.
+//!   At the finish the slide box is pushed away, and the hinge between the
+//!   platform and the bridge breaks.
 
 use anyhow::{Context, Result};
 use ballistic_bundle::{ModuleSetup, PhysicsData, Scene};
 use ballistic_physics::modules::PlannedForce;
 use ballistic_physics::modules::{self, ModulePlan};
 use ballistic_physics::{
-    BodyId, Mat4, PushId, Quat, SurfaceMaterial, Vec3, World, boxes_overlap, props,
+    BodyId, JointId, Mat4, PushId, Quat, SurfaceMaterial, Vec3, World, boxes_overlap, props,
 };
 use ballistic_render::{Camera, Gpu, RenderOptions, SceneRenderer};
 
@@ -69,12 +74,43 @@ struct Fan {
     active: bool,
 }
 
+/// The level end (`PE_Balloon` at the `PE_Levelende` placeholder).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LevelEnd {
+    /// `PE_Balloon_Platform`'s origin: the ball must get within 1 of it.
+    pub platform: Vec3,
+    /// The last sector, whose activation starts the balloon's script.
+    pub sector: u32,
+}
+
+/// Level-end prefab objects not drawn: the UFO (last level only) and the
+/// hidden slide box.
+const LEVEL_END_HIDDEN: [&str; 2] = ["PE_UFO", "PE_Box_slide"];
+
+/// The balloon's script: forces of its `Balloon Forces` graph switch on when
+/// it wakes, the others (the slide box's) at the finish, which also breaks the
+/// breakable hinges.
+#[derive(Debug, Clone, Default)]
+struct Balloon {
+    lift: Vec<usize>,
+    finish: Vec<usize>,
+    pushes: Vec<PushId>,
+    lifting: bool,
+    finished: bool,
+    /// The platform: index into the plan's bodies, and its object's matrix
+    /// relative to the body (its origin is the finish target).
+    platform: Option<(usize, Mat4)>,
+}
+
 struct Module {
     group: String,
     sector: u32,
     plan: ModulePlan,
     program: Option<Alternate>,
     fan: Option<Fan>,
+    balloon: Option<Balloon>,
+    /// Hinges while active (same order as `plan.hinges`).
+    hinge_ids: Vec<Option<JointId>>,
     /// Bodies while active (same order as `plan.bodies`).
     bodies: Vec<BodyId>,
     /// One static material per fixed part (switched with the sector).
@@ -89,9 +125,11 @@ pub struct Modules {
     renderer: Option<SceneRenderer>,
     /// Level objects the modules replace.
     pub placeholders: Vec<usize>,
+    pub level_end: Option<LevelEnd>,
 }
 
 impl Modules {
+    #[allow(clippy::too_many_lines)]
     pub fn new(
         gpu: &Gpu,
         bundle: &mut Bundle,
@@ -140,6 +178,52 @@ impl Modules {
                 items.push(module);
             }
         }
+        // The level end: the PE_Levelende member's matrix, the prefab named
+        // like it without "_NN", in the last sector (level init).
+        let mut level_end = None;
+        if let Some(member) = level
+            .groups
+            .iter()
+            .find(|g| g.name == "PE_Levelende")
+            .and_then(|g| g.members.first())
+            && let Some(ph) = level.objects.get(*member as usize)
+            && let Some(base) = ph.name.rsplit_once('_').map(|(b, _)| b.to_owned())
+            && let Some(setup) = physics.modules.iter().find(|m| m.group == base)
+        {
+            let key = format!("ph/{}", base.to_lowercase());
+            let prefab = bundle
+                .scene(&key)
+                .with_context(|| format!("loading {key}"))?;
+            let mesh_offset = append_prefab(&mut merged, &prefab);
+            let transform = Mat4::from_cols_array_2d(&ph.transform);
+            let sector = crate::progress::last_sector(level);
+            let plan = modules::plan(setup, &prefab, transform).unwrap_or_else(|e| {
+                eprintln!("warning: {base}: {e:#}; drawn only");
+                ModulePlan::default()
+            });
+            let module = place(
+                setup,
+                &prefab,
+                transform,
+                sector,
+                plan,
+                mesh_offset,
+                &mut merged,
+                world,
+            );
+            let platform = modules::placed_objects(&prefab, &base, transform).and_then(|w| {
+                let i = prefab
+                    .objects
+                    .iter()
+                    .position(|o| o.name == format!("{base}_Platform"))?;
+                Some(w[i].transform_point3(Vec3::ZERO))
+            });
+            if let Some(platform) = platform {
+                level_end = Some(LevelEnd { platform, sector });
+            }
+            placeholders.push(*member as usize);
+            items.push(module);
+        }
         world.statics.finish();
         let renderer = if merged.objects.is_empty() {
             None
@@ -155,6 +239,7 @@ impl Modules {
             items,
             renderer,
             placeholders,
+            level_end,
         })
     }
 
@@ -188,6 +273,12 @@ impl Modules {
             for id in m.bodies.drain(..) {
                 world.remove_body(id);
             }
+            m.hinge_ids.clear();
+            if let Some(b) = m.balloon.as_mut() {
+                b.pushes.clear();
+                b.lifting = false;
+                b.finished = false;
+            }
             m.wake = None;
             if !on {
                 continue;
@@ -200,12 +291,11 @@ impl Modules {
                 .collect();
             for h in &m.plan.hinges {
                 let other = h.other.map(|o| m.bodies[o]);
-                if world
-                    .add_hinge(m.bodies[h.body], other, h.pivot, h.axis)
-                    .is_none()
-                {
+                let id = world.add_hinge(m.bodies[h.body], other, h.pivot, h.axis);
+                if id.is_none() {
                     eprintln!("warning: {}: hinge not created", m.group);
                 }
+                m.hinge_ids.push(id);
             }
             for s in &m.plan.sliders {
                 let other = s.other.map(|o| m.bodies[o]);
@@ -296,6 +386,47 @@ impl Modules {
                         world.wake(id);
                     }
                 }
+                // The balloon: Physics WakeUp, then Balloon Forces.
+                if let Some(b) = m.balloon.as_mut()
+                    && !b.lifting
+                {
+                    b.lifting = true;
+                    for &f in &b.lift.clone() {
+                        b.pushes.extend(push(world, &m.plan, &m.bodies, f));
+                    }
+                }
+            }
+        }
+    }
+
+    /// Where the level end's platform is now (its object's origin).
+    pub fn level_end_platform(&self, world: &World) -> Option<Vec3> {
+        let m = self.items.iter().find(|m| m.balloon.is_some())?;
+        let (i, object_from_body) = m.balloon.as_ref()?.platform?;
+        let b = world.body(*m.bodies.get(i)?)?;
+        let pose = Mat4::from_rotation_translation(b.orientation, b.position);
+        Some((pose * object_from_body).transform_point3(Vec3::ZERO))
+    }
+
+    /// `Level_Finish`: the balloon's slide box is pushed, and its bridge lets go.
+    pub fn level_finished(&mut self, world: &mut World) {
+        for m in &mut self.items {
+            let Some(b) = m.balloon.as_mut() else {
+                continue;
+            };
+            if b.finished || m.bodies.is_empty() {
+                continue;
+            }
+            b.finished = true;
+            for &f in &b.finish.clone() {
+                b.pushes.extend(push(world, &m.plan, &m.bodies, f));
+            }
+            for (h, id) in m.plan.hinges.iter().zip(&mut m.hinge_ids) {
+                if h.breakable
+                    && let Some(id) = id.take()
+                {
+                    world.remove_joint(id);
+                }
             }
         }
     }
@@ -310,6 +441,14 @@ impl Modules {
             for &i in &m.plan.wake_bodies {
                 if let Some(&id) = m.bodies.get(i) {
                     world.wake(id);
+                }
+            }
+            if let Some(b) = m.balloon.as_mut()
+                && !b.lifting
+            {
+                b.lifting = true;
+                for &f in &b.lift.clone() {
+                    b.pushes.extend(push(world, &m.plan, &m.bodies, f));
                 }
             }
         }
@@ -377,6 +516,9 @@ fn place(
         let (Some(mesh), Some(&world_m)) = (o.mesh, placed.get(i)) else {
             continue;
         };
+        if LEVEL_END_HIDDEN.iter().any(|p| o.name.starts_with(p)) {
+            continue;
+        }
         let body = body_of(i);
         let local = match body {
             Some(b) => {
@@ -421,11 +563,14 @@ fn place(
     });
     let program = alternate(setup, &plan);
     let fan = fan(setup, prefab, &placed, &plan);
+    let balloon = balloon(setup, prefab, &plan);
     Module {
         group: setup.group.clone(),
         sector,
         program,
         fan,
+        balloon,
+        hinge_ids: Vec::new(),
         plan,
         bodies: Vec::new(),
         fixed_materials,
@@ -491,7 +636,7 @@ fn wake_module(world: &mut World, plan: &ModulePlan, bodies: &[BodyId]) {
 /// object (outer: the largest, inner: the smallest), and the box it tests the
 /// ball's box against.
 fn fan(setup: &ModuleSetup, prefab: &Scene, placed: &[Mat4], plan: &ModulePlan) -> Option<Fan> {
-    let force = *plan.forces.iter().find(|f| f.body.is_none())?;
+    let force = plan.forces.iter().find(|f| f.body.is_none())?.clone();
     let inner_p = setup
         .proximities
         .iter()
@@ -579,6 +724,26 @@ fn fan_frame(f: &mut Fan, world: &mut World, ball_id: BodyId, ball_box: (Vec3, Q
     }
 }
 
+/// The balloon program: the level end's module (`PE_*`) with the forces of a
+/// `Balloon Forces` graph.
+fn balloon(setup: &ModuleSetup, prefab: &Scene, plan: &ModulePlan) -> Option<Balloon> {
+    if !setup.group.starts_with("PE_") {
+        return None;
+    }
+    let (lift, finish): (Vec<usize>, Vec<usize>) =
+        (0..plan.forces.len()).partition(|&i| plan.forces[i].graph == "Balloon Forces");
+    let platform_name = format!("{}_Platform", setup.group);
+    let platform = plan.bodies.iter().enumerate().find_map(|(i, b)| {
+        (prefab.objects[b.object].name == platform_name).then_some((i, b.object_from_body))
+    });
+    Some(Balloon {
+        lift,
+        finish,
+        platform,
+        ..Balloon::default()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -603,6 +768,7 @@ mod tests {
                 point: Vec3::ZERO,
                 direction: Vec3::Y,
                 value: 0.1,
+                graph: String::new(),
             },
             push: None,
             turn_on: true,

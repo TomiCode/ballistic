@@ -48,7 +48,8 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
    - physics parameters (gravity, time factor, ball types, level surfaces,
      props) read from the original's scripts and tables, and each moving
      element's bodies, joints, forces, timers and tests from its prefab script
-     (`PH/P_Modul_*.nmo`) → `data/physics.json`
+     (`PH/P_Modul_*.nmo`, and the level end's `PH/PE_Balloon.nmo` without its
+     UFO sequence) → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

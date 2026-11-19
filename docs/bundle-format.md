@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 5,
+  "format_version": 6,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -137,7 +137,7 @@ and useful to read). Since version 2.
       ],
       "hinges": [
         { "body": "P_Modul_25_Bridge", "other": null,
-          "frame": "P_Modul_25_HingeFrame", "limits": null }
+          "frame": "P_Modul_25_HingeFrame", "limits": null, "breakable": false }
       ],
       "sliders": [],
       "springs": [],
@@ -162,13 +162,15 @@ and useful to read). Since version 2.
 - `surfaces`: level groups that become static collision geometry.
 - `props`: physics settings per prefab group (`P_Box`, `P_Dome`, …).
   `sphere_radius` is set for props simulated as spheres.
-- `modules`: per moving element (`P_Modul_*`), what its prefab script sets up.
-  Names refer to objects and meshes of the prefab scene `ph/<group>`.
+- `modules`: per moving element (`P_Modul_*`), and the level end's balloon
+  (`PE_Balloon`), what its prefab script sets up. Names refer to objects and
+  meshes of the prefab scene `ph/<group>`.
   - `bodies`: the Physicalize inputs. `convex` lists the meshes whose convex
-    hulls make up the body, in the object's frame. `shift_mass_center` is in
-    the object's frame (bundle space).
+    hulls make up the body, in the object's frame; empty means the object's
+    own mesh. `shift_mass_center` is in the object's frame (bundle space).
   - `hinges`: `other: null` is the world. The pivot is the `frame` object's
-    position, the axis its Z axis.
+    position, the axis its Z axis. `breakable`: the script destroys it (the
+    balloon's bridge, at the finish).
   - `sliders`: `body` moves relative to `other` only along the line from the
     `axis_from` frame's position to the `axis_to` frame's; `limits` (if set)
     bound the displacement from the start.
@@ -179,8 +181,8 @@ and useful to read). Since version 2.
     frame), rotation free.
   - `forces`: the script's `Physics Force` nodes in script order: on `body`
     (`null`: the player's ball), at `position` (in a frame), along
-    `direction` in `direction_frame`, with `value`. When they act is the
-    module's script logic.
+    `direction` in `direction_frame`, with `value`. `graph` names the script
+    graph it's in. When they act is the module's script logic.
   - `delays_ms`: the script's Delayer times, `proximities`: all its proximity
     tests, `boxes`: what it tests the ball's box against. Inputs to the
     module's script logic.
@@ -196,4 +198,5 @@ and useful to read). Since version 2.
 - History: **1** first release. **2** adds `data/physics.json`. **3** adds
   `modules` to it, and keeps every mesh in prefab scenes. **4** adds module
   `sliders`, `springs` and the wake-up targets. **5** adds `ball_joints`,
-  `forces`, `delays_ms`, `proximities` and `boxes`.
+  `forces`, `delays_ms`, `proximities` and `boxes`. **6** adds the balloon
+  (`PE_Balloon`), hinge `breakable`, force `graph`, and own-mesh bodies.

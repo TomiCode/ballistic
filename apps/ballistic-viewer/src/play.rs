@@ -125,7 +125,7 @@ impl Play {
         let modules = Modules::new(gpu, bundle, level, &physics, &mut world, format)?;
         let layout = progress::layout(level, |key| bundle.scene(key).ok());
         let spawn_matrix = layout.reset_points.first().copied();
-        let progress = Progress::start(layout, props.level_end);
+        let progress = Progress::start(layout, modules.level_end);
 
         let (start, heading) = match spawn_matrix {
             Some(m) => reset_pose(m),
@@ -391,11 +391,15 @@ impl Play {
         self.elapsed += real_dt;
         if let Some(ball) = self.world.body(self.ball).map(|b| b.position) {
             self.modules.frame(self.ball, real_dt, &mut self.world);
+            if let Some(p) = self.modules.level_end_platform(&self.world) {
+                self.progress.set_level_end_target(p);
+            }
             match self.progress.frame(ball) {
                 Some(progress::Event::Checkpoint(i)) => eprintln!("checkpoint {} reached", i + 1),
                 Some(progress::Event::Finished) => {
-                    // Level_Finish: ball control off.
+                    // Level_Finish: ball control off; the balloon lets go.
                     self.finished_at = Some((self.elapsed, self.world.steps));
+                    self.modules.level_finished(&mut self.world);
                     self.nav_off();
                     eprintln!(
                         "level finished after {:.2} s ({} physics steps)",

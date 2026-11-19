@@ -35,6 +35,8 @@ pub struct PlannedBody {
 pub struct PlannedHinge {
     /// Index into [`ModulePlan::bodies`].
     pub body: usize,
+    /// The script breaks it (see `HingeParams::breakable`).
+    pub breakable: bool,
     /// The other body, or `None` for the world.
     pub other: Option<usize>,
     pub pivot: Vec3,
@@ -59,12 +61,14 @@ pub struct PlannedBallJoint {
 
 /// A force the module's script can switch on: on `body` (`None`: the player's
 /// ball), at a world point, along a world direction.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PlannedForce {
     pub body: Option<usize>,
     pub point: Vec3,
     pub direction: Vec3,
     pub value: f32,
+    /// The script graph it's in.
+    pub graph: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -172,8 +176,14 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
         }
         let oi = object(&b.object)?;
         let m = world[oi];
-        let hull_points: Vec<Vec<Vec3>> = b
-            .convex
+        // No convex list: the object's own mesh ("Get Current").
+        let own: Vec<String> = prefab.objects[oi]
+            .mesh
+            .and_then(|mi| prefab.meshes.get(mi as usize))
+            .map(|mesh| vec![mesh.name.clone()])
+            .unwrap_or_default();
+        let convex = if b.convex.is_empty() { &own } else { &b.convex };
+        let hull_points: Vec<Vec<Vec3>> = convex
             .iter()
             .map(|n| mesh_points(n, m))
             .collect::<Result<_>>()?;
@@ -247,7 +257,10 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
                 other: other_of(&s.other)?,
                 origin: from,
                 axis: (to - from).normalize_or_zero(),
-                limits: s.limits.map(|[lo, hi]| (lo, hi)),
+                // The original's limits count the other way along the axis
+                // (inferred: the balloon's slide box has −30000 / 0 and is
+                // pushed towards `_far`; research findings 13).
+                limits: s.limits.map(|[lo, hi]| (-hi, -lo)),
             });
         }
         let point = |a: &bb::SpringAnchor| -> Result<Vec3> {
@@ -295,6 +308,7 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
                 point: point(&f.position)?,
                 direction: direction.normalize_or_zero(),
                 value: f.value,
+                graph: f.graph.clone(),
             });
         }
         for h in &setup.hinges {
@@ -303,6 +317,7 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
             let f = world[object(&h.frame)?];
             plan.hinges.push(PlannedHinge {
                 body,
+                breakable: h.breakable,
                 other,
                 pivot: f.transform_point3(Vec3::ZERO),
                 axis: f.transform_vector3(Vec3::Z).normalize_or_zero(),

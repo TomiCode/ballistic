@@ -26,7 +26,7 @@
 use ballistic_bundle::Scene;
 use ballistic_physics::{Mat4, Vec3};
 
-use crate::props::LevelEnd;
+use crate::modules::LevelEnd;
 
 /// Frames between deactivating one sector and activating the next
 /// (`Gameplay_SectorManager`: a 4-frame link delay).
@@ -368,6 +368,13 @@ impl Progress {
     /// Where the ball respawns.
     pub fn reset_point(&self) -> Option<Mat4> {
         self.layout.reset_points.get(self.reset).copied()
+    }
+
+    /// Where the level end's platform is now (it hangs from the balloon).
+    pub fn set_level_end_target(&mut self, platform: Vec3) {
+        if let Some(e) = self.level_end.as_mut() {
+            e.platform = platform;
+        }
     }
 
     /// Where to go next: the next checkpoint's flame, then the level end's
