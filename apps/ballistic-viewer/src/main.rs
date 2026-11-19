@@ -2,6 +2,7 @@
 
 mod follow;
 mod play;
+mod progress;
 mod props;
 mod window;
 
@@ -54,7 +55,7 @@ pub struct Args {
     #[arg(long)]
     play: bool,
     /// Scripted input for play mode in screenshots: `up:2,rotate+left:0.4,wait:1`
-    /// (keys held for seconds; keys: up down left right rotate lift wait).
+    /// (keys held for seconds; keys: up down left right rotate lift wait, and next = warp to the next checkpoint first).
     #[arg(long)]
     play_script: Option<String>,
 }
@@ -179,8 +180,17 @@ pub fn options(args: &Args) -> RenderOptions {
     }
 }
 
-/// Parses `up:2,rotate+left:0.4,wait:1` into (held keys, seconds) segments.
-pub fn parse_play_script(s: &str) -> Result<Vec<(Vec<play::PlayKey>, f32)>> {
+/// One segment of a play script: keys held for some seconds, after an
+/// optional warp to the next checkpoint (`next`).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Segment {
+    pub keys: Vec<play::PlayKey>,
+    pub seconds: f32,
+    pub warp: bool,
+}
+
+/// Parses `up:2,rotate+left:0.4,wait:1,next:1` into segments.
+pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
     use play::PlayKey as K;
     s.split(',')
         .filter(|p| !p.trim().is_empty())
@@ -193,6 +203,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<(Vec<play::PlayKey>, f32)>> {
                 .parse()
                 .with_context(|| format!("segment {part:?}"))?;
             anyhow::ensure!(seconds >= 0.0, "segment {part:?}: negative duration");
+            let warp = keys.split('+').any(|k| k.trim() == "next");
             let keys = keys
                 .split('+')
                 .filter_map(|k| match k.trim() {
@@ -202,11 +213,15 @@ pub fn parse_play_script(s: &str) -> Result<Vec<(Vec<play::PlayKey>, f32)>> {
                     "right" => Some(Ok(K::Right)),
                     "rotate" => Some(Ok(K::Rotate)),
                     "lift" => Some(Ok(K::Lift)),
-                    "wait" => None,
+                    "wait" | "next" => None,
                     other => Some(Err(anyhow::anyhow!("unknown key {other:?}"))),
                 })
                 .collect::<Result<Vec<_>>>()?;
-            Ok((keys, seconds))
+            Ok(Segment {
+                keys,
+                seconds,
+                warp,
+            })
         })
         .collect()
 }
@@ -240,7 +255,11 @@ fn screenshot(
             scene.renderer.set_object_hidden(i, true);
         }
         let dt = 1.0 / 60.0;
-        for (keys, seconds) in parse_play_script(args.play_script.as_deref().unwrap_or("wait:1"))? {
+        for seg in parse_play_script(args.play_script.as_deref().unwrap_or("wait:1"))? {
+            let (keys, seconds) = (seg.keys, seg.seconds);
+            if seg.warp {
+                p.warp_to_next_checkpoint();
+            }
             for &k in &keys {
                 p.input(k, true);
             }
@@ -261,11 +280,14 @@ fn screenshot(
             }
         }
         eprintln!(
-            "play: {} after {} steps, {} respawns, {} props",
+            "play: {} after {} steps, {} respawns, {} props ({} active), checkpoints {}/{}",
             p.status(),
             p.world.steps,
             p.respawns,
-            p.prop_count()
+            p.prop_count(),
+            p.progress().0,
+            p.progress().1,
+            p.progress().2
         );
         Some(p)
     } else {

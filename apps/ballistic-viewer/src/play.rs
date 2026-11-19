@@ -24,6 +24,7 @@ use ballistic_render::{Camera, Gpu, RenderOptions};
 use glam::Mat4;
 
 use crate::follow::Follow;
+use crate::progress::{self, Progress};
 use crate::props::Props;
 use crate::{LoadedScene, load_scene};
 
@@ -81,6 +82,7 @@ pub struct Play {
     snap_next_frame: Option<f32>,
     follow: Follow,
     props: Props,
+    progress: Progress,
     pub respawns: u32,
 }
 
@@ -114,8 +116,14 @@ impl Play {
         };
         let mut world = World::new(config, statics);
         let props = Props::new(gpu, bundle, level, &physics, &mut world, format)?;
+        let layout = progress::layout(level, |key| bundle.scene(key).ok());
+        let spawn_matrix = layout.reset_points.first().copied();
+        let progress = Progress::start(layout);
 
-        let (start, heading) = spawn_point(level)?;
+        let (start, heading) = match spawn_matrix {
+            Some(m) => reset_pose(m),
+            None => level_start(level)?,
+        };
 
         let active_ball = physics
             .balls
@@ -157,6 +165,7 @@ impl Play {
             snap_next_frame: None,
             follow: Follow::new(start, heading),
             props,
+            progress,
             respawns: 0,
         };
         // Show only the active ball.
@@ -266,6 +275,15 @@ impl Play {
         }
     }
 
+    /// Development aid: puts the ball, at rest, on the next checkpoint's flame.
+    pub fn warp_to_next_checkpoint(&mut self) {
+        let Some(cp) = self.progress.next_checkpoint() else {
+            return;
+        };
+        self.world.reset_body(self.ball, cp.flame);
+        self.follow.reset(cp.flame, self.heading_view);
+    }
+
     pub fn cycle_ball(&mut self) {
         self.active_ball = (self.active_ball + 1) % self.physics.balls.len();
         let pos = self
@@ -290,14 +308,26 @@ impl Play {
 
     /// Back to the spawn point; the camera rig is reset with the ball.
     pub fn respawn(&mut self) {
+        // The ball comes back at the current reset point (the start, until a
+        // checkpoint is reached); the current sector is reset.
+        if let Some(m) = self.progress.reset_point() {
+            (self.start, self.start_heading) = reset_pose(m);
+        }
+        self.progress.respawn();
+        self.apply_sector_changes();
         self.world.reset_body(self.ball, self.start);
         self.follow.reset(self.start, self.start_heading);
         self.heading_ref = self.start_heading;
         self.heading_view = self.start_heading;
         self.turn = None;
         self.snap_next_frame = None;
-        self.props.reset(&mut self.world);
         self.respawns += 1;
+    }
+
+    fn apply_sector_changes(&mut self) {
+        for (sector, on) in self.progress.take_changes() {
+            self.props.set_sector_active(&mut self.world, sector, on);
+        }
     }
 
     /// One frame: camera script, then physics.
@@ -333,6 +363,12 @@ impl Play {
 
         self.world.advance(real_dt);
         self.props.update(&mut self.world, self.fall_y);
+        if let Some(ball) = self.world.body(self.ball).map(|b| b.position)
+            && let Some(i) = self.progress.frame(ball)
+        {
+            eprintln!("checkpoint {} reached", i + 1);
+        }
+        self.apply_sector_changes();
 
         if self
             .world
@@ -353,6 +389,15 @@ impl Play {
 
     pub fn prop_count(&self) -> usize {
         self.props.count()
+    }
+
+    /// (active props, checkpoints reached, checkpoints).
+    pub fn progress(&self) -> (usize, usize, usize) {
+        (
+            self.props.active_count(),
+            self.progress.reached(),
+            self.progress.checkpoint_count(),
+        )
     }
 
     pub fn ball_pose(&self) -> Option<(Vec3, Quat)> {
@@ -415,9 +460,11 @@ impl Play {
     pub fn status(&self) -> String {
         let b = self.world.body(self.ball);
         format!(
-            "{} speed {:.1} {}{}{}",
+            "{} speed {:.1} checkpoint {}/{} {}{}{}",
             self.ball_name(),
             b.map_or(0.0, |b| b.velocity.length()),
+            self.progress.reached(),
+            self.progress.checkpoint_count(),
             if self.nav_on { "" } else { "[no control] " },
             if self.turn.is_some() {
                 "[turning] "
@@ -435,26 +482,29 @@ impl Play {
 
 /// Spawn position and camera heading: the first reset point (sector 1), or the
 /// level start marker if a level has none.
-fn spawn_point(level: &ballistic_bundle::Scene) -> Result<(Vec3, f32)> {
-    let object = |group: &str| {
-        let g = level.groups.iter().find(|g| g.name == group)?;
-        g.members
-            .iter()
-            .map(|&i| &level.objects[i as usize])
-            .min_by(|a, b| a.name.cmp(&b.name))
-    };
-    let (obj, lift) = match object("PR_Resetpoints") {
-        Some(o) => (o, 0.0),
-        None => (
-            object("PS_Levelstart").context("level has no reset point or start marker")?,
-            3.0,
-        ),
-    };
-    let m = Mat4::from_cols_array_2d(&obj.transform);
-    let position = m.transform_point3(Vec3::ZERO) + Vec3::Y * lift;
-    // The rig looks along its root's −X (`Camera.nmo`); snap to the 90° grid.
+/// Ball position and camera heading for a reset point's world matrix: the
+/// scripts put both the ball and the rig root `Cam_MF` there, and the rig
+/// looks along its root's −X (`Camera.nmo`), snapped to the 90° grid.
+fn reset_pose(m: Mat4) -> (Vec3, f32) {
     let heading = snap90(heading_of(m.transform_vector3(Vec3::NEG_X)));
-    Ok((position, heading))
+    (m.transform_point3(Vec3::ZERO), heading)
+}
+
+/// Fallback for a level without reset points: above the start marker.
+fn level_start(level: &ballistic_bundle::Scene) -> Result<(Vec3, f32)> {
+    let g = level
+        .groups
+        .iter()
+        .find(|g| g.name == "PS_Levelstart")
+        .context("level has no reset point or start marker")?;
+    let obj = g
+        .members
+        .iter()
+        .map(|&i| &level.objects[i as usize])
+        .min_by(|a, b| a.name.cmp(&b.name))
+        .context("empty PS_Levelstart group")?;
+    let (pos, heading) = reset_pose(Mat4::from_cols_array_2d(&obj.transform));
+    Ok((pos + Vec3::Y * 3.0, heading))
 }
 
 fn body_desc(b: &BallParams, position: Vec3) -> BodyDesc {

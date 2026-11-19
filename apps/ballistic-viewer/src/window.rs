@@ -32,7 +32,8 @@ play mode (--play):
   arrows                     roll the ball (relative to the camera)
   Shift + Left / Right       turn the camera 90°
   Space                      lift the camera (hold)
-  R  respawn                 1  next ball type";
+  R  respawn                 1  next ball type
+  N  warp to the next checkpoint (development aid)";
 
 pub fn run(args: Args, bundle: Bundle) -> Result<()> {
     println!("{HELP}");
@@ -282,6 +283,10 @@ impl State {
             }
             if pressed && code == KeyCode::Digit1 {
                 play.cycle_ball();
+                return Ok(());
+            }
+            if pressed && code == KeyCode::KeyN {
+                play.warp_to_next_checkpoint();
                 return Ok(());
             }
         }

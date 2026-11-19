@@ -155,7 +155,9 @@ pub fn build(opts: &Options) -> Result<Report> {
         .map(|(key, path)| {
             let file = ckfile::CkFile::open(path)
                 .with_context(|| format!("reading {}", path.display()))?;
-            if !scenes::has_geometry(&file) {
+            // Prefabs are kept without geometry too: the engine needs their
+            // frame layout (e.g. where a checkpoint's flame is).
+            if !scenes::has_geometry(&file) && !key.starts_with("ph/") {
                 return Ok(None);
             }
             let c = scenes::convert(&file, &resolver)

@@ -25,7 +25,7 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--screenshot out.png [--size 1920x1080]` | Render one frame off-screen and exit, no window |
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
 | `--play` | Play mode: roll a ball on the level |
-| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`. With `--camera` too, the camera stays at that view instead of following the ball |
+| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`, and `next`, which warps to the next checkpoint at the start of its segment. With `--camera` too, the camera stays at that view instead of following the ball |
 
 The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 
@@ -60,7 +60,8 @@ behind it, both as the original sets them. Control works like the original:
 | Arrows | Push the ball forward / back / left / right, relative to the camera |
 | **Shift** + **Left / Right** | Turn the camera 90° |
 | **Space** (hold) | Lift view: the camera rises 50 units for a look from above |
-| **R** | Respawn |
+| **R** | Respawn (at the current reset point) |
+| **N** | Warp to the next checkpoint (development aid) |
 | **1** | Next ball type (wood, stone, paper) |
 
 Details carried over from the original's scripts:
@@ -78,10 +79,19 @@ Physics is described in [physics.md](physics.md).
 **Props.** Boxes, loose balls and domes stand where the level's placeholders
 are (the placeholders themselves are hidden, as the game replaces them), drawn
 with their prefabs. You can push boxes and balls around; domes don't move.
-Unlike the original, every prop is active from the start (the game activates
-them sector by sector as you pass checkpoints), all of them return to their
-places when you respawn, and a prop that falls out of the level is gone until
-then.
+
+**Checkpoints and sectors** work like the original's scripts. Props belong to
+the sector they're placed in, and only the current sector's props are there.
+Checkpoints must be passed in order. Rolling through the next one (within
+6.5 of its flame) does three things:
+- moves the respawn point on;
+- removes the previous sector's props;
+- brings in the next sector's, back at their places, 4 frames later.
+
+A respawn resets the current sector's props. The window title shows the
+checkpoints reached. The checkpoint flames aren't drawn yet (they're
+particles), and after the last checkpoint nothing happens yet (the level end).
+A prop that falls out of the level is gone until its sector is entered again.
 
 The camera follows like the original: a point chases the ball, and the camera
 chases a spot 22 units behind and 35 above that point, with the original's pull
@@ -117,5 +127,5 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: moving level parts, pickups, transformers, checkpoints and
-  sectors, the level end
+- In play mode: moving level parts, pickups, transformers, checkpoint flames,
+  the level end

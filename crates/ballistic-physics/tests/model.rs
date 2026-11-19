@@ -303,3 +303,24 @@ fn stacked_boxes_stay_stacked() {
         u.velocity
     );
 }
+
+#[test]
+fn switched_off_material_doesnt_collide() {
+    let mut floor = plane(50.0, 0.0, "Floor");
+    floor.set_material_enabled(0, false);
+    let mut w = World::new(WorldConfig::default(), floor);
+    let b = w.add_body(ball(2.5));
+    for _ in 0..66 {
+        w.step();
+    }
+    assert!(
+        w.body(b).unwrap().position.y < 0.0,
+        "landed on a disabled floor"
+    );
+    w.statics.set_material_enabled(0, true);
+    w.set_pose(b, Vec3::new(0.0, 2.5, 0.0), Quat::IDENTITY);
+    for _ in 0..132 {
+        w.step();
+    }
+    assert!((w.body(b).unwrap().position.y - 2.0).abs() < 0.05);
+}

@@ -40,7 +40,9 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
 2. **Converts** in parallel:
    - levels, prefabs, ball models and menu scenes → engine scenes (GPU-ready
      vertex/index buffers, materials, objects, groups), converted to a
-     right-handed coordinate system
+     right-handed coordinate system. Files without geometry are skipped, except
+     prefabs (`3D Entities/PH/`), whose frames the engine uses (e.g. a
+     checkpoint's flame position)
    - textures (BMP/TGA) → KTX2 with a full mip chain, BC1 (opaque) or BC3 (alpha)
    - sounds (WAV) → Ogg Vorbis
    - physics parameters (gravity, time factor, ball types, level surfaces,

@@ -25,6 +25,8 @@ pub(crate) struct Triangle {
 pub struct StaticMesh {
     pub(crate) triangles: Vec<Triangle>,
     pub(crate) materials: Vec<SurfaceMaterial>,
+    /// Per material: switched off (its triangles don't collide).
+    disabled: Vec<bool>,
     bvh: Bvh,
     dirty: bool,
 }
@@ -40,7 +42,24 @@ pub(crate) struct Closest {
 impl StaticMesh {
     pub fn add_material(&mut self, m: SurfaceMaterial) -> u32 {
         self.materials.push(m);
+        self.disabled.push(false);
         self.materials.len() as u32 - 1
+    }
+
+    /// Switches a material's triangles on or off (e.g. a fixed prop whose
+    /// sector is inactive). No rebuild needed.
+    pub fn set_material_enabled(&mut self, material: u32, enabled: bool) {
+        if let Some(d) = self.disabled.get_mut(material as usize) {
+            *d = !enabled;
+        }
+    }
+
+    pub(crate) fn material_enabled(&self, material: u32) -> bool {
+        !self
+            .disabled
+            .get(material as usize)
+            .copied()
+            .unwrap_or(false)
     }
 
     /// Adds a world-space triangle. Degenerate triangles are skipped.

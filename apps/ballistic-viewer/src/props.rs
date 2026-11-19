@@ -1,9 +1,9 @@
 //! Placed props in play mode (`P_Box`, `P_Ball_*`, `P_Dome`): physics bodies at
 //! the level's placeholders, drawn with their prefabs' meshes.
 //!
-//! The original activates and deactivates props per sector as the player passes
-//! checkpoints. Until sectors are implemented, every prop is active from the
-//! start, and all of them return to their placeholders on respawn.
+//! Like the original (research findings 12), props are active per sector: an
+//! inactive prop is out of the simulation and hidden, and activating a sector
+//! puts its props back at their placeholders. [`crate::progress`] decides when.
 
 use std::collections::HashMap;
 
@@ -23,10 +23,14 @@ struct Part {
 }
 
 struct Prop {
+    sector: u32,
+    active: bool,
     /// Spawn state of a dynamic prop (`None`: fixed).
     desc: Option<BodyDesc>,
-    /// `None` when fixed, or when it fell out of the level.
+    /// `None` when inactive, fixed, or fallen out of the level.
     body: Option<BodyId>,
+    /// A fixed prop's own static material (switched with its sector).
+    fixed_material: Option<u32>,
     parts: Vec<Part>,
 }
 
@@ -47,7 +51,12 @@ struct Prefab {
 }
 
 impl Props {
-    /// Adds the level's props to `world` (fixed ones to its static geometry).
+    /// Adds the level's props to `world`, all inactive (fixed ones to its
+    /// static geometry, switched off).
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one pass: prefabs, merged scene, bodies"
+    )]
     pub fn new(
         gpu: &Gpu,
         bundle: &mut Bundle,
@@ -110,7 +119,11 @@ impl Props {
             let Some(Some(pf)) = prefabs.get(&s.group) else {
                 continue;
             };
-            props::add_fixed(&mut world.statics, &pf.params, &pf.collider, s.transform);
+            let fixed_material =
+                props::add_fixed(&mut world.statics, &pf.params, &pf.collider, s.transform);
+            if let Some(m) = fixed_material {
+                world.statics.set_material_enabled(m, false);
+            }
             let desc = props::body_desc(&pf.params, &pf.collider, s.transform);
             // Drawn relative to the body: the body's origin is the shape centre.
             let center = match pf.collider {
@@ -140,8 +153,14 @@ impl Props {
                 });
                 merged.objects.push(obj);
             }
-            let body = desc.clone().map(|d| world.add_body(d));
-            list.push(Prop { desc, body, parts });
+            list.push(Prop {
+                sector: s.sector,
+                active: false,
+                desc,
+                body: None,
+                fixed_material,
+                parts,
+            });
         }
         world.statics.finish();
 
@@ -166,15 +185,29 @@ impl Props {
         self.items.len()
     }
 
-    /// Back to the placeholders, at rest (fallen props return).
-    pub fn reset(&mut self, world: &mut World) {
-        for p in &mut self.items {
-            let Some(d) = &p.desc else { continue };
-            match p.body {
-                Some(id) => world.set_pose(id, d.position, d.orientation),
-                None => p.body = Some(world.add_body(d.clone())),
+    /// Activates (back at the placeholder, at rest; fallen props return) or
+    /// deactivates (out of the simulation, hidden) every prop of a sector.
+    pub fn set_sector_active(&mut self, world: &mut World, sector: u32, on: bool) {
+        for p in self.items.iter_mut().filter(|p| p.sector == sector) {
+            p.active = on;
+            if let Some(m) = p.fixed_material {
+                world.statics.set_material_enabled(m, on);
+            }
+            match (on, p.body, &p.desc) {
+                (true, Some(id), Some(d)) => world.set_pose(id, d.position, d.orientation),
+                (true, None, Some(d)) => p.body = Some(world.add_body(d.clone())),
+                (false, Some(id), _) => {
+                    world.remove_body(id);
+                    p.body = None;
+                }
+                _ => {}
             }
         }
+    }
+
+    /// Number of active props.
+    pub fn active_count(&self) -> usize {
+        self.items.iter().filter(|p| p.active).count()
     }
 
     /// Removes props that fell below `fall_y`.
@@ -206,7 +239,11 @@ impl Props {
         };
         for p in &self.items {
             if p.desc.is_none() {
-                continue; // fixed: drawn where placed
+                // Fixed: drawn where placed, while active.
+                for part in &p.parts {
+                    r.set_object_hidden(part.object, !p.active);
+                }
+                continue;
             }
             let pose = p
                 .body

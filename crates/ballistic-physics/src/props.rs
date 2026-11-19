@@ -168,16 +168,18 @@ pub fn body_desc(
     })
 }
 
-/// Adds a fixed prop's triangles at `transform` to static geometry. Call
+/// Adds a fixed prop's triangles at `transform` to static geometry, with a
+/// material of its own (to switch it off with [`StaticMesh::set_material_enabled`]).
+/// Returns that material, or `None` if the prop isn't fixed. Call
 /// [`StaticMesh::finish`] afterwards.
 pub fn add_fixed(
     statics: &mut StaticMesh,
     params: &bb::PropParams,
     collider: &Collider,
     transform: Mat4,
-) {
+) -> Option<u32> {
     let Collider::Mesh { triangles } = collider else {
-        return;
+        return None;
     };
     let material = statics.add_material(SurfaceMaterial {
         friction: params.friction,
@@ -188,6 +190,7 @@ pub fn add_fixed(
         let [a, b, c] = t.map(|v| transform.transform_point3(v));
         statics.add_triangle(a, b, c, material);
     }
+    Some(material)
 }
 
 #[cfg(test)]

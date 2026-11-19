@@ -513,7 +513,9 @@ fn sphere_statics(
     let mut raw: Vec<(Contact, u32, bool)> = Vec::new();
     statics.query(&b.aabb(), |ti| {
         let t = &statics.triangles[ti as usize];
-        if ignores(cfg, &b.group, &statics.materials[t.material as usize].group) {
+        if !statics.material_enabled(t.material)
+            || ignores(cfg, &b.group, &statics.materials[t.material as usize].group)
+        {
             return;
         }
         let c = closest_point(b.position, t.a, t.b, t.c);
@@ -566,7 +568,9 @@ fn box_statics(
     let mut merged: Vec<(Contact, u32)> = Vec::new();
     statics.query(&b.aabb(), |ti| {
         let t = &statics.triangles[ti as usize];
-        if ignores(cfg, &b.group, &statics.materials[t.material as usize].group) {
+        if !statics.material_enabled(t.material)
+            || ignores(cfg, &b.group, &statics.materials[t.material as usize].group)
+        {
             return;
         }
         let tri = Poly::triangle(t.a, t.b, t.c, t.normal);
