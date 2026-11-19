@@ -29,7 +29,7 @@ mod world;
 pub use glam::{Mat4, Quat, Vec3};
 pub use hull::Hull;
 pub use level::{LevelBuildReport, build_level};
-pub use mesh::{StaticMesh, SurfaceMaterial};
+pub use mesh::{SoundIds, StaticMesh, SurfaceMaterial};
 pub use shape::Shape;
 pub use world::{Body, BodyDesc, BodyId, Collision, JointId, PushId, World};
 

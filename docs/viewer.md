@@ -154,7 +154,17 @@ silent if there's none):
 - paper pieces play `Pieces_Paper` once at the burst;
 - for 3 s after a wood or stone burst, six of the pieces play their sound
   when they hit the level, louder for harder hits (the original's collision
-  sound rules).
+  sound rules);
+- the ball's **hits**: hitting stone, wood, metal or a dome faster than 2
+  (1 for domes) plays the ball type's hit sound for it, louder for harder
+  hits, at most once a second per surface kind (metal: every 2 s);
+- the ball's **rolls**: after 0.3 s on stone, wood or metal, that roll sound
+  loops until 0.3 s after the ball leaves it. Louder and higher the faster the
+  ball goes; the paper ball has one roll sound.
+
+Hits and rolls only sound while ball control is on: not during a
+transformation, nor after the finish. Surfaces get their kind from the level's
+sound groups, props and moving elements from their prefabs.
 
 With `--screenshot` nothing is played; the summary counts the sounds.
 A prop that falls out of the level is gone until its sector is entered again.
@@ -194,5 +204,5 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
 - In play mode: pickups, checkpoint flames and fan particles, the other
-  sounds (ball hits and rolls, events, music), the paper pieces' wind, the end
+  sounds (events, the wooden flaps, music), the paper pieces' wind, the end
   sequence (and the last level's UFO) and score

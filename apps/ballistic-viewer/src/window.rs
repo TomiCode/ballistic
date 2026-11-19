@@ -492,10 +492,12 @@ impl ApplicationHandler for App {
                 }
                 if let Some(play) = state.play.as_mut() {
                     let sounds = play.take_sounds();
+                    let loops = play.loops();
                     if let Some(audio) = self.audio.as_mut() {
                         for (key, volume) in sounds {
                             audio.play(&mut self.bundle, &key, volume);
                         }
+                        audio.sync_loops(&mut self.bundle, &loops);
                     }
                 }
             }

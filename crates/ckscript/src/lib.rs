@@ -12,6 +12,7 @@
 //! repository (`findings/08-script-graphs.md`).
 
 mod array;
+pub mod attributes;
 mod behavior;
 pub mod catalogue;
 pub mod conform;

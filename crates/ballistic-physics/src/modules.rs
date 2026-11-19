@@ -109,6 +109,24 @@ pub struct FixedPart {
     pub elasticity: f32,
     pub group: String,
     pub triangles: Vec<[Vec3; 3]>,
+    /// Filled by [`apply_sounds`].
+    pub sound: crate::SoundIds,
+}
+
+/// Gives a plan's bodies and fixed parts their objects' sound IDs.
+pub fn apply_sounds(
+    plan: &mut ModulePlan,
+    prefab: &bb::Scene,
+    scene_key: &str,
+    sounds: &bb::BallSounds,
+) {
+    let id = |i: usize| crate::props::object_sound(sounds, scene_key, &prefab.objects[i].name);
+    for b in &mut plan.bodies {
+        b.desc.sound = id(b.object);
+    }
+    for f in &mut plan.fixed {
+        f.sound = id(f.object);
+    }
 }
 
 /// Whether a module is simulated (all its physics is supported), or a fixed
@@ -203,6 +221,7 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
                 elasticity: b.elasticity,
                 group: b.collision_group.clone(),
                 triangles,
+                sound: crate::SoundIds::default(),
             });
             continue;
         }
@@ -229,6 +248,7 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
                 group: b.collision_group.clone(),
                 asleep: b.start_frozen,
                 collides: b.collision,
+                sound: crate::SoundIds::default(),
             },
             object_from_body,
         });

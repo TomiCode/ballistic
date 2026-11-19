@@ -4,12 +4,22 @@ use glam::Vec3;
 
 use crate::bvh::{Aabb, Bvh};
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct SurfaceMaterial {
     pub friction: f32,
     pub elasticity: f32,
     /// Collision group name ("" = none).
     pub group: String,
+    /// What the surface sounds like when hit or rolled on.
+    pub sound: SoundIds,
+}
+
+/// A surface's hit and roll sound IDs (the original's *Coll Detection ID* and
+/// *Continuous Contact ID* attributes; 0: none).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct SoundIds {
+    pub hit: u8,
+    pub roll: u8,
 }
 
 #[derive(Debug, Clone, Copy)]

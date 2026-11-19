@@ -19,6 +19,69 @@ pub struct PhysicsData {
     pub modules: Vec<ModuleSetup>,
     /// Ball transformers (`Gameplay_Ingame > Trafo Manager`).
     pub transformers: TransformerParams,
+    /// The ball's hit and roll sounds (`Sound.nmo`'s `Sound_Manager`).
+    pub sounds: BallSounds,
+}
+
+/// The ball's hit and roll sounds. Hit IDs: 1 stone, 2 wood, 3 metal, 4 dome;
+/// roll IDs: 1 stone, 2 wood, 3 metal.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BallSounds {
+    /// Per ball type (`BallSound`): bundle sound keys.
+    pub sets: Vec<BallSoundSet>,
+    /// *Hit Sounds*: one collision test per hit ID, in ID order.
+    pub hits: Vec<HitTest>,
+    /// `PhysicsContinuousContact`: a roll ID's sound starts after this long
+    /// in contact, and stops after this long without (simulated seconds).
+    pub roll_delay_start_s: f32,
+    pub roll_delay_end_s: f32,
+    /// `MultiRollSoundControl`: the roll sounds' volume is speed × this, with
+    /// the ball's speed in units per real second.
+    pub roll_volume: f32,
+    /// ... and their pitch `[a, b]`: a + speed × b.
+    pub roll_pitch: [f32; 2],
+    /// Level groups whose members get a hit or roll ID (level init).
+    pub hit_groups: Vec<SoundGroup>,
+    pub roll_groups: Vec<SoundGroup>,
+    /// Prefab objects' IDs (their attributes).
+    pub objects: Vec<ObjectSoundIds>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BallSoundSet {
+    /// Ball type name, e.g. `Ball_Wood`.
+    pub ball: String,
+    /// Roll sounds for roll IDs 1, 2, 3.
+    pub roll: Vec<String>,
+    /// Hit sounds for hit IDs 1, 2, 3, 4.
+    pub hit: Vec<String>,
+}
+
+/// A `PhysicsCollDetection` on the ball for one hit ID: hits faster than
+/// `min_speed` play at `min(speed / max_speed, 1)`, then it waits `sleep_s`
+/// (simulated time).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct HitTest {
+    pub id: u8,
+    pub min_speed: f32,
+    pub max_speed: f32,
+    pub sleep_s: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SoundGroup {
+    pub group: String,
+    pub id: u8,
+}
+
+/// An object's hit and roll IDs (0: none).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ObjectSoundIds {
+    /// Prefab scene key, e.g. `ph/p_box`.
+    pub scene: String,
+    pub object: String,
+    pub hit: u8,
+    pub roll: u8,
 }
 
 /// How a transformer swaps the player's ball (`Trafo Manager` in `Gameplay.nmo`).

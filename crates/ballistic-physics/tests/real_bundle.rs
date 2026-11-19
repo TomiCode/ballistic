@@ -127,6 +127,7 @@ fn props_settle_where_they_are_placed() {
                 params(&s.group),
                 &prefabs[&s.group],
                 s.transform,
+                SoundIds::default(),
             );
         }
         statics.finish();

@@ -2,6 +2,7 @@
 //! into a Ballistic bundle. The binary in `main.rs` is a thin CLI over [`pack`].
 
 pub mod audio;
+mod ballsounds;
 pub mod install;
 mod ktx2;
 mod modules;

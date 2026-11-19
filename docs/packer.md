@@ -54,7 +54,10 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      and each ball type's burst into pieces from `Balls.nmo` (progression
      curves decoded from their 2D curve parameters). Also their sounds: the
      Trafo Manager's messages to the sound scripts, followed by name into
-     `Sound.nmo`, and the pieces' collision sounds → `data/physics.json`
+     `Sound.nmo`, and the pieces' collision sounds. The ball's hit and roll
+     sounds come from `Sound.nmo`'s `Sound_Manager` and its `BallSound` table,
+     the level sound groups from `Levelinit.nmo`, and the prefab objects'
+     hit and roll IDs from their attributes → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

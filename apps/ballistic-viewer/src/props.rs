@@ -109,12 +109,26 @@ impl Props {
             let Some(Some(pf)) = prefabs.get(&s.group) else {
                 continue;
             };
-            let fixed_material =
-                props::add_fixed(&mut world.statics, &pf.params, &pf.collider, s.transform);
+            // The prefab's main frame's Coll Detection / Continuous Contact IDs.
+            let sound = props::object_sound(
+                &physics.sounds,
+                &format!("ph/{}", s.group.to_lowercase()),
+                &pf.scene.objects[pf.root].name,
+            );
+            let fixed_material = props::add_fixed(
+                &mut world.statics,
+                &pf.params,
+                &pf.collider,
+                s.transform,
+                sound,
+            );
             if let Some(m) = fixed_material {
                 world.statics.set_material_enabled(m, false);
             }
-            let desc = props::body_desc(&pf.params, &pf.collider, s.transform);
+            let desc = props::body_desc(&pf.params, &pf.collider, s.transform).map(|mut d| {
+                d.sound = sound;
+                d
+            });
             // Drawn relative to the body: the body's origin is the shape centre.
             let center = match pf.collider {
                 Collider::Box { center, .. } => center,

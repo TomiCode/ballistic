@@ -8,6 +8,7 @@ fn plane(size: f32, tilt_deg: f32, group: &str) -> StaticMesh {
         friction: 0.7,
         elasticity: 0.3,
         group: group.into(),
+        ..SurfaceMaterial::default()
     });
     let rot = Quat::from_rotation_x(tilt_deg.to_radians());
     let p = |x: f32, z: f32| rot * Vec3::new(x, 0.0, z);

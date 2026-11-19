@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 9,
+  "format_version": 10,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -175,7 +175,17 @@ and useful to read). Since version 2.
       "sounds": { "sound": "pieces_wood", "colliders": ["Ball_Wood_piece11", "…"],
         "min_speed": 2.0, "max_speed": 25.0, "sleep_s": 0.5, "listen_ms": 3000.0 } }, "…" ],
     "pieces_fade_after_ms": 20000.0,
-    "sound": { "sound": "misc_trafo", "delay_frames": 1 } }
+    "sound": { "sound": "misc_trafo", "delay_frames": 1 } },
+  "sounds": {
+    "sets": [ { "ball": "Ball_Wood",
+      "roll": ["roll_wood_stone", "roll_wood_wood", "roll_wood_metal"],
+      "hit": ["hit_wood_stone", "hit_wood_wood", "hit_wood_metal", "hit_wood_dome"] }, "…" ],
+    "hits": [ { "id": 1, "min_speed": 2.0, "max_speed": 30.0, "sleep_s": 1.0 }, "…" ],
+    "roll_delay_start_s": 0.3, "roll_delay_end_s": 0.3,
+    "roll_volume": 0.05, "roll_pitch": [0.5, 0.01],
+    "hit_groups": [ { "group": "Sound_HitID_01", "id": 1 }, "…" ],
+    "roll_groups": [ { "group": "Sound_RollID_01", "id": 1 }, "…" ],
+    "objects": [ { "scene": "ph/p_box", "object": "P_Box_MF", "hit": 2, "roll": 0 }, "…" ] }
 }
 ```
 
@@ -253,6 +263,20 @@ and useful to read). Since version 2.
   - `pieces_fade_after_ms`: when a type's pieces fade out after a
     transformation from it.
   - `sound`: the sound the trigger plays, `delay_frames` later.
+- `sounds`: the ball's hit and roll sounds. Hit IDs: 1 stone, 2 wood, 3
+  metal, 4 dome; roll IDs: 1 stone, 2 wood, 3 metal.
+  - `sets`: per ball type, the bundle sound keys for each roll ID and hit ID.
+  - `hits`: one test per hit ID. A hit faster than `min_speed` plays at
+    `min(speed / max_speed, 1)`, then that ID waits `sleep_s` (simulated
+    time).
+  - `roll_delay_start_s`, `roll_delay_end_s`: a roll sound starts after this
+    long in contact, and stops after this long without.
+  - `roll_volume`, `roll_pitch`: the roll sounds' volume (speed ×
+    `roll_volume`) and pitch (`roll_pitch[0]` + speed × `roll_pitch[1]`). The
+    speed is in units per real second.
+  - `hit_groups`, `roll_groups`: level groups whose members get that ID.
+  - `objects`: prefab objects' IDs (their attributes), by prefab scene key
+    and object name.
 
 ## Versioning rules
 
@@ -265,4 +289,4 @@ and useful to read). Since version 2.
   (`PE_Balloon`), hinge `breakable`, force `graph`, and own-mesh bodies.
   **7** adds `transformers`. **8** adds the transformer `animation`, the
   ball `pieces` and `pieces_fade_after_ms`. **9** adds the transformer
-  `sound` and the pieces' `sounds`.
+  `sound` and the pieces' `sounds`. **10** adds the ball's `sounds`.

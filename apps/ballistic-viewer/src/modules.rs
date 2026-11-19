@@ -158,13 +158,14 @@ impl Modules {
             let mesh_offset = append_prefab(&mut merged, &prefab);
             for s in &spawns {
                 placeholders.push(s.placeholder as usize);
-                let plan = match modules::plan(setup, &prefab, s.transform) {
+                let mut plan = match modules::plan(setup, &prefab, s.transform) {
                     Ok(p) => p,
                     Err(e) => {
                         eprintln!("warning: {}: {e:#}; drawn only", setup.group);
                         ModulePlan::default()
                     }
                 };
+                modules::apply_sounds(&mut plan, &prefab, &key, &physics.sounds);
                 let module = place(
                     setup,
                     &prefab,
@@ -197,10 +198,11 @@ impl Modules {
             let mesh_offset = append_prefab(&mut merged, &prefab);
             let transform = Mat4::from_cols_array_2d(&ph.transform);
             let sector = crate::progress::last_sector(level);
-            let plan = modules::plan(setup, &prefab, transform).unwrap_or_else(|e| {
+            let mut plan = modules::plan(setup, &prefab, transform).unwrap_or_else(|e| {
                 eprintln!("warning: {base}: {e:#}; drawn only");
                 ModulePlan::default()
             });
+            modules::apply_sounds(&mut plan, &prefab, &key, &physics.sounds);
             let module = place(
                 setup,
                 &prefab,
@@ -545,6 +547,7 @@ fn place(
             friction: f.friction,
             elasticity: f.elasticity,
             group: f.group.clone(),
+            sound: f.sound,
         });
         world.statics.set_material_enabled(mat, false);
         for t in &f.triangles {

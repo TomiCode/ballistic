@@ -52,7 +52,13 @@ options so they can be calibrated later.
 - **Collision reports**: a body can report its collisions (for sounds). A
   collision is a contact pair, with another body or static geometry, that
   wasn't touching at the step before. It's reported with the relative speed
-  at the contact point and the simulated time.
+  at the contact point, the simulated time, and the sound IDs of what was
+  hit.
+- **Sound IDs**: static surfaces and bodies carry a hit ID and a roll ID. The
+  level builder gives level objects theirs from the level's sound groups; the
+  viewer gives props' and moving elements' theirs from the prefab
+  attributes. A reporting body also gets, each step, the IDs of everything it
+  touches (for roll sounds).
 
 ## Time
 

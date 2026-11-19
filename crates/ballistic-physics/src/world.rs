@@ -7,7 +7,7 @@ use glam::{Mat3, Quat, Vec3};
 
 use crate::bvh::Aabb;
 use crate::collide::{self, Contact, Point, Poly};
-use crate::mesh::{StaticMesh, closest_point};
+use crate::mesh::{SoundIds, StaticMesh, closest_point};
 use crate::shape::Shape;
 use crate::{STEP_DT, WorldConfig};
 
@@ -34,6 +34,8 @@ pub struct BodyDesc {
     pub asleep: bool,
     /// Takes part in collisions (the original's "Enable Collision").
     pub collides: bool,
+    /// What the body sounds like when hit or rolled on.
+    pub sound: SoundIds,
 }
 
 impl Default for BodyDesc {
@@ -50,6 +52,7 @@ impl Default for BodyDesc {
             group: String::new(),
             asleep: false,
             collides: true,
+            sound: SoundIds::default(),
         }
     }
 }
@@ -73,6 +76,7 @@ pub struct Body {
     pub asleep: bool,
     /// Takes part in collisions.
     pub collides: bool,
+    pub sound: SoundIds,
     /// State before the last step (for render interpolation).
     prev_position: Vec3,
     prev_orientation: Quat,
@@ -204,6 +208,8 @@ struct Manifold {
     contact: Contact,
     friction: f32,
     restitution: f32,
+    /// The static surface's sound, for contacts with static geometry.
+    surface_sound: SoundIds,
 }
 
 #[derive(Debug, Clone)]
@@ -225,6 +231,8 @@ pub struct World {
     /// Pairs in contact at the last step (body, other body or `None`).
     touching: HashSet<(usize, Option<usize>)>,
     collisions: Vec<Collision>,
+    /// What each reporting body touched at the last step.
+    contacts: std::collections::HashMap<usize, Vec<SoundIds>>,
 }
 
 /// A body hitting something (like the original's collision event): a contact
@@ -236,6 +244,8 @@ pub struct Collision {
     pub other: Option<BodyId>,
     /// Relative speed at the contact point (units per simulated second).
     pub speed: f32,
+    /// What was hit sounds like.
+    pub other_sound: SoundIds,
     pub point: Vec3,
     /// Simulated seconds since the world was created.
     pub time: f64,
@@ -256,7 +266,16 @@ impl World {
             listeners: HashSet::new(),
             touching: HashSet::new(),
             collisions: Vec::new(),
+            contacts: std::collections::HashMap::new(),
         }
+    }
+
+    /// What a reporting body touched at the last step (static surfaces and
+    /// bodies, one entry per contact pair).
+    pub fn touching_sounds(&self, body: BodyId) -> &[SoundIds] {
+        self.contacts
+            .get(&(body.0 as usize))
+            .map_or(&[], Vec::as_slice)
     }
 
     /// Whether `body` reports its collisions (see [`Self::take_collisions`]).
@@ -297,6 +316,7 @@ impl World {
             linear_damping: d.linear_damping,
             rotational_damping: d.rotational_damping,
             group: d.group,
+            sound: d.sound,
             inv_inertia,
             asleep: d.asleep,
             collides: d.collides,
@@ -318,6 +338,7 @@ impl World {
         }
         let i = id.0 as usize;
         self.listeners.remove(&i);
+        self.contacts.remove(&i);
         self.touching.retain(|&(a, b)| a != i && b != Some(i));
         for p in &mut self.pushes {
             if p.is_some_and(|p| p.body == id) {
@@ -645,16 +666,35 @@ impl World {
     fn record_collisions(&mut self, manifolds: &[Manifold]) {
         let mut now = HashSet::new();
         let time = self.time();
+        let sound_of = |bodies: &[Option<Body>], i: Option<usize>, surface: SoundIds| {
+            i.map_or(surface, |i| {
+                bodies[i].as_ref().map_or(SoundIds::default(), |b| b.sound)
+            })
+        };
+        self.contacts.clear();
         for m in manifolds {
             let key = match m.b {
                 Some(b) => (m.a.min(b), Some(m.a.max(b))),
                 None => (m.a, None),
             };
-            if !now.insert(key) || self.touching.contains(&key) {
-                continue;
-            }
             let ends = [Some(m.a), m.b];
             if !ends.iter().flatten().any(|i| self.listeners.contains(i)) {
+                now.insert(key);
+                continue;
+            }
+            let first_of_pair = now.insert(key);
+            // What each reporting end touches (once per pair).
+            if first_of_pair {
+                for (me, other) in [(Some(m.a), m.b), (m.b, Some(m.a))] {
+                    if let Some(me) = me
+                        && self.listeners.contains(&me)
+                    {
+                        let s = sound_of(&self.bodies, other, m.surface_sound);
+                        self.contacts.entry(me).or_default().push(s);
+                    }
+                }
+            }
+            if !first_of_pair || self.touching.contains(&key) {
                 continue;
             }
             let Some(p) = m.contact.points.first().map(|p| p.pos) else {
@@ -675,6 +715,7 @@ impl World {
                         body: BodyId(me as u32),
                         other: other.map(|o| BodyId(o as u32)),
                         speed,
+                        other_sound: sound_of(&self.bodies, other, m.surface_sound),
                         point: p,
                         time,
                     });
@@ -929,6 +970,7 @@ impl World {
                     contact,
                     friction: cfg.contact.friction.apply(b.friction, m.friction),
                     restitution: cfg.contact.restitution.apply(b.elasticity, m.elasticity),
+                    surface_sound: m.sound,
                 });
             }
         }
@@ -954,6 +996,7 @@ impl World {
                         contact,
                         friction: cfg.contact.friction.apply(a.friction, b.friction),
                         restitution: cfg.contact.restitution.apply(a.elasticity, b.elasticity),
+                        surface_sound: SoundIds::default(),
                     });
                 }
             }

@@ -10,7 +10,7 @@
 use ballistic_bundle as bb;
 use glam::{Mat4, Vec3};
 
-use crate::mesh::{StaticMesh, SurfaceMaterial};
+use crate::mesh::{SoundIds, StaticMesh, SurfaceMaterial};
 use crate::shape::Shape;
 use crate::world::BodyDesc;
 
@@ -162,6 +162,7 @@ pub fn body_desc(
         return None;
     }
     Some(BodyDesc {
+        sound: SoundIds::default(),
         position: transform.transform_point3(center),
         orientation,
         shape,
@@ -185,6 +186,7 @@ pub fn add_fixed(
     params: &bb::PropParams,
     collider: &Collider,
     transform: Mat4,
+    sound: SoundIds,
 ) -> Option<u32> {
     let Collider::Mesh { triangles } = collider else {
         return None;
@@ -193,12 +195,26 @@ pub fn add_fixed(
         friction: params.friction,
         elasticity: params.elasticity,
         group: params.collision_group.clone(),
+        sound,
     });
     for t in triangles {
         let [a, b, c] = t.map(|v| transform.transform_point3(v));
         statics.add_triangle(a, b, c, material);
     }
     Some(material)
+}
+
+/// A prefab object's sound IDs (its attributes), by prefab scene key
+/// (`ph/p_box`) and object name.
+pub fn object_sound(sounds: &bb::BallSounds, scene: &str, object: &str) -> SoundIds {
+    sounds
+        .objects
+        .iter()
+        .find(|o| o.scene == scene && o.object == object)
+        .map_or(SoundIds::default(), |o| SoundIds {
+            hit: o.hit,
+            roll: o.roll,
+        })
 }
 
 #[cfg(test)]

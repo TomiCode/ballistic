@@ -17,12 +17,12 @@ use ckscript::{Cell, DataArray, ScriptObject, Scripts};
 
 use crate::install::Install;
 
-struct Loaded {
-    file: CkFile,
-    scripts: Scripts,
+pub(crate) struct Loaded {
+    pub(crate) file: CkFile,
+    pub(crate) scripts: Scripts,
 }
 
-fn load(install: &Install, key: &str) -> Result<Loaded> {
+pub(crate) fn load(install: &Install, key: &str) -> Result<Loaded> {
     let path = install.get(key).with_context(|| format!("{key} missing"))?;
     let file = CkFile::open(path).with_context(|| format!("reading {key}"))?;
     let scripts = Scripts::decode(&file).with_context(|| format!("decoding scripts of {key}"))?;
@@ -30,7 +30,7 @@ fn load(install: &Install, key: &str) -> Result<Loaded> {
 }
 
 impl Loaded {
-    fn array(&self, name: &str) -> Result<&DataArray> {
+    pub(crate) fn array(&self, name: &str) -> Result<&DataArray> {
         for (i, o) in self.scripts.objects.iter().enumerate() {
             if let Some(ScriptObject::Array(a)) = o
                 && self.file.objects[i].name.as_deref() == Some(name)
@@ -42,7 +42,7 @@ impl Loaded {
     }
 
     /// Typed view of one row.
-    fn row<'a>(&'a self, a: &'a DataArray, r: &'a [Cell]) -> Row<'a> {
+    pub(crate) fn row<'a>(&'a self, a: &'a DataArray, r: &'a [Cell]) -> Row<'a> {
         Row {
             owner: self,
             array: a,
@@ -51,7 +51,7 @@ impl Loaded {
     }
 }
 
-struct Row<'a> {
+pub(crate) struct Row<'a> {
     owner: &'a Loaded,
     array: &'a DataArray,
     cells: &'a [Cell],
@@ -74,7 +74,7 @@ impl Row<'_> {
         }
     }
 
-    fn string(&self, col: &str) -> Result<String> {
+    pub(crate) fn string(&self, col: &str) -> Result<String> {
         match self.cell(col)? {
             Cell::String(s) => Ok(s.clone()),
             c => bail!("column {col:?}: expected string, got {c:?}"),
@@ -215,6 +215,7 @@ pub fn extract(install: &Install) -> Result<bb::PhysicsData> {
             &gameplay.scripts,
             &balls,
         )?,
+        sounds: crate::ballsounds::extract(install, &balls)?,
         balls,
     })
 }

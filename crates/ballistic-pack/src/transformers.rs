@@ -197,7 +197,7 @@ fn trafo_sound(
 
 /// The behaviour of type `bb` reached from pin `from` through links and Nops
 /// (and the total link delay), within `depth` hops.
-fn follow_to(
+pub(crate) fn follow_to(
     file: &CkFile,
     scripts: &Scripts,
     from: ObjRef,
@@ -511,7 +511,12 @@ fn progression(n: &NodeParams) -> Result<bb::Progression> {
 }
 
 /// The behaviour whose output feeds `node`'s input `pin`.
-fn writer_of(file: &CkFile, scripts: &Scripts, node: ObjRef, pin: &str) -> Option<ObjRef> {
+pub(crate) fn writer_of(
+    file: &CkFile,
+    scripts: &Scripts,
+    node: ObjRef,
+    pin: &str,
+) -> Option<ObjRef> {
     let b = scripts.behavior(node)?;
     let param = b
         .input_params
@@ -524,11 +529,11 @@ fn writer_of(file: &CkFile, scripts: &Scripts, node: ObjRef, pin: &str) -> Optio
     scripts.owner.get(&i.source?).copied()
 }
 
-fn target(n: &NodeParams) -> Option<String> {
+pub(crate) fn target(n: &NodeParams) -> Option<String> {
     text(n.target.as_ref())
 }
 
-fn text(v: Option<&NamedValue>) -> Option<String> {
+pub(crate) fn text(v: Option<&NamedValue>) -> Option<String> {
     match &v?.value {
         Resolved::Constant {
             value: Value::Text(s) | Value::Object(Some(s)),
@@ -567,11 +572,11 @@ fn fed_by(file: &CkFile, scripts: &Scripts, node: ObjRef) -> Vec<String> {
         .collect()
 }
 
-fn input<'a>(n: &'a NodeParams, name: &str) -> Option<&'a NamedValue> {
+pub(crate) fn input<'a>(n: &'a NodeParams, name: &str) -> Option<&'a NamedValue> {
     n.inputs.iter().find(|i| i.name == name)
 }
 
-fn float(v: Option<&NamedValue>) -> Option<f32> {
+pub(crate) fn float(v: Option<&NamedValue>) -> Option<f32> {
     match &v?.value {
         Resolved::Constant {
             value: Value::Float(f),

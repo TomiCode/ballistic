@@ -204,6 +204,7 @@ impl Pieces {
                 group: p.collision_group.clone(),
                 asleep: false,
                 collides: true,
+                sound: ballistic_physics::SoundIds::default(),
             });
             // Physics Impulse: direction and position in the piece's frame.
             world.apply_impulse_at(
@@ -241,13 +242,18 @@ impl Pieces {
 
     /// One frame: the collision sounds, the timers and fades. Returns sounds
     /// to play (key, volume).
-    pub fn frame(&mut self, world: &mut World, real_dt: f32) -> Vec<(String, f32)> {
+    /// `hits`: the world's collisions this frame.
+    pub fn frame(
+        &mut self,
+        world: &mut World,
+        hits: &[ballistic_physics::Collision],
+        real_dt: f32,
+    ) -> Vec<(String, f32)> {
         let ms = real_dt * 1000.0;
         let mut sounds = Vec::new();
-        let hits = world.take_collisions();
         for s in &mut self.sets {
             let snd = &s.params.sounds;
-            for h in &hits {
+            for h in hits {
                 let piece = s
                     .out
                     .iter()

@@ -1,6 +1,7 @@
 //! `ballistic-viewer`: fly around the scenes of a Ballistic bundle.
 
 mod audio;
+mod ballsounds;
 mod follow;
 mod modules;
 mod pieces;
@@ -291,6 +292,7 @@ fn screenshot(
                 p.update(dt);
                 // Headless: counted, not played.
                 p.take_sounds();
+                p.loops();
                 // An explicit --camera stays put (to look at something else).
                 if args.camera.is_none() {
                     camera = p.camera(camera);

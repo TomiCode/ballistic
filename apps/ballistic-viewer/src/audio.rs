@@ -5,7 +5,8 @@
 use std::collections::HashMap;
 use std::io::Cursor;
 
-use kira::sound::static_sound::StaticSoundData;
+use kira::Tween;
+use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
 use kira::{AudioManager, AudioManagerSettings, Decibels, DefaultBackend};
 
 use crate::play::Bundle;
@@ -13,6 +14,8 @@ use crate::play::Bundle;
 pub struct Audio {
     manager: AudioManager<DefaultBackend>,
     sounds: HashMap<String, Option<StaticSoundData>>,
+    /// Looping sounds playing now, by key.
+    loops: HashMap<String, StaticSoundHandle>,
 }
 
 impl Audio {
@@ -22,6 +25,7 @@ impl Audio {
             Ok(manager) => Some(Self {
                 manager,
                 sounds: HashMap::new(),
+                loops: HashMap::new(),
             }),
             Err(e) => {
                 eprintln!("warning: no audio output: {e}");
@@ -32,8 +36,49 @@ impl Audio {
 
     /// Plays a bundle sound once at `volume` (0–1, linear).
     pub fn play(&mut self, bundle: &mut Bundle, key: &str, volume: f32) {
-        let data = self
-            .sounds
+        let Some(data) = self.data(bundle, key) else {
+            return;
+        };
+        if let Err(e) = self.manager.play(data.volume(decibels(volume))) {
+            eprintln!("warning: playing sound {key}: {e}");
+        }
+    }
+
+    /// Keeps exactly these sounds looping (key, volume 0–1, pitch as a
+    /// playback rate): starts new ones, updates the others, stops the rest.
+    pub fn sync_loops(&mut self, bundle: &mut Bundle, wanted: &[(String, f32, f32)]) {
+        self.loops.retain(|k, h| {
+            let keep = wanted.iter().any(|(w, _, _)| w == k);
+            if !keep {
+                h.stop(Tween::default());
+            }
+            keep
+        });
+        for (key, volume, pitch) in wanted {
+            let rate = f64::from(pitch.max(0.01));
+            if let Some(h) = self.loops.get_mut(key) {
+                h.set_volume(decibels(*volume), Tween::default());
+                h.set_playback_rate(rate, Tween::default());
+                continue;
+            }
+            let Some(data) = self.data(bundle, key) else {
+                continue;
+            };
+            let data = data
+                .loop_region(..)
+                .volume(decibels(*volume))
+                .playback_rate(rate);
+            match self.manager.play(data) {
+                Ok(h) => {
+                    self.loops.insert(key.clone(), h);
+                }
+                Err(e) => eprintln!("warning: playing sound {key}: {e}"),
+            }
+        }
+    }
+
+    fn data(&mut self, bundle: &mut Bundle, key: &str) -> Option<StaticSoundData> {
+        self.sounds
             .entry(key.to_owned())
             .or_insert_with(|| {
                 let bytes = bundle
@@ -44,16 +89,16 @@ impl Audio {
                     .map_err(|e| eprintln!("warning: decoding sound {key}: {e}"))
                     .ok()
             })
-            .clone();
-        let Some(data) = data else { return };
-        let db = if volume > 0.0 {
-            (20.0 * volume.log10()).max(Decibels::SILENCE.0)
-        } else {
-            Decibels::SILENCE.0
-        };
-        if let Err(e) = self.manager.play(data.volume(Decibels(db))) {
-            eprintln!("warning: playing sound {key}: {e}");
-        }
+            .clone()
+    }
+}
+
+/// A linear volume (0–1) in decibels.
+fn decibels(volume: f32) -> Decibels {
+    if volume > 0.0 {
+        Decibels((20.0 * volume.log10()).max(Decibels::SILENCE.0))
+    } else {
+        Decibels::SILENCE
     }
 }
 

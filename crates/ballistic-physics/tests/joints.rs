@@ -10,6 +10,7 @@ fn floor() -> StaticMesh {
         friction: 0.7,
         elasticity: 0.3,
         group: "Floor".into(),
+        ..SurfaceMaterial::default()
     });
     let s = 100.0;
     m.add_triangle(

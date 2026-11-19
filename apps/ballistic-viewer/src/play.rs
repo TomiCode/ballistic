@@ -23,6 +23,7 @@ use ballistic_physics::{
 use ballistic_render::{Camera, Gpu, RenderOptions};
 use glam::Mat4;
 
+use crate::ballsounds::BallSoundsPlayer;
 use crate::follow::Follow;
 use crate::modules::Modules;
 use crate::pieces::Pieces;
@@ -88,6 +89,9 @@ pub struct Play {
     modules: Modules,
     transformers: Transformers,
     pieces: Pieces,
+    ball_sounds: BallSoundsPlayer,
+    /// Roll sounds looping at the last frame (for counting starts).
+    looping: Vec<String>,
     /// Sounds to play (bundle key, volume), taken by the window.
     sounds: Vec<(String, f32)>,
     /// How many times each sound was played (for headless runs).
@@ -149,6 +153,10 @@ impl Play {
             .position(|b| b.name == "Ball_Wood")
             .unwrap_or(0);
         let ball = world.add_body(body_desc(&physics.balls[active_ball], start));
+        world.report_collisions(ball, true);
+        // Start Level, then the new ball's BallNav activate.
+        let mut ball_sounds = BallSoundsPlayer::new(&physics);
+        ball_sounds.set_active(true);
 
         let balls = load_scene(gpu, bundle, "balls", format)?;
         let ball_scene = bundle.scene("balls")?;
@@ -187,6 +195,8 @@ impl Play {
             modules,
             transformers,
             pieces,
+            ball_sounds,
+            looping: Vec::new(),
             sounds: Vec::new(),
             sound_counts: std::collections::BTreeMap::new(),
             held: None,
@@ -359,6 +369,7 @@ impl Play {
         self.pushes = [None; 4];
         let desc = body_desc(&self.physics.balls[self.active_ball], pos);
         self.ball = self.world.add_body(desc);
+        self.world.report_collisions(self.ball, true);
         if self.nav_on {
             self.nav_on();
         }
@@ -382,6 +393,18 @@ impl Play {
         }
     }
 
+    /// Roll sounds that should be looping now: key, volume, pitch.
+    pub fn loops(&mut self) -> Vec<(String, f32, f32)> {
+        let loops = self.ball_sounds.loops();
+        for (k, _, _) in &loops {
+            if !self.looping.contains(k) {
+                *self.sound_counts.entry(format!("{k} (loop)")).or_default() += 1;
+            }
+        }
+        self.looping = loops.iter().map(|l| l.0.clone()).collect();
+        loops
+    }
+
     /// Sounds to play since the last call (bundle key, volume 0–1).
     pub fn take_sounds(&mut self) -> Vec<(String, f32)> {
         std::mem::take(&mut self.sounds)
@@ -393,7 +416,9 @@ impl Play {
         for e in events {
             match e {
                 E::Begin => {
+                    // BallNav deactivate: the hit and roll tests stop too.
                     self.nav_off();
+                    self.ball_sounds.set_active(false);
                     self.pieces.triggered(self.active_ball);
                 }
                 E::Burst(ball) => {
@@ -425,8 +450,10 @@ impl Play {
                         let mut desc = body_desc(&self.physics.balls[self.active_ball], p);
                         desc.orientation = q;
                         self.ball = self.world.add_body(desc);
+                        self.world.report_collisions(self.ball, true);
                     }
                     self.nav_on();
+                    self.ball_sounds.set_active(true);
                 }
             }
         }
@@ -444,6 +471,11 @@ impl Play {
         }
         self.progress.respawn();
         self.pieces.reset_all();
+        // Deactivate Ball (BallNav deactivate), New Ball (BallNav activate).
+        self.ball_sounds.set_active(false);
+        if self.finished_at.is_none() {
+            self.ball_sounds.set_active(true);
+        }
         self.apply_sector_changes();
         self.world.reset_body(self.ball, self.start);
         self.follow.reset(self.start, self.start_heading);
@@ -495,7 +527,13 @@ impl Play {
 
         self.world.advance(real_dt);
         self.props.update(&mut self.world, self.fall_y);
-        let s = self.pieces.frame(&mut self.world, real_dt);
+        let hits = self.world.take_collisions();
+        let s = self.pieces.frame(&mut self.world, &hits, real_dt);
+        self.queue_sounds(s);
+        let ball_now = self.ball_id().zip(self.ball_pose().map(|(p, _)| p));
+        let s = self
+            .ball_sounds
+            .frame(&self.world, ball_now, self.active_ball, &hits, real_dt);
         self.queue_sounds(s);
         self.elapsed += real_dt;
         if let Some(ball) = self.ball_pose().map(|(p, _)| p) {
@@ -512,6 +550,7 @@ impl Play {
                     self.finished_at = Some((self.elapsed, self.world.steps));
                     self.modules.level_finished(&mut self.world);
                     self.nav_off();
+                    self.ball_sounds.set_active(false);
                     eprintln!(
                         "level finished after {:.2} s ({} physics steps)",
                         self.elapsed, self.world.steps
