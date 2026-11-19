@@ -1,0 +1,21 @@
+[package]
+name = "ballistic-bundle"
+description = "Ballistic asset bundle format: types, reader and writer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+postcard = { version = "1", default-features = false, features = ["use-std"] }
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
+bytemuck = { version = "1", features = ["derive", "extern_crate_alloc"] }
+thiserror.workspace = true
+# Selects flate2's pure-Rust backend for zip's deflate support.
+flate2.workspace = true
+
+[lints]
+workspace = true

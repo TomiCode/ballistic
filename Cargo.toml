@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ckfile", "crates/ckscene", "tools/ckinspect"]
+members = ["crates/ckfile", "crates/ckscene", "crates/ballistic-bundle", "crates/ballistic-pack", "tools/ckinspect"]
 
 [workspace.package]
 version = "0.1.0"
@@ -30,3 +30,4 @@ missing_errors_doc = "allow"
 cast_possible_truncation = "allow"
 must_use_candidate = "allow"
 many_single_char_names = "allow"
+cast_precision_loss = "allow"

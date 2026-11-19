@@ -6,6 +6,8 @@
 |---|---|
 | `crates/ckfile` | Reader for Virtools composition files (`.nmo` / `.cmo`, file version 8): container, object table, `StateChunk` sections and sub-chunks. Used by the asset packer. Never used by the game at runtime. |
 | `crates/ckscene` | Decoders for scene classes on top of `ckfile`: `Mesh`, `Material`, `Texture`, `Entity3d` (3D objects, lights, cameras), `Group` |
+| `crates/ballistic-bundle` | Bundle format: manifest and scene types, zip reader/writer. The engine's only data dependency |
+| `crates/ballistic-pack` | The packer (library and CLI): install verification, scene/texture/audio conversion |
 | `tools/ckinspect` | CLI for looking inside those files while reverse-engineering |
 
 ## Building

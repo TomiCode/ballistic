@@ -12,12 +12,12 @@ Ballistic ships **no game content**. You build a local asset bundle from your ow
 legally obtained installation (e.g. the GOG release):
 
 ```bash
-ballistic-pack --from "/path/to/Ballance" --out ballance.bpk   # planned
+ballistic-pack build --from "/path/to/Ballance" --out ballance.bpk
 ```
 
 The packer converts the original files into Ballistic's own optimised formats
-(GPU-compressed textures, compressed audio, preprocessed level and collision
-data). Ballistic itself never reads the original game files. Then point the game
+(GPU-compressed textures, compressed audio, preprocessed level data). See
+[docs/packer.md](docs/packer.md). Ballistic itself never reads the original game files. Then point the game
 at the bundle. The bundle is for your personal use. Don't redistribute it.
 
 ## Documentation

@@ -1,0 +1,61 @@
+# Building your asset bundle (`ballistic-pack`)
+
+Ballistic ships no game content. `ballistic-pack` reads **your own** Ballance
+installation and converts it into `ballance.bpk`, the only file the game
+loads. Nothing is uploaded or downloaded, and the bundle is for your personal use.
+
+## Usage
+
+```bash
+ballistic-pack build --from "/path/to/Ballance" --out ballance.bpk
+```
+
+`--from` is the game folder (the one containing `base.cmo`). Pointing at its
+`Bin` subfolder works too. Without `--from`, the packer tries `BALLANCE_DIR` and
+a few common install locations (GOG on Windows, default Wine prefixes on
+Linux/macOS). On Linux and macOS you can also copy the install folder from a
+Windows machine. File-name case doesn't matter.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--out <file>` | `ballance.bpk` | Output path. Written atomically: a failed run never leaves a half-written bundle |
+| `--texture-encoding bc\|rgba8` | `bc` | GPU-compressed (BC1/BC3) or uncompressed textures |
+| `--audio-encoding vorbis\|wav` | `vorbis` | Ogg Vorbis or 16-bit PCM WAV |
+| `--audio-quality <q>` | `0.6` | Vorbis quality, -0.1 … 1.0 |
+| `--jobs <n>` | all cores | Worker threads |
+| `-v, --verbose` | | List every warning |
+
+Other commands:
+
+```bash
+ballistic-pack verify --from "/path/to/Ballance"   # compare files with known releases
+ballistic-pack inspect ballance.bpk               # summarise a bundle
+```
+
+## What it does
+
+1. **Verifies** the install. Every file it reads is hashed (SHA-256) and compared
+   with known releases (currently: GOG). Modified files, e.g. from mods, are
+   reported as warnings and still packed.
+2. **Converts** in parallel:
+   - levels, prefabs, ball models and menu scenes → engine scenes (GPU-ready
+     vertex/index buffers, materials, objects, groups), converted to a
+     right-handed coordinate system
+   - textures (BMP/TGA) → KTX2 with a full mip chain, BC1 (opaque) or BC3 (alpha)
+   - sounds (WAV) → Ogg Vorbis
+3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
+
+The same install with the same packer version and options always produces a
+byte-identical bundle.
+
+A full GOG install packs in about 2 seconds into roughly 19 MiB (vs. ~130 MiB of
+source files).
+
+## Not packed (yet)
+
+- Low-detail variants (`Textures/sky_low`, `Sounds_low`): not needed on current hardware
+- The intro video (`Textures/atari.avi`)
+- Game logic data from the original scripts (physics parameters, scores, timings):
+  coming with script decoding
+- Gameplay meaning of level groups (spawn, checkpoints, sectors) is kept as group
+  names for now, not yet resolved into structures
