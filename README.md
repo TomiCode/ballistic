@@ -1,0 +1,30 @@
+# Ballistic
+
+A from-scratch, cross-platform reimplementation of the *Ballance* engine,
+written in Rust. It targets Windows, Linux and macOS, with any resolution and
+windowed play.
+
+> **Status: pre-alpha / planning.** Nothing playable yet.
+
+## You need your own copy of Ballance
+
+Ballistic ships **no game content**. You build a local asset bundle from your own
+legally obtained installation (e.g. the GOG release):
+
+```bash
+ballistic-pack --from "/path/to/Ballance" --out ballance.bpk   # planned
+```
+
+The packer converts the original files into Ballistic's own optimised formats
+(GPU-compressed textures, compressed audio, preprocessed level and collision
+data). Ballistic itself never reads the original game files. Then point the game
+at the bundle. The bundle is for your personal use. Don't redistribute it.
+
+## Documentation
+
+See [`docs/`](docs/) for setup, features and development notes.
+
+## License
+
+MIT, see [LICENSE](LICENSE). *Ballance* is a trademark of its respective owners.
+This project is not affiliated with or endorsed by them.

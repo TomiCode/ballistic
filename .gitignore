@@ -1,0 +1,18 @@
+/target
+**/*.rs.bk
+
+# Never commit original game data or bundles derived from it
+*.bpk
+/bundle/
+/Ballance/
+*.nmo
+*.NMO
+*.cmo
+*.tdb
+traces/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
