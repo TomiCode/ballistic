@@ -226,6 +226,7 @@ pub fn extract(install: &Install) -> Result<bb::PhysicsData> {
         )?,
         sounds: crate::ballsounds::extract(install, &balls)?,
         energy: crate::energy::extract(install)?,
+        flow: crate::flow::extract(install)?,
         balls,
     })
 }

@@ -188,6 +188,7 @@ fn trafo_sound(
                 return Ok(Some(bb::SoundCue {
                     sound: key,
                     delay_frames: delay,
+                    delay_ms: 0.0,
                 }));
             }
         }
@@ -258,7 +259,7 @@ fn message(file: &CkFile, scripts: &Scripts, node: ObjRef, pin: &str) -> Option<
 }
 
 /// The message index an input parameter holds (through its source local).
-fn message_index(file: &CkFile, scripts: &Scripts, param: ObjRef) -> Option<usize> {
+pub(crate) fn message_index(file: &CkFile, scripts: &Scripts, param: ObjRef) -> Option<usize> {
     let Some(Some(ScriptObject::In(i))) = scripts.objects.get(param) else {
         return None;
     };

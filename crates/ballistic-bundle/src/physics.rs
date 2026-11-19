@@ -23,6 +23,8 @@ pub struct PhysicsData {
     pub sounds: BallSounds,
     /// Points, lives and score (`Gameplay_Energy`, the pickups).
     pub energy: EnergyParams,
+    /// The level flow and the event sounds.
+    pub flow: LevelFlow,
 }
 
 /// Points, lives and score.
@@ -165,12 +167,39 @@ pub struct TransformerParams {
     pub sound: Option<SoundCue>,
 }
 
-/// A sound played some frames after an event.
+/// A sound played some frames and milliseconds after an event.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SoundCue {
     /// Bundle sound key, e.g. `misc_trafo`.
     pub sound: String,
     pub delay_frames: u32,
+    pub delay_ms: f32,
+}
+
+/// The level flow (`Gameplay.nmo`'s `BallManager`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LevelFlow {
+    /// *New Ball*: the ball comes (and control with it) this long after the
+    /// level starts or a ball is lost; the lightning plays meanwhile.
+    pub new_ball_ms: f32,
+    /// *Deactivate Ball*: a lost ball lingers this long before it's taken
+    /// away.
+    pub lost_ms: f32,
+    /// The ball is lost when its box meets one of this level group's boxes.
+    pub depth_cubes: String,
+    /// Props of `prop_depth_groups` are taken away this far below the lowest
+    /// cube.
+    pub prop_depth_margin: f32,
+    pub prop_depth_groups: Vec<String>,
+    /// What the sound scripts play for each message (by name).
+    pub event_sounds: Vec<EventSound>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EventSound {
+    /// The message's name, e.g. `Checkpoint reached`.
+    pub message: String,
+    pub cues: Vec<SoundCue>,
 }
 
 /// The sounds of a ball type's pieces (`Ball_CollSound_Pieces`).

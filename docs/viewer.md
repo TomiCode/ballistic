@@ -25,7 +25,7 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--screenshot out.png [--size 1920x1080]` | Render one frame off-screen and exit, no window |
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
 | `--play` | Play mode: roll a ball on the level |
-| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), `trafo` puts the ball on the nearest transformer of another type (shown ones first), and `pickup` on the nearest extra life or extra point, all at the start of their segment. The summary then also prints the points, lives and score. With `--camera` too, the camera stays at that view instead of following the ball |
+| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:4,up:2,rotate+left:0.3` (the ball comes 3 s after the start). Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), `trafo` puts the ball on the nearest transformer of another type (shown ones first), and `pickup` on the nearest extra life or extra point, all at the start of their segment. The summary then also prints the points, lives and score. With `--camera` too, the camera stays at that view instead of following the ball |
 
 The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 
@@ -60,7 +60,7 @@ behind it, both as the original sets them. Control works like the original:
 | Arrows | Push the ball forward / back / left / right, relative to the camera |
 | **Shift** + **Left / Right** | Turn the camera 90° |
 | **Space** (hold) | Lift view: the camera rises 50 units for a look from above |
-| **R** | Respawn (at the current reset point) |
+| **R** | Lose the ball (it comes back at the current reset point) |
 | **N** | Warp to the next checkpoint, then to the level end (development aid) |
 | **1** | Next ball type (wood, stone, paper) |
 
@@ -69,7 +69,13 @@ Details carried over from the original's scripts:
 - Holding **Shift** switches ball control off. You can't push while turning.
 - A push's direction is fixed when you press the key. After a camera turn,
   directions you're holding are re-aimed one frame after the turn finishes.
-- The ball respawns when it falls 50 units below the lowest level geometry.
+- The ball comes 3 s after the level start or a loss, with the lightning
+  sound. Until then you can turn the camera but not push.
+- The ball is lost when it falls into one of the level's depth cubes
+  (`DepthTestCubes`, one tested per frame). Control, the camera and the points
+  countdown stop at once; 1 s later the ball is taken away, a life is used,
+  the sector is reset, and a new ball comes. (A level without depth cubes
+  loses it 50 units below its lowest geometry.)
 
 Level 1 starts facing away from the path, as in the original (its tutorial
 teaches turning first): press Shift + Left twice.
@@ -125,8 +131,8 @@ good, and the window title shows the time since the level started.
 **Points and lives**, as the original counts them (research findings 16):
 - A level starts with 1000 points and 3 lives.
 - One point goes every 500 ms until the finish.
-- Falling out costs a life. With none left the game is over: the ball stays
-  lost and control is off.
+- Losing the ball costs a life. With none left the game is over: the ball
+  stays lost and control is off.
 - **Extra lives** (+1) and **extra points** (+100, then +20 for each of its
   six small balls as they reach the ball: 220 in all) are only there while
   their sector is active. The level's placeholder markers stand in for them
@@ -134,8 +140,8 @@ good, and the window title shows the time since the level started.
   sector is entered again; an extra point doesn't.
 - At the finish the score is printed: the level's bonus (100 × its number) +
   the points left + 200 per life left.
-- The status line shows the points and lives. There's no HUD or score screen
-  yet.
+- The status line shows the points and lives, and `[new ball]` or `[ball
+  lost]` while one is coming or going. There's no HUD or score screen yet.
 
 **Transformers** (`P_Trafo_Paper`, `_Stone`, `_Wood`) stand at their
 placeholders, shown while their sector is active. They work like the
@@ -175,14 +181,18 @@ silent if there's none):
   hits, at most once a second per surface kind (metal: every 2 s);
 - the ball's **rolls**: after 0.3 s on stone, wood or metal, that roll sound
   loops until 0.3 s after the ball leaves it. Louder and higher the faster the
-  ball goes; the paper ball has one roll sound.
+  ball goes; the paper ball has one roll sound;
+- **events**, as the sound scripts play them: the level start, the
+  lightning before each ball, a lost ball, a checkpoint, an extra life (and
+  317 ms later its jingle), an extra point and its small balls.
 
 Hits and rolls only sound while ball control is on: not during a
 transformation, nor after the finish. Surfaces get their kind from the level's
 sound groups, props and moving elements from their prefabs.
 
 With `--screenshot` nothing is played; the summary counts the sounds.
-A prop that falls out of the level is gone until its sector is entered again.
+A prop that falls 200 below the lowest depth cube is gone until its sector is
+entered again.
 
 The camera follows like the original: a point chases the ball, and the camera
 chases a spot 22 units behind and 35 above that point, with the original's pull
@@ -198,7 +208,7 @@ curve is still an approximation.
 Headless check of the same thing:
 
 ```bash
-ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wait:1,up:1.5" --screenshot play.png
+ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wait:4,up:1.5" --screenshot play.png
 ```
 
 ## How it renders
@@ -220,5 +230,6 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Debug overlay UI
 - In play mode: the HUD and score screen, the pickups' looks and sounds,
   checkpoint flames and fan particles, the other
-  sounds (events, the wooden flaps, music), the paper pieces' wind, the end
+  sounds (the wooden flaps, the level finish, music), the start flames,
+  the screen fade, the paper pieces' wind, the end
   sequence (and the last level's UFO) and score

@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 11,
+  "format_version": 12,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -175,7 +175,7 @@ and useful to read). Since version 2.
       "sounds": { "sound": "pieces_wood", "colliders": ["Ball_Wood_piece11", "…"],
         "min_speed": 2.0, "max_speed": 25.0, "sleep_s": 0.5, "listen_ms": 3000.0 } }, "…" ],
     "pieces_fade_after_ms": 20000.0,
-    "sound": { "sound": "misc_trafo", "delay_frames": 1 } },
+    "sound": { "sound": "misc_trafo", "delay_frames": 1, "delay_ms": 0.0 } },
   "sounds": {
     "sets": [ { "ball": "Ball_Wood",
       "roll": ["roll_wood_stone", "roll_wood_wood", "roll_wood_metal"],
@@ -195,7 +195,16 @@ and useful to read). Since version 2.
       "activation_distance": 3.0, "hit_distance": 4.0, "away_force": 1.0,
       "away_damping": 0.3, "away_ms": 1000.0, "force": 0.12, "damping": 0.95,
       "force_width": 0.08, "activation_points": 100, "hit_points": 20,
-      "hit_frames": "P_Extra_Point_Hitframes" } }
+      "hit_frames": "P_Extra_Point_Hitframes" } },
+  "flow": {
+    "new_ball_ms": 3000.0, "lost_ms": 1000.0, "depth_cubes": "DepthTestCubes",
+    "prop_depth_margin": 200.0,
+    "prop_depth_groups": ["P_Ball_Paper", "P_Ball_Wood", "P_Ball_Stone", "P_Box"],
+    "event_sounds": [
+      { "message": "Life_Up", "cues": [
+        { "sound": "extra_life_blob", "delay_frames": 1, "delay_ms": 0.0 },
+        { "sound": "misc_extraball", "delay_frames": 0, "delay_ms": 317.0 } ] },
+      "…" ] }
 }
 ```
 
@@ -272,7 +281,8 @@ and useful to read). Since version 2.
     the burst.
   - `pieces_fade_after_ms`: when a type's pieces fade out after a
     transformation from it.
-  - `sound`: the sound the trigger plays, `delay_frames` later.
+  - `sound`: the sound the trigger plays, `delay_frames` and then
+    `delay_ms` (real time) later.
 - `sounds`: the ball's hit and roll sounds. Hit IDs: 1 stone, 2 wood, 3
   metal, 4 dome; roll IDs: 1 stone, 2 wood, 3 metal.
   - `sets`: per ball type, the bundle sound keys for each roll ID and hit ID.
@@ -298,6 +308,15 @@ and useful to read). Since version 2.
     `activation_distance`, then `hit_points` per small ball (of
     `small_balls`) that reaches it. The rest are *TT Extra*'s flight
     settings.
+- `flow`: the level flow (the `BallManager`).
+  - `new_ball_ms`: the ball comes this long after the level start or a loss.
+  - `lost_ms`: a lost ball falls on this long before it's taken away.
+  - `depth_cubes`: the level group whose boxes catch a falling ball (one is
+    tested per frame).
+  - `prop_depth_groups`, `prop_depth_margin`: props of these groups are taken
+    away below the lowest depth cube's bottom minus the margin.
+  - `event_sounds`: per message to the sound scripts (by name), the sounds it
+    plays, with their delays.
 
 ## Versioning rules
 
@@ -311,4 +330,4 @@ and useful to read). Since version 2.
   **7** adds `transformers`. **8** adds the transformer `animation`, the
   ball `pieces` and `pieces_fade_after_ms`. **9** adds the transformer
   `sound` and the pieces' `sounds`. **10** adds the ball's `sounds`. **11**
-  adds `energy`.
+  adds `energy`. **12** adds `flow`, and `delay_ms` to sound cues.

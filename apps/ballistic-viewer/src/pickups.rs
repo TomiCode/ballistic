@@ -25,7 +25,10 @@ use crate::progress::{Edge, Proximity};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event {
     LifeUp,
-    Points(i32),
+    /// An extra point activated (its points).
+    Activated(i32),
+    /// Small balls reached the ball (their points).
+    Hits(i32),
 }
 
 struct Life {
@@ -162,7 +165,7 @@ impl Pickups {
                     p.flying = Some(0.0);
                     p.balls = small_balls(p.at, xp.small_balls, xp.force_width);
                     self.visibility.push((p.marker, false));
-                    out.push(Event::Points(xp.activation_points));
+                    out.push(Event::Activated(xp.activation_points));
                 }
                 continue;
             };
@@ -188,7 +191,7 @@ impl Pickups {
                 }
             }
             if hits > 0 {
-                out.push(Event::Points(xp.hit_points * hits));
+                out.push(Event::Hits(xp.hit_points * hits));
             }
             if p.balls.iter().all(|b| b.hit) {
                 p.flying = None;
@@ -299,7 +302,7 @@ mod tests {
         for frame in 0..900 {
             let ball = Vec3::new((frame as f32 * 0.2).min(10.0) - 2.0, 0.0, 0.0);
             for e in p.frame(ball, 1.0 / 60.0) {
-                if let Event::Points(n) = e {
+                if let Event::Activated(n) | Event::Hits(n) = e {
                     total += n;
                 }
             }

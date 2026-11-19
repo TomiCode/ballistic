@@ -3,6 +3,7 @@
 mod audio;
 mod ballsounds;
 mod energy;
+mod flow;
 mod follow;
 mod modules;
 mod pickups;

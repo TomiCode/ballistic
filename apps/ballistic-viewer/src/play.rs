@@ -25,6 +25,7 @@ use glam::Mat4;
 
 use crate::ballsounds::BallSoundsPlayer;
 use crate::energy::{Energy, Score};
+use crate::flow::{BallPhase, DepthCubes, EventSounds, LOST_CHECK_FRAMES};
 use crate::follow::Follow;
 use crate::modules::Modules;
 use crate::pickups::{self, Pickups};
@@ -94,6 +95,14 @@ pub struct Play {
     ball_sounds: BallSoundsPlayer,
     energy: Energy,
     pickups: Pickups,
+    flow: ballistic_bundle::LevelFlow,
+    phase: BallPhase,
+    depth: DepthCubes,
+    events: EventSounds,
+    /// The ball is drawn (not while a New Ball is coming, nor once taken away).
+    ball_shown: bool,
+    /// The camera stops following while a lost ball falls on.
+    camera_frozen: bool,
     /// The score, once the level is finished.
     score: Option<Score>,
     /// Roll sounds looping at the last frame (for counting starts).
@@ -170,6 +179,9 @@ impl Play {
             crate::energy::level_index(key).unwrap_or(0),
         );
         let pickups = Pickups::new(&physics.energy, level);
+        let depth = DepthCubes::new(level, &physics.flow.depth_cubes);
+        let events = EventSounds::new(&physics.flow);
+        let flow = physics.flow.clone();
 
         let balls = load_scene(gpu, bundle, "balls", format)?;
         let ball_scene = bundle.scene("balls")?;
@@ -212,6 +224,12 @@ impl Play {
             energy,
             pickups,
             score: None,
+            flow,
+            phase: BallPhase::Alive,
+            depth,
+            events,
+            ball_shown: true,
+            camera_frozen: false,
             looping: Vec::new(),
             sounds: Vec::new(),
             sound_counts: std::collections::BTreeMap::new(),
@@ -221,14 +239,10 @@ impl Play {
             finished_at: None,
             respawns: 0,
         };
-        // Show only the active ball.
-        for (i, o) in play.ball_objects.clone().iter().enumerate() {
-            if let Some(o) = o {
-                play.balls
-                    .renderer
-                    .set_object_hidden(*o, i != play.active_ball);
-            }
-        }
+        // Start Level, then the BallManager's New Ball.
+        play.events.emit("Start Level");
+        play.begin_new_ball();
+        play.show_active_ball();
         Ok(play)
     }
 
@@ -283,7 +297,8 @@ impl Play {
     fn nav_on(&mut self) {
         // After Level_Finish the original switches ball and camera navigation
         // off for good.
-        if self.finished_at.is_some() || self.transformers.busy() {
+        if self.finished_at.is_some() || self.transformers.busy() || self.phase != BallPhase::Alive
+        {
             return;
         }
         self.nav_on = true;
@@ -409,9 +424,128 @@ impl Play {
             if let Some(o) = o {
                 self.balls
                     .renderer
-                    .set_object_hidden(*o, i != self.active_ball);
+                    .set_object_hidden(*o, i != self.active_ball || !self.ball_shown);
             }
         }
+    }
+
+    /// New Ball: ball and camera rig to the reset point, the lightning, and
+    /// the ball after `new_ball_ms`.
+    fn begin_new_ball(&mut self) {
+        if self.held.is_none() {
+            self.world.remove_body(self.ball);
+            self.pushes = [None; 4];
+        }
+        self.held = Some((self.start, Quat::IDENTITY));
+        self.ball_shown = false;
+        self.show_active_ball();
+        self.camera_frozen = false;
+        self.follow.reset(self.start, self.start_heading);
+        self.heading_ref = self.start_heading;
+        self.heading_view = self.start_heading;
+        self.turn = None;
+        self.snap_next_frame = None;
+        self.events.emit("Ball_Lightning");
+        self.phase = BallPhase::Coming {
+            ms: self.flow.new_ball_ms,
+        };
+    }
+
+    /// The ball's phase, one frame on.
+    fn advance_phase(&mut self, real_dt: f32) {
+        match self.phase {
+            BallPhase::Coming { ms } => {
+                let ms = ms - real_dt * 1000.0;
+                if ms > 0.0 {
+                    self.phase = BallPhase::Coming { ms };
+                    return;
+                }
+                // physicalize new Ball, Show; Physics WakeUp a frame later.
+                let desc = body_desc(&self.physics.balls[self.active_ball], self.start);
+                self.ball = self.world.add_body(desc);
+                self.world.report_collisions(self.ball, true);
+                self.held = None;
+                self.ball_shown = true;
+                self.show_active_ball();
+                self.phase = BallPhase::Waking;
+            }
+            BallPhase::Waking => {
+                // Counter active, BallNav activate.
+                self.phase = BallPhase::Alive;
+                self.energy.set_counting(true);
+                self.nav_on();
+                self.ball_sounds.set_active(self.finished_at.is_none());
+            }
+            BallPhase::Lost { frames, ms } => match ms {
+                None if frames > 1 => {
+                    self.phase = BallPhase::Lost {
+                        frames: frames - 1,
+                        ms: None,
+                    };
+                }
+                None => {
+                    // The lives check.
+                    if self.energy.has_lives() {
+                        self.pieces.reset_all();
+                        self.phase = BallPhase::Lost {
+                            frames: 0,
+                            ms: Some(self.flow.lost_ms),
+                        };
+                    } else {
+                        self.energy.set_game_over();
+                        self.phase = BallPhase::GameOver;
+                        eprintln!("game over");
+                    }
+                }
+                Some(ms) => {
+                    let ms = ms - real_dt * 1000.0;
+                    if ms > 0.0 {
+                        self.phase = BallPhase::Lost {
+                            frames: 0,
+                            ms: Some(ms),
+                        };
+                        return;
+                    }
+                    // Unphysicalize, Hide; a life; the sector reset.
+                    let pose = self
+                        .world
+                        .body(self.ball)
+                        .map(|b| (b.position, b.orientation));
+                    self.world.remove_body(self.ball);
+                    self.pushes = [None; 4];
+                    self.held = Some(pose.unwrap_or((self.start, Quat::IDENTITY)));
+                    self.ball_shown = false;
+                    self.show_active_ball();
+                    self.energy.lose_life();
+                    if let Some(m) = self.progress.reset_point() {
+                        (self.start, self.start_heading) = reset_pose(m);
+                    }
+                    self.progress.respawn();
+                    self.apply_sector_changes();
+                    self.respawns += 1;
+                    self.phase = BallPhase::Gone;
+                }
+            },
+            BallPhase::Gone => self.begin_new_ball(),
+            BallPhase::Alive | BallPhase::GameOver => {}
+        }
+    }
+
+    /// Deactivate Ball: control, camera and counter off; the lives are checked
+    /// two frames later.
+    fn lose_ball(&mut self) {
+        if self.phase != BallPhase::Alive || self.held.is_some() || self.finished_at.is_some() {
+            return;
+        }
+        self.nav_off();
+        self.ball_sounds.set_active(false);
+        self.energy.set_counting(false);
+        self.camera_frozen = true;
+        self.events.emit("Ball Off");
+        self.phase = BallPhase::Lost {
+            frames: LOST_CHECK_FRAMES,
+            ms: None,
+        };
     }
 
     fn queue_sounds(&mut self, sounds: impl IntoIterator<Item = (String, f32)>) {
@@ -511,38 +645,50 @@ impl Play {
         }
     }
 
-    /// Back to the spawn point; the camera rig is reset with the ball.
+    /// The `BallManager`'s depth test (or, without cubes, a fall height).
+    fn depth_test(&mut self) {
+        let ball_box = self
+            .ball_id()
+            .and_then(|id| self.world.body(id))
+            .map(|b| (b.position, b.orientation, Vec3::splat(b.radius())));
+        if self.phase == BallPhase::Alive
+            && let Some(bb) = ball_box
+        {
+            let lost = if self.depth.is_empty() {
+                bb.0.y < self.fall_y
+            } else {
+                self.depth.check(bb)
+            };
+            if lost {
+                self.lose_ball();
+            }
+        }
+    }
+
+    /// The pickups this frame, and their messages to the sound scripts.
+    fn pickup_frame(&mut self, ball: Vec3, real_dt: f32) {
+        for e in self.pickups.frame(ball, real_dt) {
+            match e {
+                pickups::Event::LifeUp => {
+                    self.energy.add_life();
+                    self.events.emit("Life_Up");
+                }
+                pickups::Event::Activated(n) => {
+                    self.energy.add_points(n);
+                    self.events.emit("Extrapoint_Hit");
+                }
+                pickups::Event::Hits(n) => {
+                    self.energy.add_points(n);
+                    self.events.emit("Extrapoint_Pieces");
+                }
+            }
+        }
+    }
+
+    /// Development aid: loses the ball now, as if it fell out (it comes back
+    /// at the current reset point, a life less).
     pub fn respawn(&mut self) {
-        if self.held.is_some() || self.energy.game_over {
-            return;
-        }
-        // Deactivate Ball: with no lives left, the game is over.
-        if !self.energy.ball_lost() {
-            self.nav_off();
-            self.ball_sounds.set_active(false);
-            eprintln!("game over");
-            return;
-        }
-        // The ball comes back at the current reset point (the start, until a
-        // checkpoint is reached); the current sector is reset.
-        if let Some(m) = self.progress.reset_point() {
-            (self.start, self.start_heading) = reset_pose(m);
-        }
-        self.progress.respawn();
-        self.pieces.reset_all();
-        // Deactivate Ball (BallNav deactivate), New Ball (BallNav activate).
-        self.ball_sounds.set_active(false);
-        if self.finished_at.is_none() {
-            self.ball_sounds.set_active(true);
-        }
-        self.apply_sector_changes();
-        self.world.reset_body(self.ball, self.start);
-        self.follow.reset(self.start, self.start_heading);
-        self.heading_ref = self.start_heading;
-        self.heading_view = self.start_heading;
-        self.turn = None;
-        self.snap_next_frame = None;
-        self.respawns += 1;
+        self.lose_ball();
     }
 
     fn apply_sector_changes(&mut self) {
@@ -585,9 +731,17 @@ impl Play {
             }
         }
 
+        self.advance_phase(real_dt);
         self.world.advance(real_dt);
-        self.props.update(&mut self.world, self.fall_y);
+        // DepthTest: props of its groups this far below the lowest cube go.
+        let prop_fall_y = self
+            .depth
+            .bottom
+            .map_or(self.fall_y, |b| b - self.flow.prop_depth_margin);
+        self.props.update(&mut self.world, prop_fall_y);
         self.energy.frame(real_dt);
+        let s = self.events.frame(real_dt);
+        self.queue_sounds(s);
         let hits = self.world.take_collisions();
         let s = self.pieces.frame(&mut self.world, &hits, real_dt);
         self.queue_sounds(s);
@@ -605,7 +759,10 @@ impl Play {
                 self.progress.set_level_end_target(p);
             }
             match self.progress.frame(ball) {
-                Some(progress::Event::Checkpoint(i)) => eprintln!("checkpoint {} reached", i + 1),
+                Some(progress::Event::Checkpoint(i)) => {
+                    self.events.emit("Checkpoint reached");
+                    eprintln!("checkpoint {} reached", i + 1);
+                }
                 Some(progress::Event::Finished) => {
                     // Level_Finish: ball control off; the balloon lets go.
                     self.finished_at = Some((self.elapsed, self.world.steps));
@@ -629,25 +786,16 @@ impl Play {
             }
             let events = self.transformers.frame(ball, self.active_ball, real_dt);
             self.transformer_events(events);
-            for e in self.pickups.frame(ball, real_dt) {
-                match e {
-                    pickups::Event::LifeUp => self.energy.add_life(),
-                    pickups::Event::Points(n) => self.energy.add_points(n),
-                }
-            }
+            self.pickup_frame(ball, real_dt);
         }
         self.apply_sector_changes();
 
-        if self
-            .ball_id()
-            .and_then(|id| self.world.body(id))
-            .is_some_and(|b| b.position.y < self.fall_y)
-        {
-            self.respawn();
+        self.depth_test();
+        if !self.camera_frozen {
+            let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
+            let lifted = self.keys_held[key_index(PlayKey::Lift)];
+            self.follow.update(real_dt, ball, self.heading_view, lifted);
         }
-        let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
-        let lifted = self.keys_held[key_index(PlayKey::Lift)];
-        self.follow.update(real_dt, ball, self.heading_view, lifted);
     }
 
     /// Level objects that props and modules replace; hide them in the
@@ -762,7 +910,7 @@ impl Play {
     pub fn status(&self) -> String {
         let b = self.ball_id().and_then(|id| self.world.body(id));
         format!(
-            "{} speed {:.1} points {} lives {} checkpoint {}/{} {}{}{}{}{}{}",
+            "{} speed {:.1} points {} lives {} checkpoint {}/{} {}{}{}{}{}{}{}",
             self.ball_name(),
             b.map_or(0.0, |b| b.velocity.length()),
             self.energy.points,
@@ -772,6 +920,11 @@ impl Play {
             self.finished_at
                 .map(|(t, _)| format!("[finished {t:.2} s] "))
                 .unwrap_or_default(),
+            match self.phase {
+                BallPhase::Coming { .. } | BallPhase::Waking => "[new ball] ",
+                BallPhase::Lost { .. } | BallPhase::Gone => "[ball lost] ",
+                _ => "",
+            },
             match (self.score, self.energy.game_over) {
                 (Some(s), _) => format!("[score {}] ", s.total),
                 (None, true) => "[game over] ".to_owned(),

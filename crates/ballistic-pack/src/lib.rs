@@ -4,6 +4,7 @@
 pub mod audio;
 mod ballsounds;
 mod energy;
+mod flow;
 pub mod install;
 mod ktx2;
 mod modules;

@@ -75,17 +75,19 @@ impl Energy {
         self.lives += 1;
     }
 
-    /// The ball is lost: `true` if a new ball comes (a life is used), `false`
-    /// if the game is over.
-    pub fn ball_lost(&mut self) -> bool {
-        if self.lives > 0 {
-            self.lives -= 1;
-            true
-        } else {
-            self.game_over = true;
-            self.counting = false;
-            false
-        }
+    /// *Deactivate Ball*'s check: lives left?
+    pub fn has_lives(&self) -> bool {
+        self.lives > 0
+    }
+
+    /// The lost ball is taken away: a life is used.
+    pub fn lose_life(&mut self) {
+        self.lives -= 1;
+    }
+
+    pub fn set_game_over(&mut self) {
+        self.game_over = true;
+        self.counting = false;
     }
 
     pub fn score(&self) -> Score {
@@ -186,10 +188,12 @@ mod tests {
     #[test]
     fn the_fourth_loss_with_three_lives_is_game_over() {
         let mut e = Energy::new(&params(), 0);
-        assert!(e.ball_lost() && e.ball_lost() && e.ball_lost());
+        for _ in 0..3 {
+            assert!(e.has_lives());
+            e.lose_life();
+        }
         assert_eq!(e.lives, 0);
-        assert!(!e.ball_lost());
-        assert!(e.game_over);
+        assert!(!e.has_lives());
     }
 
     #[test]

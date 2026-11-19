@@ -709,6 +709,7 @@ mod tests {
             sound: Some(ballistic_bundle::SoundCue {
                 sound: "misc_trafo".into(),
                 delay_frames: 1,
+                delay_ms: 0.0,
             }),
         }
     }

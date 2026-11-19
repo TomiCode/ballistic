@@ -59,7 +59,11 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      the level sound groups from `Levelinit.nmo`, and the prefab objects'
      hit and roll IDs from their attributes. Points, lives and score from the
      `Energy` and `AllLevel` tables, and the extra lives' and extra points'
-     settings from their prefab scripts → `data/physics.json`
+     settings from their prefab scripts. The level flow from the
+     `BallManager`'s Delayers and depth tests and `DepthTestGroups`, and the
+     event sounds from `Sound.nmo`'s *Switch On Message* blocks, followed
+     through links, Delayers and sub-graphs to their Wave Players
+     → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a
