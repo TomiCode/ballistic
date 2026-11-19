@@ -5,7 +5,8 @@ written in Rust. It targets Windows, Linux and macOS, with any resolution and
 windowed play.
 
 > **Status: pre-alpha.** The asset packer and a level viewer work, and a physics
-> ball can be rolled on the levels (`ballistic-viewer --play`). No game rules yet.
+> ball can be rolled on the levels among their boxes and loose balls
+> (`ballistic-viewer --play`). No game rules yet.
 
 ## You need your own copy of Ballance
 

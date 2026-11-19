@@ -17,13 +17,17 @@
 //! Coordinates: bundle space (right-handed, Y up, original units).
 
 mod bvh;
+mod collide;
 mod level;
 mod mesh;
+pub mod props;
+mod shape;
 mod world;
 
-pub use glam::{Quat, Vec3};
+pub use glam::{Mat4, Quat, Vec3};
 pub use level::{LevelBuildReport, build_level};
 pub use mesh::{StaticMesh, SurfaceMaterial};
+pub use shape::Shape;
 pub use world::{Body, BodyDesc, BodyId, PushId, World};
 
 /// Integration steps per second of simulated time (`physics_RT.dll`: 1/66 s).
@@ -82,8 +86,10 @@ pub struct ContactModel {
     pub bounce_threshold: f32,
     /// Fraction of penetration corrected per step (position projection).
     pub penetration_correction: f32,
-    /// Contact solver iterations per step.
+    /// Contact passes per step (detect, push apart, solve velocities).
     pub iterations: u32,
+    /// Velocity solver iterations per contact pass.
+    pub velocity_iterations: u32,
     /// Bodies and surfaces sharing a non-empty collision group don't collide.
     /// (Inferred: `Phys_FloorStopper` uses group "Ball", like the player ball.)
     pub same_group_ignores: bool,
@@ -98,6 +104,7 @@ impl Default for ContactModel {
             bounce_threshold: 1.0,
             penetration_correction: 0.8,
             iterations: 4,
+            velocity_iterations: 8,
             same_group_ignores: true,
         }
     }

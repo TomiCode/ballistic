@@ -2,6 +2,7 @@
 
 mod follow;
 mod play;
+mod props;
 mod window;
 
 use std::path::PathBuf;
@@ -235,6 +236,9 @@ fn screenshot(
     let mut play = if args.play {
         let level = bundle.scene(&args.scene)?;
         let mut p = play::Play::new(&gpu, &mut bundle, &level, format)?;
+        for &i in p.placeholders() {
+            scene.renderer.set_object_hidden(i, true);
+        }
         let dt = 1.0 / 60.0;
         for (keys, seconds) in parse_play_script(args.play_script.as_deref().unwrap_or("wait:1"))? {
             for &k in &keys {
@@ -247,17 +251,21 @@ fn screenshot(
             let frames = (seconds / dt).round() as u32;
             for _ in 0..frames {
                 p.update(dt);
-                camera = p.camera(camera);
+                // An explicit --camera stays put (to look at something else).
+                if args.camera.is_none() {
+                    camera = p.camera(camera);
+                }
             }
             for &k in &keys {
                 p.input(k, false);
             }
         }
         eprintln!(
-            "play: {} after {} steps, {} respawns",
+            "play: {} after {} steps, {} respawns, {} props",
             p.status(),
             p.world.steps,
-            p.respawns
+            p.respawns,
+            p.prop_count()
         );
         Some(p)
     } else {

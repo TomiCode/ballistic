@@ -25,7 +25,7 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--screenshot out.png [--size 1920x1080]` | Render one frame off-screen and exit, no window |
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
 | `--play` | Play mode: roll a ball on the level |
-| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait` |
+| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`. With `--camera` too, the camera stays at that view instead of following the ball |
 
 The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 
@@ -75,6 +75,14 @@ teaches turning first): press Shift + Left twice.
 
 Physics is described in [physics.md](physics.md).
 
+**Props.** Boxes, loose balls and domes stand where the level's placeholders
+are (the placeholders themselves are hidden, as the game replaces them), drawn
+with their prefabs. You can push boxes and balls around; domes don't move.
+Unlike the original, every prop is active from the start (the game activates
+them sector by sector as you pass checkpoints), all of them return to their
+places when you respawn, and a prop that falls out of the level is gone until
+then.
+
 The camera follows like the original: a point chases the ball, and the camera
 chases a spot 22 units behind and 35 above that point, with the original's pull
 and momentum per axis. It reacts slowly in height, so it stays high when the
@@ -107,6 +115,7 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 
 - Sky boxes, per-level fog and lighting (they're set by the game's scripts)
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
-  them with prefabs at load time
+  them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: moving level parts, props, checkpoints, the level end
+- In play mode: moving level parts, pickups, transformers, checkpoints and
+  sectors, the level end

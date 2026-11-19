@@ -17,14 +17,17 @@ use std::io::BufReader;
 
 use anyhow::{Context, Result};
 use ballistic_bundle::{BallParams, BundleReader, PhysicsData};
-use ballistic_physics::{BodyDesc, BodyId, PushId, Quat, Vec3, World, WorldConfig, build_level};
+use ballistic_physics::{
+    BodyDesc, BodyId, PushId, Quat, Shape, Vec3, World, WorldConfig, build_level,
+};
 use ballistic_render::{Camera, Gpu, RenderOptions};
 use glam::Mat4;
 
 use crate::follow::Follow;
+use crate::props::Props;
 use crate::{LoadedScene, load_scene};
 
-type Bundle = BundleReader<BufReader<std::fs::File>>;
+pub type Bundle = BundleReader<BufReader<std::fs::File>>;
 
 const TURN_SECONDS: f32 = 0.25;
 /// `InGameCam`: 1.012291 rad horizontal at 4:3 (`Camera.nmo`), kept as the
@@ -77,6 +80,7 @@ pub struct Play {
     /// Snap of the reference heading pending for the next frame.
     snap_next_frame: Option<f32>,
     follow: Follow,
+    props: Props,
     pub respawns: u32,
 }
 
@@ -109,6 +113,7 @@ impl Play {
             ..WorldConfig::default()
         };
         let mut world = World::new(config, statics);
+        let props = Props::new(gpu, bundle, level, &physics, &mut world, format)?;
 
         let (start, heading) = spawn_point(level)?;
 
@@ -151,6 +156,7 @@ impl Play {
             turn: None,
             snap_next_frame: None,
             follow: Follow::new(start, heading),
+            props,
             respawns: 0,
         };
         // Show only the active ball.
@@ -290,6 +296,7 @@ impl Play {
         self.heading_view = self.start_heading;
         self.turn = None;
         self.snap_next_frame = None;
+        self.props.reset(&mut self.world);
         self.respawns += 1;
     }
 
@@ -325,6 +332,7 @@ impl Play {
         }
 
         self.world.advance(real_dt);
+        self.props.update(&mut self.world, self.fall_y);
 
         if self
             .world
@@ -336,6 +344,15 @@ impl Play {
         let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
         let lifted = self.held[key_index(PlayKey::Lift)];
         self.follow.update(real_dt, ball, self.heading_view, lifted);
+    }
+
+    /// Level objects that props replace; hide them in the level's renderer.
+    pub fn placeholders(&self) -> &[usize] {
+        &self.props.placeholders
+    }
+
+    pub fn prop_count(&self) -> usize {
+        self.props.count()
     }
 
     pub fn ball_pose(&self) -> Option<(Vec3, Quat)> {
@@ -383,6 +400,16 @@ impl Play {
         self.balls
             .renderer
             .render(gpu, encoder, color, depth, camera, aspect, &opts);
+        self.props.render(
+            gpu,
+            encoder,
+            color,
+            depth,
+            camera,
+            aspect,
+            &opts,
+            &self.world,
+        );
     }
 
     pub fn status(&self) -> String {
@@ -433,13 +460,16 @@ fn spawn_point(level: &ballistic_bundle::Scene) -> Result<(Vec3, f32)> {
 fn body_desc(b: &BallParams, position: Vec3) -> BodyDesc {
     BodyDesc {
         position,
-        radius: b.shape.radius(),
+        shape: Shape::Sphere {
+            radius: b.shape.radius(),
+        },
         mass: b.mass,
         friction: b.friction,
         elasticity: b.elasticity,
         linear_damping: b.linear_damping,
         rotational_damping: b.rotational_damping,
         group: b.collision_group.clone(),
+        ..BodyDesc::default()
     }
 }
 

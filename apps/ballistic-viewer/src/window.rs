@@ -130,19 +130,14 @@ impl App {
             .iter()
             .map(|s| s.key.clone())
             .collect();
-        let scene = load_scene(&gpu, &mut self.bundle, &self.args.scene, view_format)?;
+        let mut scene = load_scene(&gpu, &mut self.bundle, &self.args.scene, view_format)?;
         let camera = match &self.args.camera {
             Some(s) => parse_camera(s, scene.home)?,
             None => scene.home,
         };
         let depth = ballistic_render::gpu_depth_view(&gpu, config.width, config.height);
         let play = if self.args.play {
-            Some(new_play(
-                &gpu,
-                &mut self.bundle,
-                &self.args.scene,
-                view_format,
-            )?)
+            Some(new_play(&gpu, &mut self.bundle, &mut scene, view_format)?)
         } else {
             None
         };
@@ -178,14 +173,19 @@ impl App {
     }
 }
 
+/// Play mode on a loaded level; hides the placeholders that props replace.
 fn new_play(
     gpu: &Gpu,
     bundle: &mut Bundle,
-    scene: &str,
+    scene: &mut crate::LoadedScene,
     format: wgpu::TextureFormat,
 ) -> Result<crate::play::Play> {
-    let level = bundle.scene(scene)?;
-    crate::play::Play::new(gpu, bundle, &level, format)
+    let level = bundle.scene(&scene.key)?;
+    let play = crate::play::Play::new(gpu, bundle, &level, format)?;
+    for &i in play.placeholders() {
+        scene.renderer.set_object_hidden(i, true);
+    }
+    Ok(play)
 }
 
 fn present_mode(caps: &wgpu::SurfaceCapabilities, vsync: bool) -> wgpu::PresentMode {
@@ -242,7 +242,7 @@ impl State {
         self.camera = self.scene.home;
         if self.play_mode {
             // Levels have a start marker; other scenes fall back to free-fly.
-            self.play = new_play(&self.gpu, bundle, &key, self.view_format)
+            self.play = new_play(&self.gpu, bundle, &mut self.scene, self.view_format)
                 .inspect_err(|e| eprintln!("play mode off for {key}: {e:#}"))
                 .ok();
         }

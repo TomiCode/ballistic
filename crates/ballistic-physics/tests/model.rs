@@ -21,13 +21,14 @@ fn plane(size: f32, tilt_deg: f32, group: &str) -> StaticMesh {
 fn ball(y: f32) -> BodyDesc {
     BodyDesc {
         position: Vec3::new(0.0, y, 0.0),
-        radius: 2.0,
+        shape: Shape::Sphere { radius: 2.0 },
         mass: 1.9,
         friction: 0.8,
         elasticity: 0.2,
         linear_damping: 0.0,
         rotational_damping: 0.0,
         group: "Ball".into(),
+        ..BodyDesc::default()
     }
 }
 
@@ -110,7 +111,7 @@ fn ball_rolls_down_slope_without_slipping() {
         body.velocity
     );
     // Rolling contact: the contact point is (nearly) at rest.
-    let r = -normal * body.radius;
+    let r = -normal * body.radius();
     let slip = body.velocity + body.angular_velocity.cross(r);
     assert!(
         slip.length() < 0.2 * body.velocity.length(),
@@ -162,4 +163,143 @@ fn simulation_is_deterministic() {
         )
     };
     assert_eq!(run(), run());
+}
+
+fn crate_box(position: Vec3) -> BodyDesc {
+    BodyDesc {
+        position,
+        shape: Shape::Box {
+            half: Vec3::splat(2.5),
+        },
+        mass: 1.0,
+        friction: 0.7,
+        elasticity: 0.3,
+        linear_damping: 0.1,
+        rotational_damping: 0.1,
+        ..BodyDesc::default()
+    }
+}
+
+#[test]
+fn box_rests_flat_on_floor() {
+    let mut w = World::new(WorldConfig::default(), plane(50.0, 0.0, "Floor"));
+    let b = w.add_body(crate_box(Vec3::new(0.0, 3.0, 0.0)));
+    for _ in 0..660 {
+        w.step();
+    }
+    let body = w.body(b).unwrap();
+    assert!(
+        (body.position.y - 2.5).abs() < 0.05,
+        "y = {}",
+        body.position.y
+    );
+    assert!(body.velocity.length() < 0.05, "v = {}", body.velocity);
+    assert!(
+        body.angular_velocity.length() < 0.05,
+        "w = {}",
+        body.angular_velocity
+    );
+    assert!(
+        Vec3::new(body.position.x, 0.0, body.position.z).length() < 0.05,
+        "drifted to {}",
+        body.position
+    );
+    // Still upright.
+    assert!((body.orientation * Vec3::Y).y > 0.999);
+}
+
+#[test]
+fn box_tips_onto_a_face() {
+    let mut w = World::new(WorldConfig::default(), plane(50.0, 0.0, "Floor"));
+    // Balanced on an edge, slightly off: it falls onto a face.
+    let rot = Quat::from_rotation_z(40f32.to_radians());
+    let b = w.add_body(BodyDesc {
+        orientation: rot,
+        ..crate_box(Vec3::new(0.0, 3.6, 0.0))
+    });
+    for _ in 0..1320 {
+        w.step();
+    }
+    let body = w.body(b).unwrap();
+    assert!(
+        (body.position.y - 2.5).abs() < 0.1,
+        "y = {}",
+        body.position.y
+    );
+    let up = body.orientation * Vec3::Y;
+    let side = body.orientation * Vec3::X;
+    assert!(
+        up.y.abs() > 0.99 || side.y.abs() > 0.99,
+        "not on a face: up {up}"
+    );
+    assert!(body.velocity.length() < 0.1, "v = {}", body.velocity);
+}
+
+#[test]
+fn ball_pushes_a_box() {
+    let cfg = WorldConfig::default();
+    let mut w = World::new(cfg, plane(200.0, 0.0, "Floor"));
+    let bx = w.add_body(crate_box(Vec3::new(0.0, 2.5, 0.0)));
+    let ball_id = w.add_body(ball(2.0));
+    w.set_pose(ball_id, Vec3::new(-8.0, 2.0, 0.0), Quat::IDENTITY);
+    let p = w.add_push(ball_id, Vec3::X, 0.43);
+    for _ in 0..264 {
+        w.step();
+    }
+    w.remove_push(p);
+    let b = w.body(bx).unwrap();
+    assert!(b.position.x > 1.0, "box didn't move: {}", b.position);
+    assert!(
+        (b.position.y - 2.5).abs() < 0.2,
+        "box left the floor: {}",
+        b.position
+    );
+    let ball_x = w.body(ball_id).unwrap().position.x;
+    assert!(ball_x < b.position.x - 4.0, "ball passed through: {ball_x}");
+}
+
+#[test]
+fn spheres_exchange_momentum() {
+    let cfg = WorldConfig {
+        gravity: Vec3::ZERO,
+        ..WorldConfig::default()
+    };
+    let mut w = World::new(cfg, StaticMesh::default());
+    let a = w.add_body(ball(0.0));
+    // A loose ball (no collision group), as placed props are.
+    let b = w.add_body(BodyDesc {
+        position: Vec3::new(10.0, 0.0, 0.0),
+        group: String::new(),
+        ..ball(0.0)
+    });
+    w.body_mut(a).unwrap().velocity = Vec3::new(10.0, 0.0, 0.0);
+    let before = w.body(a).unwrap().velocity * 1.9;
+    for _ in 0..66 {
+        w.step();
+    }
+    let (va, vb) = (w.body(a).unwrap().velocity, w.body(b).unwrap().velocity);
+    assert!(vb.x > va.x, "no exchange: {va} {vb}");
+    let after = (va + vb) * 1.9;
+    assert!(
+        after.abs_diff_eq(before, 1e-3),
+        "momentum {before} -> {after}"
+    );
+}
+
+#[test]
+fn stacked_boxes_stay_stacked() {
+    let mut w = World::new(WorldConfig::default(), plane(50.0, 0.0, "Floor"));
+    let lower = w.add_body(crate_box(Vec3::new(0.0, 2.5, 0.0)));
+    let upper = w.add_body(crate_box(Vec3::new(0.5, 7.6, 0.0)));
+    for _ in 0..660 {
+        w.step();
+    }
+    let (l, u) = (w.body(lower).unwrap(), w.body(upper).unwrap());
+    assert!((u.position.y - 7.5).abs() < 0.15, "upper at {}", u.position);
+    assert!((l.position.y - 2.5).abs() < 0.1, "lower at {}", l.position);
+    assert!(
+        u.velocity.length() < 0.1,
+        "upper still moving {}",
+        u.velocity
+    );
 }

@@ -44,13 +44,16 @@ fn ball_settles_and_rolls_on_level_one() {
     let start = start_position(&scene);
     let id = w.add_body(BodyDesc {
         position: start + Vec3::Y * 3.0,
-        radius: wood.shape.radius(),
+        shape: Shape::Sphere {
+            radius: wood.shape.radius(),
+        },
         mass: wood.mass,
         friction: wood.friction,
         elasticity: wood.elasticity,
         linear_damping: wood.linear_damping,
         rotational_damping: wood.rotational_damping,
         group: wood.collision_group.clone(),
+        ..BodyDesc::default()
     });
 
     // Settle for 2 simulated seconds: the ball should come to rest on the start pad.
@@ -93,4 +96,85 @@ fn ball_settles_and_rolls_on_level_one() {
         }
     }
     assert!(moved, "no direction moved the ball on the start pad");
+}
+
+#[test]
+fn props_settle_where_they_are_placed() {
+    let Some(mut b) = bundle() else {
+        eprintln!("skipping: BALLISTIC_BUNDLE not set");
+        return;
+    };
+    let physics = b.physics().unwrap();
+    let mut prefabs = std::collections::HashMap::new();
+    for p in &physics.props {
+        let key = format!("ph/{}", p.group.to_lowercase());
+        let prefab = b.scene(&key).unwrap();
+        prefabs.insert(p.group.clone(), props::collider(p, &prefab).expect(&key));
+    }
+    let (mut total, mut fallen, mut moving) = (0, Vec::new(), Vec::new());
+    for level in 1..=12 {
+        let scene = b.scene(&format!("level/level_{level:02}")).unwrap();
+        let (mut statics, _) = build_level(&scene, &physics);
+        let spawns = props::find_props(&scene, &physics);
+        assert!(
+            spawns.iter().all(|s| (1..=9).contains(&s.sector)),
+            "level {level}: sector outside Sector_01..09"
+        );
+        let params = |g: &str| physics.props.iter().find(|p| p.group == g).unwrap();
+        for s in &spawns {
+            props::add_fixed(
+                &mut statics,
+                params(&s.group),
+                &prefabs[&s.group],
+                s.transform,
+            );
+        }
+        statics.finish();
+        let cfg = WorldConfig {
+            gravity: Vec3::from(physics.gravity),
+            time_factor: physics.time_factor,
+            ..WorldConfig::default()
+        };
+        let mut w = World::new(cfg, statics);
+        let bodies: Vec<_> = spawns
+            .iter()
+            .filter_map(|s| {
+                let d = props::body_desc(params(&s.group), &prefabs[&s.group], s.transform)?;
+                let start = d.position;
+                Some((s, start, w.add_body(d)))
+            })
+            .collect();
+        // Three simulated seconds.
+        for _ in 0..198 {
+            w.step();
+        }
+        for (s, start, id) in &bodies {
+            let body = w.body(*id).unwrap();
+            let moved = body.position - *start;
+            if std::env::var_os("PROPS_DEBUG").is_some() {
+                eprintln!(
+                    "level {level}: {} #{} at {start} moved {moved} v {}",
+                    s.group, s.placeholder, body.velocity
+                );
+            }
+            // Placeholders hover a little above the floor; props drop onto it.
+            if moved.y < -25.0 {
+                fallen.push(format!("level {level} {} #{}", s.group, s.placeholder));
+            }
+            if body.velocity.length() > 1.5 {
+                moving.push(format!(
+                    "level {level} {} #{} v {}",
+                    s.group, s.placeholder, body.velocity
+                ));
+            }
+        }
+        total += spawns.len();
+    }
+    assert!(total > 100, "only {total} props found");
+    // Props that rest on moving elements (not simulated yet) may fall.
+    assert!(fallen.len() <= 2, "fell out of the level: {fallen:#?}");
+    assert!(
+        moving.len() * 20 <= total,
+        "still moving after 3 s: {moving:#?}"
+    );
 }
