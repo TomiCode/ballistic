@@ -49,6 +49,10 @@ options so they can be calibrated later.
   of one push step, once, at a world point. The burst gives each piece of the
   old ball one. The pieces are convex bodies built like the moving elements'
   (`modules::convex_shape`).
+- **Collision reports**: a body can report its collisions (for sounds). A
+  collision is a contact pair, with another body or static geometry, that
+  wasn't touching at the step before. It's reported with the relative speed
+  at the contact point and the simulated time.
 
 ## Time
 

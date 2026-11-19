@@ -31,7 +31,7 @@ pub use hull::Hull;
 pub use level::{LevelBuildReport, build_level};
 pub use mesh::{StaticMesh, SurfaceMaterial};
 pub use shape::Shape;
-pub use world::{Body, BodyDesc, BodyId, JointId, PushId, World};
+pub use world::{Body, BodyDesc, BodyId, Collision, JointId, PushId, World};
 
 /// Whether two oriented boxes (centre, orientation, half extents) overlap,
 /// like the original's *Box Box Intersection* on two entities' boxes.

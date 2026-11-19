@@ -469,3 +469,43 @@ fn body_without_collision_falls_through() {
     }
     assert!(w.body(b).unwrap().position.y < -1.0);
 }
+
+#[test]
+fn a_landing_is_reported_once() {
+    let mut w = World::new(no_damping(), floor());
+    let a = w.add_body(hull_body(
+        Vec3::new(0.0, 5.0, 0.0),
+        vec![cuboid(Vec3::splat(0.5), Vec3::ZERO)],
+        1.0,
+    ));
+    // Not reporting: nothing.
+    let quiet = w.add_body(hull_body(
+        Vec3::new(5.0, 5.0, 0.0),
+        vec![cuboid(Vec3::splat(0.5), Vec3::ZERO)],
+        1.0,
+    ));
+    w.report_collisions(a, true);
+    let mut hits = Vec::new();
+    for _ in 0..200 {
+        let before = w.body(a).unwrap().velocity.length();
+        w.step();
+        for c in w.take_collisions() {
+            hits.push((c, before));
+        }
+    }
+    assert!(!hits.is_empty(), "no landing reported");
+    let (first, before) = hits[0];
+    assert_eq!(first.body, a);
+    assert_eq!(first.other, None);
+    assert!(hits.iter().all(|(c, _)| c.body == a && c.body != quiet));
+    // At the falling speed (4.5 units, gravity 20 by default config).
+    assert!(
+        (first.speed - before).abs() < 0.2 * before,
+        "{} vs {}",
+        first.speed,
+        before
+    );
+    assert!(first.time > 0.0);
+    // Resting afterwards: no stream of reports (a bounce or two at most).
+    assert!(hits.len() <= 3, "{} reports", hits.len());
+}

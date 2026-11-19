@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 8,
+  "format_version": 9,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -171,8 +171,11 @@ and useful to read). Since version 2.
       "linear_damping": 0.3, "rotational_damping": 0.2, "collision_group": "Ball",
       "impulse": [1.5, 3.0], "impulse_position": [0.0, 1.0, 0.0],
       "impulse_direction": [0.0, 1.0, 0.0], "fade": "…",
-      "fade_colors": [[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 0.0]] }, "…" ],
-    "pieces_fade_after_ms": 20000.0 }
+      "fade_colors": [[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 0.0]],
+      "sounds": { "sound": "pieces_wood", "colliders": ["Ball_Wood_piece11", "…"],
+        "min_speed": 2.0, "max_speed": 25.0, "sleep_s": 0.5, "listen_ms": 3000.0 } }, "…" ],
+    "pieces_fade_after_ms": 20000.0,
+    "sound": { "sound": "misc_trafo", "delay_frames": 1 } }
 }
 ```
 
@@ -242,8 +245,14 @@ and useful to read). Since version 2.
     piece gets an impulse from the `impulse` range, along
     `impulse_direction` at `impulse_position`, in its own frame. `fade` and
     `fade_colors` fade the `materials` out.
+    `sounds`: the pieces' `sound` (a bundle sound key). The `colliders`
+    play it when they hit something faster than `min_speed`, at volume
+    `min(speed / max_speed, 1)`, then stay quiet for `sleep_s` (simulated
+    time), for `listen_ms` after the burst. With no colliders it plays once at
+    the burst.
   - `pieces_fade_after_ms`: when a type's pieces fade out after a
     transformation from it.
+  - `sound`: the sound the trigger plays, `delay_frames` later.
 
 ## Versioning rules
 
@@ -255,4 +264,5 @@ and useful to read). Since version 2.
   `forces`, `delays_ms`, `proximities` and `boxes`. **6** adds the balloon
   (`PE_Balloon`), hinge `breakable`, force `graph`, and own-mesh bodies.
   **7** adds `transformers`. **8** adds the transformer `animation`, the
-  ball `pieces` and `pieces_fade_after_ms`.
+  ball `pieces` and `pieces_fade_after_ms`. **9** adds the transformer
+  `sound` and the pieces' `sounds`.

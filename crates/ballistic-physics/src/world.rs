@@ -1,6 +1,8 @@
 //! The simulation world: dynamic bodies (spheres, boxes, convex hulls) against
 //! static triangle geometry and each other, with hinges, sliders and springs.
 
+use std::collections::HashSet;
+
 use glam::{Mat3, Quat, Vec3};
 
 use crate::bvh::Aabb;
@@ -218,6 +220,25 @@ pub struct World {
     accumulator: f32,
     /// Steps taken since creation.
     pub steps: u64,
+    /// Bodies that report their collisions.
+    listeners: HashSet<usize>,
+    /// Pairs in contact at the last step (body, other body or `None`).
+    touching: HashSet<(usize, Option<usize>)>,
+    collisions: Vec<Collision>,
+}
+
+/// A body hitting something (like the original's collision event): a contact
+/// pair that wasn't touching the step before.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Collision {
+    pub body: BodyId,
+    /// The other body, or `None` for static geometry.
+    pub other: Option<BodyId>,
+    /// Relative speed at the contact point (units per simulated second).
+    pub speed: f32,
+    pub point: Vec3,
+    /// Simulated seconds since the world was created.
+    pub time: f64,
 }
 
 impl World {
@@ -232,7 +253,29 @@ impl World {
             springs: Vec::new(),
             accumulator: 0.0,
             steps: 0,
+            listeners: HashSet::new(),
+            touching: HashSet::new(),
+            collisions: Vec::new(),
         }
+    }
+
+    /// Whether `body` reports its collisions (see [`Self::take_collisions`]).
+    pub fn report_collisions(&mut self, body: BodyId, on: bool) {
+        if on {
+            self.listeners.insert(body.0 as usize);
+        } else {
+            self.listeners.remove(&(body.0 as usize));
+        }
+    }
+
+    /// Collisions of reporting bodies since the last call.
+    pub fn take_collisions(&mut self) -> Vec<Collision> {
+        std::mem::take(&mut self.collisions)
+    }
+
+    /// Simulated seconds since the world was created.
+    pub fn time(&self) -> f64 {
+        self.steps as f64 * f64::from(STEP_DT)
     }
 
     pub fn add_body(&mut self, d: BodyDesc) -> BodyId {
@@ -273,12 +316,14 @@ impl World {
         if let Some(b) = self.bodies.get_mut(id.0 as usize) {
             *b = None;
         }
+        let i = id.0 as usize;
+        self.listeners.remove(&i);
+        self.touching.retain(|&(a, b)| a != i && b != Some(i));
         for p in &mut self.pushes {
             if p.is_some_and(|p| p.body == id) {
                 *p = None;
             }
         }
-        let i = id.0 as usize;
         for j in &mut self.joints {
             if j.is_some_and(|j| j.a == i || j.b == Some(i)) {
                 *j = None;
@@ -569,8 +614,11 @@ impl World {
         // 5. Contacts and joints: detect, push apart, solve velocities; repeat.
         let has_joints =
             self.joints.iter().any(Option::is_some) || self.sliders.iter().any(Option::is_some);
-        for _ in 0..cfg.contact.iterations {
+        for pass in 0..cfg.contact.iterations {
             let manifolds = self.detect();
+            if pass == 0 {
+                self.record_collisions(&manifolds);
+            }
             if manifolds.is_empty() && !has_joints {
                 break;
             }
@@ -591,6 +639,49 @@ impl World {
             self.solve_velocities(&manifolds);
         }
         self.steps += 1;
+    }
+
+    /// New contact pairs of reporting bodies become collisions.
+    fn record_collisions(&mut self, manifolds: &[Manifold]) {
+        let mut now = HashSet::new();
+        let time = self.time();
+        for m in manifolds {
+            let key = match m.b {
+                Some(b) => (m.a.min(b), Some(m.a.max(b))),
+                None => (m.a, None),
+            };
+            if !now.insert(key) || self.touching.contains(&key) {
+                continue;
+            }
+            let ends = [Some(m.a), m.b];
+            if !ends.iter().flatten().any(|i| self.listeners.contains(i)) {
+                continue;
+            }
+            let Some(p) = m.contact.points.first().map(|p| p.pos) else {
+                continue;
+            };
+            let point_velocity = |i: Option<usize>| {
+                i.and_then(|i| self.bodies[i].as_ref())
+                    .map_or(Vec3::ZERO, |b| {
+                        b.velocity + b.angular_velocity.cross(p - b.position)
+                    })
+            };
+            let speed = (point_velocity(Some(m.a)) - point_velocity(m.b)).length();
+            for (me, other) in [(Some(m.a), m.b), (m.b, Some(m.a))] {
+                if let Some(me) = me
+                    && self.listeners.contains(&me)
+                {
+                    self.collisions.push(Collision {
+                        body: BodyId(me as u32),
+                        other: other.map(|o| BodyId(o as u32)),
+                        speed,
+                        point: p,
+                        time,
+                    });
+                }
+            }
+        }
+        self.touching = now;
     }
 
     /// A sleeping body touched by an awake one, or hinged to one, wakes up.

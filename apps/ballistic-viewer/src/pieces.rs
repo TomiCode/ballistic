@@ -17,11 +17,18 @@
 //!
 //! The original draws the random values from its own generator; here a fixed
 //! seed keeps runs repeatable. Pieces can't affect the ball either way.
+//!
+//! Sounds (`Ball_CollSound_Pieces`): the paper pieces play `Pieces_Paper` once
+//! at the burst. For 3 s after a wood or stone burst, six of the pieces play
+//! `Pieces_Wood` / `Pieces_Stone` when they hit something faster than 2, at
+//! `min(speed / 25, 1)` volume (the original's `PhysicsCollDetection`: relative
+//! speed over its maximum), then stay quiet for 0.5 s of simulated time.
 
 use ballistic_bundle::{BallPieces, PhysicsData, Scene};
 use ballistic_physics::modules::convex_shape;
 use ballistic_physics::{BodyDesc, BodyId, Mat4, Vec3, World};
 use ballistic_render::{Gpu, SceneRenderer};
+use std::collections::HashMap;
 
 struct Piece {
     /// Object index in the balls scene.
@@ -49,6 +56,12 @@ struct Set {
     timer_ms: Option<f32>,
     /// The fade, while it runs.
     fade_ms: Option<f32>,
+    /// Pieces (indices) whose collisions play the sound.
+    colliders: Vec<usize>,
+    /// Time left to listen for collisions, and each listening body's last
+    /// sound (simulated seconds).
+    listen_ms: Option<f32>,
+    last_hit: HashMap<BodyId, f64>,
     /// Draw state changed (shown/hidden, materials).
     dirty: bool,
 }
@@ -80,7 +93,7 @@ impl Pieces {
                 .find(|g| g.name == p.group)
                 .map(|g| g.members.clone())
                 .unwrap_or_default();
-            let pieces = members
+            let pieces: Vec<Piece> = members
                 .iter()
                 .filter_map(|&m| {
                     let m = m as usize;
@@ -94,6 +107,15 @@ impl Pieces {
                             .map(|v| Vec3::from(v.position))
                             .collect(),
                     })
+                })
+                .collect();
+            let colliders = p
+                .sounds
+                .colliders
+                .iter()
+                .filter_map(|n| {
+                    let o = index(n)?;
+                    pieces.iter().position(|p: &Piece| p.object == o)
                 })
                 .collect();
             let materials = p
@@ -113,6 +135,9 @@ impl Pieces {
                 out: Vec::new(),
                 timer_ms: None,
                 fade_ms: None,
+                colliders,
+                listen_ms: None,
+                last_hit: HashMap::new(),
                 dirty: false,
             });
         }
@@ -133,10 +158,11 @@ impl Pieces {
         }
     }
 
-    /// `Ball_Explosion_<Type>` at `at` (the old ball's position).
-    pub fn burst(&mut self, world: &mut World, ball: usize, at: Vec3) {
+    /// `Ball_Explosion_<Type>` at `at` (the old ball's position), then
+    /// `Ball_CollSound_Pieces`. Returns sounds to play now (key, volume).
+    pub fn burst(&mut self, world: &mut World, ball: usize, at: Vec3) -> Vec<(String, f32)> {
         let Some(si) = self.sets.iter().position(|s| s.ball == ball) else {
-            return;
+            return Vec::new();
         };
         let mut rng = self.rng;
         let mut rand = |r: [f32; 2]| {
@@ -186,10 +212,22 @@ impl Pieces {
                 rand(p.impulse),
                 m.transform_point3(Vec3::from(p.impulse_position)),
             );
+            if s.colliders.contains(&pi) {
+                world.report_collisions(id, true);
+            }
             s.out.push((id, pi, object_from_body));
         }
         s.dirty = true;
         self.rng = rng;
+        s.last_hit.clear();
+        if s.colliders.is_empty() {
+            // Paper: one Wave Player play.
+            s.listen_ms = None;
+            vec![(s.params.sounds.sound.clone(), 1.0)]
+        } else {
+            s.listen_ms = Some(s.params.sounds.listen_ms);
+            Vec::new()
+        }
     }
 
     /// A respawn: every type's pieces fade out (*reset Ballpieces*).
@@ -201,10 +239,48 @@ impl Pieces {
         }
     }
 
-    /// One frame: the timers and fades.
-    pub fn frame(&mut self, world: &mut World, real_dt: f32) {
+    /// One frame: the collision sounds, the timers and fades. Returns sounds
+    /// to play (key, volume).
+    pub fn frame(&mut self, world: &mut World, real_dt: f32) -> Vec<(String, f32)> {
         let ms = real_dt * 1000.0;
+        let mut sounds = Vec::new();
+        let hits = world.take_collisions();
         for s in &mut self.sets {
+            let snd = &s.params.sounds;
+            for h in &hits {
+                let piece = s
+                    .out
+                    .iter()
+                    .find(|(id, _, _)| *id == h.body)
+                    .map(|(_, pi, _)| *pi);
+                let Some(pi) = piece else { continue };
+                if s.listen_ms.is_none() || !s.colliders.contains(&pi) || h.speed <= snd.min_speed {
+                    continue;
+                }
+                if s.last_hit
+                    .get(&h.body)
+                    .is_some_and(|&t| h.time - t < f64::from(snd.sleep_s))
+                {
+                    continue;
+                }
+                s.last_hit.insert(h.body, h.time);
+                let volume = if snd.max_speed > 0.0 {
+                    (h.speed / snd.max_speed).min(1.0)
+                } else {
+                    1.0
+                };
+                sounds.push((snd.sound.clone(), volume));
+            }
+            if let Some(l) = s.listen_ms.as_mut() {
+                *l -= ms;
+                if *l <= 0.0 {
+                    // The Delayer stops the collision tests.
+                    s.listen_ms = None;
+                    for &(id, _, _) in &s.out {
+                        world.report_collisions(id, false);
+                    }
+                }
+            }
             if let Some(t) = s.timer_ms.as_mut() {
                 *t += ms;
                 if *t >= self.fade_after_ms {
@@ -224,6 +300,7 @@ impl Pieces {
                 }
             }
         }
+        sounds
     }
 
     /// Pieces in the world (all types).

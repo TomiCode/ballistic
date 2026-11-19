@@ -26,7 +26,8 @@
 //! (0.2 s) and the transformer is back. At the burst the old ball's pieces fly
 //! off ([`crate::pieces`]).
 //!
-//! Not yet: the sounds.
+//! The trigger's message to the sound scripts plays `Misc_Trafo` one frame
+//! later.
 
 use anyhow::{Context, Result};
 use ballistic_bundle::{PhysicsData, Progression, Scene, TransformerParams};
@@ -129,8 +130,10 @@ enum Phase {
 }
 
 /// What the play mode does for the transformer script this frame.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Event {
+    /// A sound to play (bundle key).
+    Sound(String),
     /// Ball control off for the whole sequence.
     Begin,
     /// The ball leaves the simulation; the play mode keeps its pose.
@@ -153,6 +156,8 @@ pub struct Transformers {
     phase: Phase,
     anim_objects: Option<AnimObjects>,
     anim: Option<Anim>,
+    /// Frames until the trigger's sound.
+    sound_in: Option<u32>,
     /// Level objects the transformers replace.
     pub placeholders: Vec<usize>,
 }
@@ -260,6 +265,7 @@ impl Transformers {
             phase: Phase::Idle,
             anim_objects,
             anim: None,
+            sound_in: None,
             placeholders,
         })
     }
@@ -308,6 +314,16 @@ impl Transformers {
         let ms = real_dt * 1000.0;
         let mut out = Vec::new();
         self.advance_anim(ms);
+        match self.sound_in {
+            Some(0) => {
+                self.sound_in = None;
+                if let Some(c) = &self.params.sound {
+                    out.push(Event::Sound(c.sound.clone()));
+                }
+            }
+            Some(n) => self.sound_in = Some(n - 1),
+            None => {}
+        }
         self.phase = match std::mem::replace(&mut self.phase, Phase::Idle) {
             Phase::Idle => {
                 // Get Nearest In Group, then the distance test and the type test.
@@ -322,6 +338,14 @@ impl Transformers {
                             && t.ball != ball_type =>
                     {
                         out.push(Event::Begin);
+                        if let Some(c) = &self.params.sound {
+                            if c.delay_frames == 0 {
+                                out.push(Event::Sound(c.sound.clone()));
+                            } else {
+                                // Counted down from the next frame.
+                                self.sound_in = Some(c.delay_frames - 1);
+                            }
+                        }
                         Phase::Starting {
                             item: i,
                             frames: START_FRAMES,
@@ -682,6 +706,10 @@ mod tests {
             },
             pieces: Vec::new(),
             pieces_fade_after_ms: 20000.0,
+            sound: Some(ballistic_bundle::SoundCue {
+                sound: "misc_trafo".into(),
+                delay_frames: 1,
+            }),
         }
     }
 
@@ -702,6 +730,7 @@ mod tests {
             phase: Phase::Idle,
             anim_objects: None,
             anim: None,
+            sound_in: None,
             placeholders: Vec::new(),
         }
     }
@@ -732,6 +761,7 @@ mod tests {
             }
         }
         let at_frame = |e: Event| log.iter().find(|(_, x)| *x == e).map(|(f, _)| *f);
+        assert_eq!(at_frame(Event::Sound("misc_trafo".into())), Some(1));
         assert_eq!(at_frame(Event::Begin), Some(0));
         assert_eq!(at_frame(Event::Release), Some(2));
         // 1350 + 1000 + 150 ms of 60 Hz frames after the release, give or take
@@ -745,7 +775,7 @@ mod tests {
             (8..=10).contains(&(swap - burst)),
             "burst at {burst}, swap at {swap}"
         );
-        assert_eq!(log.len(), 5, "{log:?}");
+        assert_eq!(log.len(), 6, "{log:?}");
         // Pulled to 3 above the transformer's origin.
         assert!(ball.distance(at + Vec3::Y * 3.0) < 0.05, "ended at {ball}");
         // The script searches again three frames after control is back: with

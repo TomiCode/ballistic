@@ -48,6 +48,34 @@ pub struct TransformerParams {
     /// A ball type's pieces fade out this long after a transformation from it
     /// (or at once if the ball transforms from that type again first).
     pub pieces_fade_after_ms: f32,
+    /// The sound the trigger starts (through the sound scripts).
+    pub sound: Option<SoundCue>,
+}
+
+/// A sound played some frames after an event.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SoundCue {
+    /// Bundle sound key, e.g. `misc_trafo`.
+    pub sound: String,
+    pub delay_frames: u32,
+}
+
+/// The sounds of a ball type's pieces (`Ball_CollSound_Pieces`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PieceSounds {
+    /// Bundle sound key, e.g. `pieces_wood`.
+    pub sound: String,
+    /// Pieces (objects of the `balls` scene) whose collisions play the sound,
+    /// for `listen_ms` after the burst. Empty: the sound plays once at the
+    /// burst.
+    pub colliders: Vec<String>,
+    /// `PhysicsCollDetection`: hits faster than `min_speed` play, at volume
+    /// `min(speed / max_speed, 1)`; then that piece stays quiet for
+    /// `sleep_s` of simulated time.
+    pub min_speed: f32,
+    pub max_speed: f32,
+    pub sleep_s: f32,
+    pub listen_ms: f32,
 }
 
 /// `AnimTrafo_MF Script` (`AnimTrafo.nmo`), played at the transformer that
@@ -199,6 +227,7 @@ pub struct BallPieces {
     /// second by the curve; then the pieces are removed.
     pub fade: Progression,
     pub fade_colors: [[f32; 4]; 2],
+    pub sounds: PieceSounds,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

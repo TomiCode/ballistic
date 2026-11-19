@@ -1,5 +1,6 @@
 //! `ballistic-viewer`: fly around the scenes of a Ballistic bundle.
 
+mod audio;
 mod follow;
 mod modules;
 mod pieces;
@@ -288,6 +289,8 @@ fn screenshot(
             let frames = (seconds / dt).round() as u32;
             for _ in 0..frames {
                 p.update(dt);
+                // Headless: counted, not played.
+                p.take_sounds();
                 // An explicit --camera stays put (to look at something else).
                 if args.camera.is_none() {
                     camera = p.camera(camera);
@@ -310,6 +313,14 @@ fn screenshot(
             p.progress().1,
             p.progress().2
         );
+        if !p.sound_counts.is_empty() {
+            let s: Vec<String> = p
+                .sound_counts
+                .iter()
+                .map(|(k, n)| format!("{k} ×{n}"))
+                .collect();
+            eprintln!("sounds: {}", s.join(", "));
+        }
         Some(p)
     } else {
         None

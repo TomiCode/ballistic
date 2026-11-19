@@ -88,6 +88,10 @@ pub struct Play {
     modules: Modules,
     transformers: Transformers,
     pieces: Pieces,
+    /// Sounds to play (bundle key, volume), taken by the window.
+    sounds: Vec<(String, f32)>,
+    /// How many times each sound was played (for headless runs).
+    pub sound_counts: std::collections::BTreeMap<String, u32>,
     /// The ball's pose while a transformer holds it out of the simulation.
     held: Option<(Vec3, Quat)>,
     progress: Progress,
@@ -183,6 +187,8 @@ impl Play {
             modules,
             transformers,
             pieces,
+            sounds: Vec::new(),
+            sound_counts: std::collections::BTreeMap::new(),
             held: None,
             progress,
             elapsed: 0.0,
@@ -369,6 +375,18 @@ impl Play {
         }
     }
 
+    fn queue_sounds(&mut self, sounds: impl IntoIterator<Item = (String, f32)>) {
+        for (key, volume) in sounds {
+            *self.sound_counts.entry(key.clone()).or_default() += 1;
+            self.sounds.push((key, volume));
+        }
+    }
+
+    /// Sounds to play since the last call (bundle key, volume 0–1).
+    pub fn take_sounds(&mut self) -> Vec<(String, f32)> {
+        std::mem::take(&mut self.sounds)
+    }
+
     /// The transformer script's requests for this frame.
     fn transformer_events(&mut self, events: Vec<transformers::Event>) {
         use transformers::Event as E;
@@ -380,9 +398,11 @@ impl Play {
                 }
                 E::Burst(ball) => {
                     if let Some((p, _)) = self.held {
-                        self.pieces.burst(&mut self.world, ball, p);
+                        let s = self.pieces.burst(&mut self.world, ball, p);
+                        self.queue_sounds(s);
                     }
                 }
+                E::Sound(key) => self.queue_sounds([(key, 1.0)]),
                 E::Release => {
                     self.held = self
                         .world
@@ -475,7 +495,8 @@ impl Play {
 
         self.world.advance(real_dt);
         self.props.update(&mut self.world, self.fall_y);
-        self.pieces.frame(&mut self.world, real_dt);
+        let s = self.pieces.frame(&mut self.world, real_dt);
+        self.queue_sounds(s);
         self.elapsed += real_dt;
         if let Some(ball) = self.ball_pose().map(|(p, _)| p) {
             if let Some(id) = self.ball_id() {

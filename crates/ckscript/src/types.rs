@@ -319,3 +319,39 @@ pub fn format_cell(file: &CkFile, scripts: &crate::Scripts, c: &crate::Cell) -> 
         },
     }
 }
+
+/// The message manager (`466a0fac-…`).
+pub const MESSAGE_MANAGER: Guid = Guid(0x466a_0fac, 0);
+
+/// The file's message type names: message values in scripts are indices into
+/// this list (research findings 12). The message manager's chunk holds two
+/// words, a count, then each name as a byte length and the bytes, padded to 4.
+pub fn message_names(file: &ckfile::CkFile) -> Vec<String> {
+    let Some(words) = file
+        .managers
+        .iter()
+        .find(|m| m.guid == MESSAGE_MANAGER)
+        .and_then(|m| m.chunk.as_ref())
+        .map(|c| c.data.as_slice())
+    else {
+        return Vec::new();
+    };
+    let Some(&count) = words.get(2) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut i = 3;
+    for _ in 0..count {
+        let Some(&len) = words.get(i) else { break };
+        let len = len as usize;
+        let n = len.div_ceil(4);
+        let Some(w) = words.get(i + 1..i + 1 + n) else {
+            break;
+        };
+        let bytes: Vec<u8> = w.iter().flat_map(|x| x.to_le_bytes()).take(len).collect();
+        let name = ckfile::decode_cp1252(&bytes);
+        out.push(name.trim_end_matches('\0').to_owned());
+        i += 1 + n;
+    }
+    out
+}

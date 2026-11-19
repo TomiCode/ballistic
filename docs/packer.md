@@ -52,7 +52,9 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      UFO sequence), and the ball transformers' reach, pull and delays from
      `Gameplay.nmo`'s `Trafo Manager`, their animation from `AnimTrafo.nmo`,
      and each ball type's burst into pieces from `Balls.nmo` (progression
-     curves decoded from their 2D curve parameters) → `data/physics.json`
+     curves decoded from their 2D curve parameters). Also their sounds: the
+     Trafo Manager's messages to the sound scripts, followed by name into
+     `Sound.nmo`, and the pieces' collision sounds → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

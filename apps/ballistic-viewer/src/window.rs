@@ -39,11 +39,18 @@ pub fn run(args: Args, bundle: Bundle) -> Result<()> {
     println!("{HELP}");
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
+    // Sounds only in play mode (a missing device just means silence).
+    let audio = if args.play {
+        crate::audio::Audio::new()
+    } else {
+        None
+    };
     let mut app = App {
         args,
         bundle,
         state: None,
         error: None,
+        audio,
     };
     event_loop.run_app(&mut app)?;
     match app.error {
@@ -57,6 +64,7 @@ struct App {
     bundle: Bundle,
     state: Option<State>,
     error: Option<anyhow::Error>,
+    audio: Option<crate::audio::Audio>,
 }
 
 struct State {
@@ -481,6 +489,14 @@ impl ApplicationHandler for App {
             WindowEvent::RedrawRequested => {
                 if !state.frame() {
                     event_loop.exit();
+                }
+                if let Some(play) = state.play.as_mut() {
+                    let sounds = play.take_sounds();
+                    if let Some(audio) = self.audio.as_mut() {
+                        for (key, volume) in sounds {
+                            audio.play(&mut self.bundle, &key, volume);
+                        }
+                    }
                 }
             }
             WindowEvent::Focused(false) => {

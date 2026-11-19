@@ -145,8 +145,18 @@ paper). They fly outwards and land on the level, but never touch the ball.
 They fade out 20 s after the transformation, or at once if the ball
 transforms from the same type again, or at a respawn.
 
-The ball keeps its new type when it respawns. The transformer and piece
-sounds aren't done yet. The status line counts the pieces out.
+The ball keeps its new type when it respawns. The status line counts the
+pieces out.
+
+**Sounds** (play mode in a window, through kira on the default output device;
+silent if there's none):
+- a transformation plays `Misc_Trafo` a frame after it starts;
+- paper pieces play `Pieces_Paper` once at the burst;
+- for 3 s after a wood or stone burst, six of the pieces play their sound
+  when they hit the level, louder for harder hits (the original's collision
+  sound rules).
+
+With `--screenshot` nothing is played; the summary counts the sounds.
 A prop that falls out of the level is gone until its sector is entered again.
 
 The camera follows like the original: a point chases the ball, and the camera
@@ -183,5 +193,6 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: pickups, checkpoint flames and fan particles, sounds, the end
+- In play mode: pickups, checkpoint flames and fan particles, the other
+  sounds (ball hits and rolls, events, music), the paper pieces' wind, the end
   sequence (and the last level's UFO) and score

@@ -14,7 +14,11 @@
 //! - the transformer's animation from `AnimTrafo.nmo` (`AnimTrafo_MF Script`);
 //! - each ball type's pieces from `Balls.nmo` (`Ball_Explosion_<Type>`,
 //!   `Ball_ResetPieces_<Type>`);
-//! - when they fade: the `Fadeout Manager`'s Timer in the Trafo Manager.
+//! - when they fade: the `Fadeout Manager`'s Timer in the Trafo Manager;
+//! - the sounds: the messages the Trafo Manager sends to the sound group,
+//!   followed in `Sound.nmo`'s `Simple Sound Messages` to a Wave Player (by
+//!   message name: each file numbers its messages itself), and each type's
+//!   pieces' collision sounds in `Ball_CollSound_Pieces`.
 
 use anyhow::{Context, Result};
 use ballistic_bundle as bb;
@@ -123,7 +127,151 @@ pub fn extract(
         animation: animation(install)?,
         pieces: pieces(install, balls)?,
         pieces_fade_after_ms,
+        sound: trafo_sound(install, file, scripts, &nodes)?,
     })
+}
+
+/// The Wave Player that a message of the Trafo Manager's (to the sound group)
+/// starts in `Sound.nmo`.
+fn trafo_sound(
+    install: &Install,
+    file: &CkFile,
+    scripts: &Scripts,
+    nodes: &[NodeParams],
+) -> Result<Option<bb::SoundCue>> {
+    let names = ckscript::types::message_names(file);
+    let sent: Vec<String> = nodes
+        .iter()
+        .filter(|n| {
+            n.building_block == "Send Message" && n.path.last().map(String::as_str) == Some(MANAGER)
+        })
+        .filter_map(|n| message(file, scripts, n.node, "Message"))
+        .filter_map(|i| names.get(i).cloned())
+        .collect();
+    let g = load(install, "3d entities/sound.nmo")?;
+    let sound_names = ckscript::types::message_names(&g.file);
+    let ex = Extractor::new(&g.file, &g.scripts);
+    let Some(switch) = ex
+        .nodes(&|b| b.name == "Switch On Message")
+        .into_iter()
+        .find(|n| n.path.last().map(String::as_str) == Some("Simple Sound Messages"))
+    else {
+        return Ok(None);
+    };
+    let Some(b) = g.scripts.behavior(switch.node) else {
+        return Ok(None);
+    };
+    // Switch On Message: input "Message k" → output k.
+    for (k, &param) in b.input_params.iter().enumerate() {
+        let Some(name) = message_index(&g.file, &g.scripts, param).and_then(|i| sound_names.get(i))
+        else {
+            continue;
+        };
+        if !sent.contains(name) {
+            continue;
+        }
+        let Some(&out) = b.outputs.get(k) else {
+            continue;
+        };
+        if let Some((player, delay)) = follow_to(&g.file, &g.scripts, out, "Wave Player", 0, 4) {
+            let target = ex
+                .nodes(&|bb| bb.name == "Wave Player")
+                .into_iter()
+                .find(|n| n.node == player)
+                .and_then(|n| target(&n));
+            if let Some(t) = target {
+                let key = t.to_lowercase();
+                anyhow::ensure!(
+                    install.get(&format!("sounds/{key}.wav")).is_some(),
+                    "sound {t} not in Sounds/"
+                );
+                return Ok(Some(bb::SoundCue {
+                    sound: key,
+                    delay_frames: delay,
+                }));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// The behaviour of type `bb` reached from pin `from` through links and Nops
+/// (and the total link delay), within `depth` hops.
+fn follow_to(
+    file: &CkFile,
+    scripts: &Scripts,
+    from: ObjRef,
+    bb: &str,
+    delay: u32,
+    depth: u32,
+) -> Option<(ObjRef, u32)> {
+    if depth == 0 {
+        return None;
+    }
+    let owner = *scripts.owner.get(&from)?;
+    let graph = *scripts.owner.get(&owner)?;
+    let links = &scripts.behavior(graph)?.links;
+    let proto = |b: ObjRef| -> Option<String> {
+        let beh = scripts.behavior(b)?;
+        let p = beh.prototype.as_ref()?;
+        ckscript::Catalogue::builtin()
+            .building_block(p.guid)
+            .map(|x| x.name.clone())
+    };
+    for &l in links {
+        let Some(Some(ScriptObject::Link(k))) = scripts.objects.get(l) else {
+            continue;
+        };
+        if k.source != Some(from) {
+            continue;
+        }
+        let Some(t) = k.target else { continue };
+        let Some(&tb) = scripts.owner.get(&t) else {
+            continue;
+        };
+        let d = delay + u32::from(k.delay);
+        let name = proto(tb).unwrap_or_default();
+        // Only a Wave Player's Play input starts it.
+        if name == bb && file.objects.get(t).and_then(|o| o.name.as_deref()) == Some("Play") {
+            return Some((tb, d));
+        }
+        if name == "Nop" {
+            for &o in &scripts.behavior(tb)?.outputs {
+                if let Some(r) = follow_to(file, scripts, o, bb, d, depth - 1) {
+                    return Some(r);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The message index a node's input parameter `pin` holds.
+fn message(file: &CkFile, scripts: &Scripts, node: ObjRef, pin: &str) -> Option<usize> {
+    let b = scripts.behavior(node)?;
+    let param = b
+        .input_params
+        .iter()
+        .copied()
+        .find(|&p| file.objects.get(p).and_then(|o| o.name.as_deref()) == Some(pin))?;
+    message_index(file, scripts, param)
+}
+
+/// The message index an input parameter holds (through its source local).
+fn message_index(file: &CkFile, scripts: &Scripts, param: ObjRef) -> Option<usize> {
+    let Some(Some(ScriptObject::In(i))) = scripts.objects.get(param) else {
+        return None;
+    };
+    let value = match scripts.objects.get(i.source?)? {
+        Some(ScriptObject::Local(l)) => &l.value,
+        Some(ScriptObject::Out(o)) => &o.value,
+        _ => return None,
+    };
+    let _ = file;
+    match value {
+        ckscript::ParamValue::Manager { value, .. } => usize::try_from(*value).ok(),
+        _ => None,
+    }
 }
 
 struct Loaded {
@@ -288,9 +436,60 @@ fn pieces(install: &Install, balls: &[bb::BallParams]) -> Result<Vec<bb::BallPie
             impulse_direction: v3(impulse, "Direction")?,
             fade: progression(under(&reset, "Bezier Progression")?)?,
             fade_colors,
+            sounds: piece_sounds(install, &nodes, kind)?,
         });
     }
     Ok(out)
+}
+
+/// `Ball_CollSound_Pieces`: the `<Kind>-Collision Sound` graph's collision
+/// tests, or (without one, the paper) a single play at the burst. The sound is
+/// the one `Balls_Init` loads by name, `Pieces_<Kind>`.
+fn piece_sounds(install: &Install, nodes: &[NodeParams], kind: &str) -> Result<bb::PieceSounds> {
+    let name = format!("Pieces_{kind}");
+    anyhow::ensure!(
+        nodes
+            .iter()
+            .any(|n| n.path.first().map(String::as_str) == Some("Balls_Init")
+                && text(input(n, "p1")).as_deref() == Some(name.as_str())),
+        "Balls_Init doesn't load {name}"
+    );
+    let key = name.to_lowercase();
+    anyhow::ensure!(
+        install.get(&format!("sounds/{key}.wav")).is_some(),
+        "sound {name} not in Sounds/"
+    );
+    let graph = format!("{kind}-Collision Sound");
+    let in_graph = |bb: &str| {
+        nodes
+            .iter()
+            .filter(|n| n.building_block == bb && n.path.last() == Some(&graph))
+            .collect::<Vec<_>>()
+    };
+    let tests = in_graph("PhysicsCollDetection");
+    let Some(first) = tests.first() else {
+        return Ok(bb::PieceSounds {
+            sound: key,
+            colliders: Vec::new(),
+            min_speed: 0.0,
+            max_speed: 0.0,
+            sleep_s: 0.0,
+            listen_ms: 0.0,
+        });
+    };
+    let f =
+        |n: &NodeParams, pin: &str| float(input(n, pin)).with_context(|| format!("{graph}: {pin}"));
+    Ok(bb::PieceSounds {
+        sound: key,
+        colliders: tests.iter().filter_map(|n| target(n)).collect(),
+        min_speed: f(first, "Min Speed m/s")?,
+        max_speed: f(first, "Max Speed m/s")?,
+        sleep_s: f(first, "Sleep afterwards")?,
+        listen_ms: in_graph("Delayer")
+            .first()
+            .and_then(|n| float(input(n, "Time to Wait")))
+            .with_context(|| format!("{graph}: Delayer"))?,
+    })
 }
 
 fn progression(n: &NodeParams) -> Result<bb::Progression> {
