@@ -33,7 +33,7 @@ play mode (--play):
   Shift + Left / Right       turn the camera 90°
   Space                      lift the camera (hold)
   R  respawn                 1  next ball type
-  N  warp to the next checkpoint (development aid)";
+  N  warp to the next checkpoint or the level end (development aid)";
 
 pub fn run(args: Args, bundle: Bundle) -> Result<()> {
     println!("{HELP}");

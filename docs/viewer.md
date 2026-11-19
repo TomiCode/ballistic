@@ -25,7 +25,7 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--screenshot out.png [--size 1920x1080]` | Render one frame off-screen and exit, no window |
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
 | `--play` | Play mode: roll a ball on the level |
-| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`, and `next`, which warps to the next checkpoint at the start of its segment. With `--camera` too, the camera stays at that view instead of following the ball |
+| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`, and `next`, which warps to the next checkpoint (then the level end) at the start of its segment. With `--camera` too, the camera stays at that view instead of following the ball |
 
 The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 
@@ -61,7 +61,7 @@ behind it, both as the original sets them. Control works like the original:
 | **Shift** + **Left / Right** | Turn the camera 90° |
 | **Space** (hold) | Lift view: the camera rises 50 units for a look from above |
 | **R** | Respawn (at the current reset point) |
-| **N** | Warp to the next checkpoint (development aid) |
+| **N** | Warp to the next checkpoint, then to the level end (development aid) |
 | **1** | Next ball type (wood, stone, paper) |
 
 Details carried over from the original's scripts:
@@ -90,7 +90,14 @@ Checkpoints must be passed in order. Rolling through the next one (within
 
 A respawn resets the current sector's props. The window title shows the
 checkpoints reached. The checkpoint flames aren't drawn yet (they're
-particles), and after the last checkpoint nothing happens yet (the level end).
+particles).
+
+**The level end** is the balloon, part of the last sector. The level is
+finished when the ball settles in the middle of its platform (within 1 of the
+platform's centre, as in the original). Ball control then switches off for
+good, and the window title shows the time since the level started. The
+balloon doesn't move yet: its platform and bridge are solid but fixed, and
+there's no end sequence or score screen.
 A prop that falls out of the level is gone until its sector is entered again.
 
 The camera follows like the original: a point chases the ball, and the camera
@@ -127,5 +134,5 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: moving level parts, pickups, transformers, checkpoint flames,
-  the level end
+- In play mode: moving level parts (and the balloon's), pickups,
+  transformers, checkpoint flames, the end sequence and score

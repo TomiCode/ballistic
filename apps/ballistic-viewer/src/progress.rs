@@ -15,12 +15,18 @@
 //! - Level start activates sector 1. A respawn deactivates the current sector
 //!   and activates it again 4 frames later, so its props go back to their
 //!   placeholders.
+//! - The level end (`PE_Balloon`) belongs to the last sector. Its script starts
+//!   when that sector activates: within 70 (X/Z) of the platform it switches
+//!   on a second test, and the level is finished when the ball is within 1 of
+//!   the platform's origin (`Level_Finish`).
 //!
 //! "Frames" are calls to [`Progress::frame`], once per rendered frame like the
 //! original's behaviour graphs.
 
 use ballistic_bundle::Scene;
 use ballistic_physics::{Mat4, Vec3};
+
+use crate::props::LevelEnd;
 
 /// Frames between deactivating one sector and activating the next
 /// (`Gameplay_SectorManager`: a 4-frame link delay).
@@ -131,6 +137,20 @@ pub struct Layout {
     pub reset_points: Vec<Mat4>,
 }
 
+/// The last sector: `Sector_01`, `Sector_02`, … counted up to the first one
+/// missing (at most 9), as level init's *Set Sector Attribute* does.
+pub fn last_sector(level: &Scene) -> u32 {
+    (1..=9)
+        .take_while(|n| {
+            level
+                .groups
+                .iter()
+                .any(|g| g.name == format!("Sector_{n:02}"))
+        })
+        .last()
+        .unwrap_or(1)
+}
+
 /// The number after the last `_` of a name (`PR_Resetpoint_03` → 3).
 fn number(name: &str) -> Option<usize> {
     name.rsplit_once('_')?.1.parse().ok()
@@ -228,6 +248,47 @@ impl Armed {
     }
 }
 
+/// The level end's script (`PE_Balloon Script`), once its sector is active.
+#[derive(Debug, Clone)]
+struct EndScript {
+    /// Ball near the platform (70 on X/Z): wakes it and arms `reach`.
+    near: Proximity,
+    /// Ball at the platform's origin (1): `Level_Finish`.
+    reach: Proximity,
+}
+
+impl EndScript {
+    fn new() -> Self {
+        let mut near = Proximity::new(70.0, 75.0, 100.0, (10, 60), true);
+        near.switch_on();
+        Self {
+            near,
+            reach: Proximity::new(1.0, 5.0, 10.0, (1, 10), false),
+        }
+    }
+
+    fn frame(&mut self, ball: Vec3, platform: Vec3) -> bool {
+        if self.near.frame(ball, platform) == Some(Edge::Enter) {
+            self.near.switch_off();
+            self.reach.switch_on();
+        }
+        if self.reach.frame(ball, platform) == Some(Edge::Enter) {
+            self.reach.switch_off();
+            return true;
+        }
+        false
+    }
+}
+
+/// Something that happened in a frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Event {
+    /// Checkpoint (index) reached.
+    Checkpoint(usize),
+    /// The ball reached the level end's platform.
+    Finished,
+}
+
 #[derive(Debug, Clone)]
 pub struct Progress {
     layout: Layout,
@@ -243,12 +304,15 @@ pub struct Progress {
     armed: Option<Armed>,
     /// Sector switches not yet applied: (sector, active).
     changes: Vec<(u32, bool)>,
+    level_end: Option<LevelEnd>,
+    end_script: Option<EndScript>,
+    finished: bool,
 }
 
 impl Progress {
     /// Level start: reset point 0, checkpoint 0 armed, sector 1 switched off
     /// and on (after the usual 4 frames), as `Init Ingame` writes 1 to both.
-    pub fn start(layout: Layout) -> Self {
+    pub fn start(layout: Layout, level_end: Option<LevelEnd>) -> Self {
         let armed = (!layout.checkpoints.is_empty()).then(|| Armed::new(0));
         let mut p = Self {
             layout,
@@ -258,6 +322,9 @@ impl Progress {
             pending_checkpoint: None,
             armed,
             changes: Vec::new(),
+            level_end,
+            end_script: None,
+            finished: false,
         };
         p.switch(1, 1);
         p
@@ -267,6 +334,9 @@ impl Progress {
     fn switch(&mut self, deactivate: u32, activate: u32) {
         if deactivate != 0 {
             self.changes.push((deactivate, false));
+            if self.level_end.is_some_and(|e| e.sector == deactivate) {
+                self.end_script = None;
+            }
         }
         self.pending_sector = Some((activate, SECTOR_DELAY));
     }
@@ -286,9 +356,16 @@ impl Progress {
         self.layout.reset_points.get(self.reset).copied()
     }
 
-    /// The checkpoint to reach next, if any.
-    pub fn next_checkpoint(&self) -> Option<Checkpoint> {
-        self.layout.checkpoints.get(self.act as usize - 1).copied()
+    /// Where to go next: the next checkpoint's flame, then the level end's
+    /// platform; `None` once finished.
+    pub fn next_target(&self) -> Option<Vec3> {
+        if self.finished {
+            return None;
+        }
+        match self.layout.checkpoints.get(self.act as usize - 1) {
+            Some(cp) => Some(cp.flame),
+            None => self.level_end.map(|e| e.platform),
+        }
     }
 
     pub fn reached(&self) -> usize {
@@ -299,14 +376,17 @@ impl Progress {
         self.layout.checkpoints.len()
     }
 
-    /// One frame. Returns the index of a checkpoint reached this frame.
-    pub fn frame(&mut self, ball: Vec3) -> Option<usize> {
+    /// One frame.
+    pub fn frame(&mut self, ball: Vec3) -> Option<Event> {
         if let Some((sector, n)) = self.pending_sector.as_mut() {
             if *n == 0 {
                 let s = *sector;
                 self.pending_sector = None;
                 if s != 0 {
                     self.changes.push((s, true));
+                    if self.level_end.is_some_and(|e| e.sector == s) && !self.finished {
+                        self.end_script = Some(EndScript::new());
+                    }
                 }
             } else {
                 *n -= 1;
@@ -321,6 +401,13 @@ impl Progress {
             } else {
                 *n -= 1;
             }
+        }
+        if let (Some(script), Some(end)) = (self.end_script.as_mut(), self.level_end)
+            && script.frame(ball, end.platform)
+        {
+            self.end_script = None;
+            self.finished = true;
+            return Some(Event::Finished);
         }
         let armed = self.armed.as_mut()?;
         let cp = self.layout.checkpoints[armed.index];
@@ -337,7 +424,7 @@ impl Progress {
         self.act += 1;
         self.switch(old, self.act);
         self.pending_checkpoint = Some(NEXT_CHECKPOINT_DELAY);
-        Some(index)
+        Some(Event::Checkpoint(index))
     }
 }
 
@@ -400,7 +487,7 @@ mod tests {
 
     #[test]
     fn start_activates_sector_one_after_four_frames() {
-        let mut p = Progress::start(line_layout());
+        let mut p = Progress::start(line_layout(), None);
         // Init writes 1 to both cells: sector 1 off (a no-op), then on.
         assert_eq!(p.take_changes(), vec![(1, false)]);
         for _ in 0..4 {
@@ -413,13 +500,13 @@ mod tests {
 
     #[test]
     fn rolling_through_checkpoints_switches_sectors_and_reset_points() {
-        let mut p = Progress::start(line_layout());
+        let mut p = Progress::start(line_layout(), None);
         let mut changes = Vec::new();
         let mut reached = Vec::new();
         // Roll along X at 0.5 units per frame.
         for f in 0..500 {
             let x = f as f32 * 0.5;
-            if let Some(i) = p.frame(Vec3::new(x, 1.0, 0.0)) {
+            if let Some(Event::Checkpoint(i)) = p.frame(Vec3::new(x, 1.0, 0.0)) {
                 reached.push((i, x));
             }
             changes.extend(p.take_changes());
@@ -449,7 +536,7 @@ mod tests {
 
     #[test]
     fn checkpoints_must_be_reached_in_order() {
-        let mut p = Progress::start(line_layout());
+        let mut p = Progress::start(line_layout(), None);
         // Sitting on the second checkpoint does nothing.
         for _ in 0..300 {
             assert_eq!(p.frame(Vec3::new(200.0, 1.5, 0.0)), None);
@@ -489,5 +576,34 @@ mod tests {
                 "level {level}: prop in sector {max_sector}"
             );
         }
+    }
+
+    #[test]
+    fn level_end_is_armed_in_the_last_sector() {
+        let end = LevelEnd {
+            platform: Vec3::new(300.0, 0.0, 0.0),
+            sector: 3,
+        };
+        let mut p = Progress::start(line_layout(), Some(end));
+        let mut events = Vec::new();
+        // Straight onto the platform before the checkpoints: nothing.
+        for _ in 0..200 {
+            assert_eq!(p.frame(end.platform), None);
+        }
+        // Through both checkpoints, then onto the platform.
+        for f in 0..700 {
+            let x = (f as f32 * 0.5).min(300.0);
+            let y = if x < 300.0 { 1.0 } else { 0.0 };
+            if let Some(e) = p.frame(Vec3::new(x, y, 0.0)) {
+                events.push(e);
+            }
+            p.take_changes();
+        }
+        assert_eq!(
+            events,
+            vec![Event::Checkpoint(0), Event::Checkpoint(1), Event::Finished]
+        );
+        assert!(p.finished);
+        assert_eq!(p.next_target(), None);
     }
 }

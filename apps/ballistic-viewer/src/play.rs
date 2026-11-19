@@ -83,6 +83,10 @@ pub struct Play {
     follow: Follow,
     props: Props,
     progress: Progress,
+    /// Real seconds of play since the level started.
+    elapsed: f32,
+    /// When the level end was reached: (play time, physics steps).
+    finished_at: Option<(f32, u64)>,
     pub respawns: u32,
 }
 
@@ -118,7 +122,7 @@ impl Play {
         let props = Props::new(gpu, bundle, level, &physics, &mut world, format)?;
         let layout = progress::layout(level, |key| bundle.scene(key).ok());
         let spawn_matrix = layout.reset_points.first().copied();
-        let progress = Progress::start(layout);
+        let progress = Progress::start(layout, props.level_end);
 
         let (start, heading) = match spawn_matrix {
             Some(m) => reset_pose(m),
@@ -166,6 +170,8 @@ impl Play {
             follow: Follow::new(start, heading),
             props,
             progress,
+            elapsed: 0.0,
+            finished_at: None,
             respawns: 0,
         };
         // Show only the active ball.
@@ -226,6 +232,11 @@ impl Play {
 
     /// Key Event "On": state resets, so held keys fire Pressed immediately.
     fn nav_on(&mut self) {
+        // After Level_Finish the original switches ball and camera navigation
+        // off for good.
+        if self.finished_at.is_some() {
+            return;
+        }
         self.nav_on = true;
         for k in DIRS {
             if self.held[key_index(k)] {
@@ -240,6 +251,9 @@ impl Play {
             return;
         }
         self.held[i] = pressed;
+        if self.finished_at.is_some() {
+            return;
+        }
         let rotating = self.held[key_index(PlayKey::Rotate)];
         match k {
             // Only the camera reads it (in `update`).
@@ -275,13 +289,14 @@ impl Play {
         }
     }
 
-    /// Development aid: puts the ball, at rest, on the next checkpoint's flame.
+    /// Development aid: puts the ball, at rest, on the next checkpoint's
+    /// flame, or after the last one on the level end's platform.
     pub fn warp_to_next_checkpoint(&mut self) {
-        let Some(cp) = self.progress.next_checkpoint() else {
+        let Some(target) = self.progress.next_target() else {
             return;
         };
-        self.world.reset_body(self.ball, cp.flame);
-        self.follow.reset(cp.flame, self.heading_view);
+        self.world.reset_body(self.ball, target);
+        self.follow.reset(target, self.heading_view);
     }
 
     pub fn cycle_ball(&mut self) {
@@ -363,10 +378,21 @@ impl Play {
 
         self.world.advance(real_dt);
         self.props.update(&mut self.world, self.fall_y);
-        if let Some(ball) = self.world.body(self.ball).map(|b| b.position)
-            && let Some(i) = self.progress.frame(ball)
-        {
-            eprintln!("checkpoint {} reached", i + 1);
+        self.elapsed += real_dt;
+        if let Some(ball) = self.world.body(self.ball).map(|b| b.position) {
+            match self.progress.frame(ball) {
+                Some(progress::Event::Checkpoint(i)) => eprintln!("checkpoint {} reached", i + 1),
+                Some(progress::Event::Finished) => {
+                    // Level_Finish: ball control off.
+                    self.finished_at = Some((self.elapsed, self.world.steps));
+                    self.nav_off();
+                    eprintln!(
+                        "level finished after {:.2} s ({} physics steps)",
+                        self.elapsed, self.world.steps
+                    );
+                }
+                None => {}
+            }
         }
         self.apply_sector_changes();
 
@@ -460,11 +486,14 @@ impl Play {
     pub fn status(&self) -> String {
         let b = self.world.body(self.ball);
         format!(
-            "{} speed {:.1} checkpoint {}/{} {}{}{}",
+            "{} speed {:.1} checkpoint {}/{} {}{}{}{}",
             self.ball_name(),
             b.map_or(0.0, |b| b.velocity.length()),
             self.progress.reached(),
             self.progress.checkpoint_count(),
+            self.finished_at
+                .map(|(t, _)| format!("[finished {t:.2} s] "))
+                .unwrap_or_default(),
             if self.nav_on { "" } else { "[no control] " },
             if self.turn.is_some() {
                 "[turning] "

@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use anyhow::{Context, Result};
 use ballistic_bundle::{PhysicsData, PropParams, Scene};
 use ballistic_physics::props::{self, Collider};
-use ballistic_physics::{BodyDesc, BodyId, Mat4, Vec3, World};
+use ballistic_physics::{BodyDesc, BodyId, Mat4, SurfaceMaterial, Vec3, World};
 use ballistic_render::{Camera, Gpu, RenderOptions, SceneRenderer};
 
 use crate::play::Bundle;
@@ -39,7 +39,26 @@ pub struct Props {
     renderer: Option<SceneRenderer>,
     /// Level objects the props replace (the game deletes the placeholders).
     pub placeholders: Vec<usize>,
+    pub level_end: Option<LevelEnd>,
 }
+
+/// The level end (`PE_Balloon` at the `PE_Levelende` placeholder).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LevelEnd {
+    /// `PE_Balloon_Platform`'s origin: the ball must get within 1 of it.
+    pub platform: Vec3,
+    /// The last sector, whose activation starts the balloon's script.
+    pub sector: u32,
+}
+
+/// Level-end prefab objects that are physicalized (all as static geometry
+/// for now: in the original the platform hangs on a slider with a spring and
+/// the planks on hinges), with their Physicalize values (friction 0.7,
+/// elasticity 0.4, collision group "Floor").
+const LEVEL_END_SOLID: [&str; 2] = ["PE_Balloon_Platform", "PE_Balloon_Platte"];
+/// Level-end prefab objects not drawn: the UFO (last level only) and the
+/// hidden slide box.
+const LEVEL_END_HIDDEN: [&str; 2] = ["PE_UFO", "PE_Box_slide"];
 
 struct Prefab {
     params: PropParams,
@@ -162,6 +181,15 @@ impl Props {
                 parts,
             });
         }
+        let mut placeholders: Vec<usize> = spawns.iter().map(|s| s.placeholder as usize).collect();
+        let level_end = match add_level_end(bundle, level, &mut merged, world) {
+            Some((prop, end, placeholder)) => {
+                list.push(prop);
+                placeholders.push(placeholder);
+                Some(end)
+            }
+            None => None,
+        };
         world.statics.finish();
 
         let renderer = if merged.objects.is_empty() {
@@ -177,7 +205,8 @@ impl Props {
         Ok(Self {
             items: list,
             renderer,
-            placeholders: spawns.iter().map(|s| s.placeholder as usize).collect(),
+            placeholders,
+            level_end,
         })
     }
 
@@ -258,4 +287,92 @@ impl Props {
         }
         r.render(gpu, encoder, color, depth, camera, aspect, opts);
     }
+}
+
+/// Places the level end like level init: the `PE_Levelende` member's matrix,
+/// the prefab named like it without `_NN`, in the last sector. Returns the
+/// prop (fixed, switched off), the level end, and the placeholder's index.
+fn add_level_end(
+    bundle: &mut Bundle,
+    level: &Scene,
+    merged: &mut Scene,
+    world: &mut World,
+) -> Option<(Prop, LevelEnd, usize)> {
+    let group = level.groups.iter().find(|g| g.name == "PE_Levelende")?;
+    let &index = group.members.first()?;
+    let placeholder = level.objects.get(index as usize)?;
+    let base = placeholder.name.rsplit_once('_')?.0;
+    let Ok(prefab) = bundle.scene(&format!("ph/{}", base.to_lowercase())) else {
+        eprintln!("warning: level end prefab {base} not in the bundle");
+        return None;
+    };
+    let transform = Mat4::from_cols_array_2d(&placeholder.transform);
+    let world_of = |name: &str| {
+        prefab
+            .objects
+            .iter()
+            .find(|o| o.name == name)
+            .map(|o| Mat4::from_cols_array_2d(&o.transform))
+    };
+    let root_inv = world_of(&format!("{base}_MF"))?.inverse();
+    let platform = world_of(&format!("{base}_Platform"))
+        .map(|m| (transform * root_inv * m).transform_point3(Vec3::ZERO))?;
+
+    let mesh_offset = merged.meshes.len() as u32;
+    let material_offset = merged.materials.len() as u32;
+    merged.materials.extend(prefab.materials.iter().cloned());
+    merged
+        .meshes
+        .extend(prefab.meshes.iter().cloned().map(|mut m| {
+            for sm in &mut m.submeshes {
+                sm.material = sm.material.map(|i| i + material_offset);
+            }
+            m
+        }));
+    let material = world.statics.add_material(SurfaceMaterial {
+        friction: 0.7,
+        elasticity: 0.4,
+        group: "Floor".into(),
+    });
+    world.statics.set_material_enabled(material, false);
+    let mut parts = Vec::new();
+    for o in &prefab.objects {
+        let Some(mesh) = o.mesh else { continue };
+        if LEVEL_END_HIDDEN.iter().any(|p| o.name.starts_with(p)) {
+            continue;
+        }
+        let model = transform * root_inv * Mat4::from_cols_array_2d(&o.transform);
+        if LEVEL_END_SOLID.iter().any(|p| o.name.starts_with(p)) {
+            let m = &prefab.meshes[mesh as usize];
+            let verts: Vec<Vec3> = m
+                .vertices()
+                .iter()
+                .map(|v| model.transform_point3(Vec3::from(v.position)))
+                .collect();
+            for t in m.indices().as_chunks::<3>().0 {
+                let [a, b, c] = t.map(|i| verts[usize::from(i)]);
+                world.statics.add_triangle(a, b, c, material);
+            }
+        }
+        let mut obj = o.clone();
+        obj.mesh = Some(mesh + mesh_offset);
+        obj.parent = None;
+        obj.hidden = false;
+        obj.transform = model.to_cols_array_2d();
+        parts.push(Part {
+            object: merged.objects.len(),
+            local: model,
+        });
+        merged.objects.push(obj);
+    }
+    let sector = crate::progress::last_sector(level);
+    let prop = Prop {
+        sector,
+        active: false,
+        desc: None,
+        body: None,
+        fixed_material: Some(material),
+        parts,
+    };
+    Some((prop, LevelEnd { platform, sector }, index as usize))
 }
