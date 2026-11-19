@@ -4,6 +4,7 @@
 pub mod audio;
 pub mod install;
 mod ktx2;
+mod modules;
 pub mod pack;
 pub mod physics;
 pub mod scenes;

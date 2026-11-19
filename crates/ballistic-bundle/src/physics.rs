@@ -15,6 +15,70 @@ pub struct PhysicsData {
     pub surfaces: Vec<SurfaceParams>,
     /// Movable level props by prefab group (`Physicalize_Convex`, `Physicalize_Balls`).
     pub props: Vec<PropParams>,
+    /// Moving elements (`P_Modul_*` prefabs): bodies and joints from their scripts.
+    pub modules: Vec<ModuleSetup>,
+}
+
+/// One moving element's physics, as its prefab script sets it up. Object and
+/// mesh names refer to the prefab scene (`ph/<group>`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModuleSetup {
+    /// Prefab group, e.g. `P_Modul_25`.
+    pub group: String,
+    pub bodies: Vec<ModuleBody>,
+    pub hinges: Vec<HingeParams>,
+    /// Proximity test that wakes the frozen bodies (`TT Scaleable Proximity`
+    /// into `Physics WakeUp`), if the script has one.
+    pub wake: Option<WakeParams>,
+    /// Physics building blocks the script also uses that aren't in this data
+    /// yet (`Set Physics Slider`, `SetPhysicsForce`, …).
+    pub unsupported: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "mirrors the original Physicalize inputs"
+)]
+pub struct ModuleBody {
+    /// The physicalized object.
+    pub object: String,
+    pub fixed: bool,
+    pub friction: f32,
+    pub elasticity: f32,
+    pub mass: f32,
+    pub collision_group: String,
+    pub start_frozen: bool,
+    pub collision: bool,
+    pub auto_mass_center: bool,
+    /// Mass centre offset in the object's frame (`Shift Mass Center`).
+    pub shift_mass_center: [f32; 3],
+    pub linear_damping: f32,
+    pub rotational_damping: f32,
+    /// Meshes whose convex hulls make up the body, in the object's frame.
+    pub convex: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HingeParams {
+    pub body: String,
+    /// The other body; `None` is the world (the level's fixed `FixCube`).
+    pub other: Option<String>,
+    /// The joint frame: its position is the pivot, its Z axis the hinge axis.
+    pub frame: String,
+    /// Angle limits in degrees, if enabled.
+    pub limits: Option<[f32; 2]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WakeParams {
+    /// The object the ball's distance is measured to.
+    pub object: String,
+    pub distance: f32,
+    pub exactness: [f32; 2],
+    pub frame_delay: [i32; 2],
+    /// Only X and Z count.
+    pub xz: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

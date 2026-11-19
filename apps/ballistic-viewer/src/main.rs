@@ -1,6 +1,7 @@
 //! `ballistic-viewer`: fly around the scenes of a Ballistic bundle.
 
 mod follow;
+mod modules;
 mod play;
 mod progress;
 mod props;
@@ -55,7 +56,7 @@ pub struct Args {
     #[arg(long)]
     play: bool,
     /// Scripted input for play mode in screenshots: `up:2,rotate+left:0.4,wait:1`
-    /// (keys held for seconds; keys: up down left right rotate lift wait, and next = warp to the next checkpoint first).
+    /// (keys held for seconds; keys: up down left right rotate lift wait, next = warp to the next checkpoint first, wake = wake all moving elements first).
     #[arg(long)]
     play_script: Option<String>,
 }
@@ -187,6 +188,8 @@ pub struct Segment {
     pub keys: Vec<play::PlayKey>,
     pub seconds: f32,
     pub warp: bool,
+    /// Wake every active moving element first (`wake`).
+    pub wake: bool,
 }
 
 /// Parses `up:2,rotate+left:0.4,wait:1,next:1` into segments.
@@ -204,6 +207,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                 .with_context(|| format!("segment {part:?}"))?;
             anyhow::ensure!(seconds >= 0.0, "segment {part:?}: negative duration");
             let warp = keys.split('+').any(|k| k.trim() == "next");
+            let wake = keys.split('+').any(|k| k.trim() == "wake");
             let keys = keys
                 .split('+')
                 .filter_map(|k| match k.trim() {
@@ -213,7 +217,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                     "right" => Some(Ok(K::Right)),
                     "rotate" => Some(Ok(K::Rotate)),
                     "lift" => Some(Ok(K::Lift)),
-                    "wait" | "next" => None,
+                    "wait" | "next" | "wake" => None,
                     other => Some(Err(anyhow::anyhow!("unknown key {other:?}"))),
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -221,11 +225,13 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                 keys,
                 seconds,
                 warp,
+                wake,
             })
         })
         .collect()
 }
 
+#[allow(clippy::too_many_lines, reason = "linear: load, script, render, save")]
 fn screenshot(
     args: &Args,
     mut bundle: BundleReader<std::io::BufReader<std::fs::File>>,
@@ -251,7 +257,7 @@ fn screenshot(
     let mut play = if args.play {
         let level = bundle.scene(&args.scene)?;
         let mut p = play::Play::new(&gpu, &mut bundle, &level, format)?;
-        for &i in p.placeholders() {
+        for i in p.placeholders() {
             scene.renderer.set_object_hidden(i, true);
         }
         let dt = 1.0 / 60.0;
@@ -259,6 +265,9 @@ fn screenshot(
             let (keys, seconds) = (seg.keys, seg.seconds);
             if seg.warp {
                 p.warp_to_next_checkpoint();
+            }
+            if seg.wake {
+                p.wake_modules();
             }
             for &k in &keys {
                 p.input(k, true);
@@ -280,12 +289,14 @@ fn screenshot(
             }
         }
         eprintln!(
-            "play: {} after {} steps, {} respawns, {} props ({} active), checkpoints {}/{}",
+            "play: {} after {} steps, {} respawns, {} props ({} active), {} modules ({} simulated), checkpoints {}/{}",
             p.status(),
             p.world.steps,
             p.respawns,
             p.prop_count(),
             p.progress().0,
+            p.module_count().0,
+            p.module_count().1,
             p.progress().1,
             p.progress().2
         );

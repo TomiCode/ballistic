@@ -46,7 +46,9 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
    - textures (BMP/TGA) → KTX2 with a full mip chain, BC1 (opaque) or BC3 (alpha)
    - sounds (WAV) → Ogg Vorbis
    - physics parameters (gravity, time factor, ball types, level surfaces,
-     props) read from the original's scripts and tables → `data/physics.json`
+     props) read from the original's scripts and tables, and each moving
+     element's bodies, hinges and wake-up test from its prefab script
+     (`PH/P_Modul_*.nmo`) → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

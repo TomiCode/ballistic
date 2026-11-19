@@ -22,9 +22,21 @@ options so they can be calibrated later.
   - `P_Ball_Paper`: a convex hull in the original, a sphere of its bounding
     radius here (like the player's paper ball).
   - `P_Dome`: fixed, so its mesh is added to the static geometry.
-- **Contacts between bodies**: sphere–sphere, sphere–box and box–box.
-- Not yet: moving level parts (`P_Modul_*`), constraints, ball transformers,
-  general convex hulls, sleeping.
+- **Moving elements** (`ballistic_physics::modules`, from the bundle's
+  `modules`): bodies made of the **convex hulls** of their collision meshes,
+  with **hinges** to the world or to each other. Mass properties come from
+  the hulls' volume (uniform density). With automatic mass centre off, the
+  mass centre is the object's origin plus *Shift Mass Center*; that sign is an
+  assumption to check. Modules that also use sliders, springs or forces are
+  static stand-ins for now.
+- **Sleeping**: a body can start asleep (the original's "Start Frozen"). It
+  doesn't move, and others collide with it as if it were fixed, until it's
+  woken: explicitly (the scripts' Physics WakeUp), by a hinge to a moving body,
+  or by an awake body touching it.
+- **Contacts between bodies**: sphere–sphere, sphere–box, sphere–hull and
+  between boxes and hulls.
+- Not yet: sliders, springs, ball joints and the scripts' forces, ball
+  transformers.
 
 ## Time
 
@@ -68,8 +80,18 @@ step numbers always give bit-identical results (there's a test for it).
    (that's how `Phys_FloorStopper` lets the player ball through but keeps
    props in).
 
-**Collision detection.** Spheres use closest points (to triangles, boxes and
-other spheres). Boxes and triangles are convex polyhedra: the separating-axis
+**Hinges** are solved with the contacts:
+- In each pass, before the contacts, their positions are corrected (4 sweeps,
+  for chains): the axes are aligned, then the pivots joined with a position
+  impulse through the full effective mass, so a plank turns about its other
+  pivot instead of sliding.
+- In the velocity iterations, the pivots' point velocities are made equal
+  (3×3 effective mass) and relative rotation across the axis is removed.
+- Rotation about the axis is free; the original's limits are off on every
+  hinge in Ballance.
+
+**Collision detection.** Spheres use closest points (to triangles, boxes, hulls
+and other spheres). Boxes and triangles are convex polyhedra: the separating-axis
 test over face normals and edge cross products finds the axis of least
 penetration, then the incident face is clipped against the reference face
 (or, for two edges, their closest points are taken), keeping at most four
@@ -116,6 +138,7 @@ from the original yet. The defaults are reasonable guesses:
 | Penetration correction | 0.8 per pass | |
 | Contact passes | 4 | |
 | Velocity iterations per pass | 8 | |
+| Joint position sweeps per pass | 4 | |
 | Face over edge preference (box contacts) | 95 % / 98 % of the depth | |
 | Same collision group ignores contact | on | |
 
@@ -136,6 +159,19 @@ a face, two stacked boxes, the ball pushing a box, and momentum between
 spheres. The unit tests check the box contacts (four points on a floor, two
 along an edge, stacking) and that a level triangle never pushes a box down.
 
+The joint tests check:
+- a hull box resting like a box;
+- a hinged rod swinging with the period of a physical pendulum, its pivot
+  fixed;
+- a chain of planks between two pivots staying connected as it sags;
+- a frozen body waiting until it's touched or woken;
+- a ball knocking over a hinged flap.
+
+The hull unit tests check hull construction and mass properties (parallel
+axes).
+
 The bundle tests drop a wooden ball on Level 1's start pad and roll it, and
 place every prop of all 12 levels: after three simulated seconds nearly all
-of them rest close to their placeholders.
+of them rest close to their placeholders. They also place every moving
+element of all 12 levels, awake: after three seconds no simulated module has
+come apart (hinge pivots within 0.2 of their frames).

@@ -30,30 +30,36 @@ pub struct PropSpawn {
 /// Every placeholder of every prop group, in group then member order. Like
 /// level init, it skips placeholders that are in no `Sector_NN` group.
 pub fn find_props(level: &bb::Scene, physics: &bb::PhysicsData) -> Vec<PropSpawn> {
+    physics
+        .props
+        .iter()
+        .flat_map(|p| placeholders(level, &p.group))
+        .collect()
+}
+
+/// The placeholders of one prefab group that are in a `Sector_NN` group.
+pub fn placeholders(level: &bb::Scene, group: &str) -> Vec<PropSpawn> {
     let sector_of = |object: u32| {
         level.groups.iter().find_map(|g| {
             let n = g.name.strip_prefix("Sector_")?.parse().ok()?;
             g.members.contains(&object).then_some(n)
         })
     };
-    let mut out = Vec::new();
-    for p in &physics.props {
-        let Some(group) = level.groups.iter().find(|g| g.name == p.group) else {
-            continue;
-        };
-        for &m in &group.members {
-            let (Some(obj), Some(sector)) = (level.objects.get(m as usize), sector_of(m)) else {
-                continue;
-            };
-            out.push(PropSpawn {
-                group: p.group.clone(),
+    let Some(g) = level.groups.iter().find(|g| g.name == group) else {
+        return Vec::new();
+    };
+    g.members
+        .iter()
+        .filter_map(|&m| {
+            let obj = level.objects.get(m as usize)?;
+            Some(PropSpawn {
+                group: group.to_owned(),
                 placeholder: m,
                 transform: Mat4::from_cols_array_2d(&obj.transform),
-                sector,
-            });
-        }
-    }
-    out
+                sector: sector_of(m)?,
+            })
+        })
+        .collect()
 }
 
 /// The prefab's main frame (`<group>_MF`), whose mesh is physicalized.
@@ -165,6 +171,7 @@ pub fn body_desc(
         linear_damping: params.linear_damping,
         rotational_damping: params.rotational_damping,
         group: params.collision_group.clone(),
+        asleep: params.start_frozen,
     })
 }
 

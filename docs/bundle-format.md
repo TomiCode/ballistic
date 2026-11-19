@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 2,
+  "format_version": 3,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -66,6 +66,10 @@ ball models, the menu background):
 - **groups**: name and member object indices. Group names carry the gameplay
   meaning (`Phys_Floors`, `PC_Checkpoints`, `Sector_01`, …). Resolving them into
   gameplay structures happens in a later version of the format.
+
+Prefab scenes (`ph/…`) keep every mesh of their file, also those no object
+uses: the moving elements' collision meshes are referenced only by their
+scripts (by name, from `modules` in the physics data).
 
 ### Coordinate system
 
@@ -120,6 +124,24 @@ and useful to read). Since version 2.
       "mass": 1.0, "collision_group": "", "start_frozen": false, "collision": true,
       "auto_mass_center": false, "linear_damping": 0.1, "rotational_damping": 0.1,
       "sphere_radius": null }
+  ],
+  "modules": [
+    { "group": "P_Modul_25",
+      "bodies": [
+        { "object": "P_Modul_25_Bridge", "fixed": false, "friction": 0.7,
+          "elasticity": 1.0, "mass": 3.0, "collision_group": "",
+          "start_frozen": true, "collision": true, "auto_mass_center": false,
+          "shift_mass_center": [-2.5, 0.2, 0.0], "linear_damping": 1.0,
+          "rotational_damping": 0.05,
+          "convex": ["P_Modul_25_Col01_Mesh", "P_Modul_25_Col02_Mesh"] }
+      ],
+      "hinges": [
+        { "body": "P_Modul_25_Bridge", "other": null,
+          "frame": "P_Modul_25_HingeFrame", "limits": null }
+      ],
+      "wake": { "object": "P_Modul_25_MF", "distance": 50.0,
+        "exactness": [55.0, 100.0], "frame_delay": [10, 60], "xz": true },
+      "unsupported": [] }
   ]
 }
 ```
@@ -132,9 +154,20 @@ and useful to read). Since version 2.
 - `surfaces`: level groups that become static collision geometry.
 - `props`: physics settings per prefab group (`P_Box`, `P_Dome`, …).
   `sphere_radius` is set for props simulated as spheres.
+- `modules`: per moving element (`P_Modul_*`), what its prefab script sets up.
+  Names refer to objects and meshes of the prefab scene `ph/<group>`.
+  - `bodies`: the Physicalize inputs. `convex` lists the meshes whose convex
+    hulls make up the body, in the object's frame. `shift_mass_center` is in
+    the object's frame (bundle space).
+  - `hinges`: `other: null` is the world. The pivot is the `frame` object's
+    position, the axis its Z axis.
+  - `wake`: the proximity test that wakes frozen bodies.
+  - `unsupported`: other physics building blocks the script uses (sliders,
+    springs, forces), not described here yet.
 
 ## Versioning rules
 
 - Any change to entry layout or to a serialised type bumps `format_version`.
 - Older bundles are never migrated; the player just re-runs the packer.
-- History: **1** first release. **2** adds `data/physics.json`.
+- History: **1** first release. **2** adds `data/physics.json`. **3** adds
+  `modules` to it, and keeps every mesh in prefab scenes.

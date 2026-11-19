@@ -183,7 +183,7 @@ fn new_play(
 ) -> Result<crate::play::Play> {
     let level = bundle.scene(&scene.key)?;
     let play = crate::play::Play::new(gpu, bundle, &level, format)?;
-    for &i in play.placeholders() {
+    for i in play.placeholders() {
         scene.renderer.set_object_hidden(i, true);
     }
     Ok(play)

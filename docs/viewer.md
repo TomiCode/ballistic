@@ -25,7 +25,7 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--screenshot out.png [--size 1920x1080]` | Render one frame off-screen and exit, no window |
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
 | `--play` | Play mode: roll a ball on the level |
-| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`, and `next`, which warps to the next checkpoint (then the level end) at the start of its segment. With `--camera` too, the camera stays at that view instead of following the ball |
+| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end) and `wake` wakes every active moving element, both at the start of their segment. With `--camera` too, the camera stays at that view instead of following the ball |
 
 The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 
@@ -92,6 +92,16 @@ A respawn resets the current sector's props. The window title shows the
 checkpoints reached. The checkpoint flames aren't drawn yet (they're
 particles).
 
+**Moving elements** (`P_Modul_*`) are placed and drawn like the original's.
+They're physical while their sector is active. Frozen parts stay still until
+the ball comes near (each module's own wake-up distance), and then fall,
+swing or tip by themselves.
+- Simulated: the hinged ones (bridges that fall over, flaps, seesaws, the plank
+  bridge) and the pusher.
+- Fixed in place for now: modules that also use sliders, springs or forces
+  (the lift, the swing, the rotating arms, the fan, the sliding stone, the
+  punching bag).
+
 **The level end** is the balloon, part of the last sector. The level is
 finished when the ball settles in the middle of its platform (within 1 of the
 platform's centre, as in the original). Ball control then switches off for
@@ -134,5 +144,6 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: moving level parts (and the balloon's), pickups,
-  transformers, checkpoint flames, the end sequence and score
+- In play mode: sliders, springs and forces (the lift, swing, fan, sliding
+  stone, punching bag and the balloon's parts), pickups, transformers,
+  checkpoint flames, the end sequence and score

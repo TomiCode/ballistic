@@ -8,6 +8,7 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+anyhow.workspace = true
 ballistic-bundle = { path = "../ballistic-bundle" }
 glam = "0.34"
 

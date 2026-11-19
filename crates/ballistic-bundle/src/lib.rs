@@ -16,7 +16,10 @@ pub use manifest::{
     AudioEncoding, Manifest, PackOptions, SceneEntry, SoundEntry, SourceInfo, TextureEncoding,
     TextureEntry, TextureFormat,
 };
-pub use physics::{BallParams, BallShape, PhysicsData, PropParams, SurfaceParams};
+pub use physics::{
+    BallParams, BallShape, HingeParams, ModuleBody, ModuleSetup, PhysicsData, PropParams,
+    SurfaceParams, WakeParams,
+};
 pub use scene::{
     AddressMode, BlendFactor, CompareFunc, Group, Material, Mesh, ObjectKind, Scene, SceneObject,
     Submesh, TextureBlend, Vertex,
@@ -26,7 +29,7 @@ pub use scene::{
 pub const FORMAT_NAME: &str = "ballistic-bundle";
 /// Version of the bundle layout. Bump on any incompatible change.
 /// v2: adds `data/physics.json`.
-pub const FORMAT_VERSION: u32 = 2;
+pub const FORMAT_VERSION: u32 = 3;
 /// Version of the `.bscn` scene encoding.
 pub const SCENE_VERSION: u32 = 1;
 /// Magic at the start of every `.bscn` entry.

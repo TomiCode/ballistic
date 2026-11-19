@@ -24,6 +24,7 @@ use ballistic_render::{Camera, Gpu, RenderOptions};
 use glam::Mat4;
 
 use crate::follow::Follow;
+use crate::modules::Modules;
 use crate::progress::{self, Progress};
 use crate::props::Props;
 use crate::{LoadedScene, load_scene};
@@ -82,6 +83,7 @@ pub struct Play {
     snap_next_frame: Option<f32>,
     follow: Follow,
     props: Props,
+    modules: Modules,
     progress: Progress,
     /// Real seconds of play since the level started.
     elapsed: f32,
@@ -120,6 +122,7 @@ impl Play {
         };
         let mut world = World::new(config, statics);
         let props = Props::new(gpu, bundle, level, &physics, &mut world, format)?;
+        let modules = Modules::new(gpu, bundle, level, &physics, &mut world, format)?;
         let layout = progress::layout(level, |key| bundle.scene(key).ok());
         let spawn_matrix = layout.reset_points.first().copied();
         let progress = Progress::start(layout, props.level_end);
@@ -169,6 +172,7 @@ impl Play {
             snap_next_frame: None,
             follow: Follow::new(start, heading),
             props,
+            modules,
             progress,
             elapsed: 0.0,
             finished_at: None,
@@ -299,6 +303,11 @@ impl Play {
         self.follow.reset(target, self.heading_view);
     }
 
+    /// Development aid: wakes every active moving element.
+    pub fn wake_modules(&mut self) {
+        self.modules.wake_all(&mut self.world);
+    }
+
     pub fn cycle_ball(&mut self) {
         self.active_ball = (self.active_ball + 1) % self.physics.balls.len();
         let pos = self
@@ -342,6 +351,7 @@ impl Play {
     fn apply_sector_changes(&mut self) {
         for (sector, on) in self.progress.take_changes() {
             self.props.set_sector_active(&mut self.world, sector, on);
+            self.modules.set_sector_active(&mut self.world, sector, on);
         }
     }
 
@@ -380,6 +390,7 @@ impl Play {
         self.props.update(&mut self.world, self.fall_y);
         self.elapsed += real_dt;
         if let Some(ball) = self.world.body(self.ball).map(|b| b.position) {
+            self.modules.frame(ball, &mut self.world);
             match self.progress.frame(ball) {
                 Some(progress::Event::Checkpoint(i)) => eprintln!("checkpoint {} reached", i + 1),
                 Some(progress::Event::Finished) => {
@@ -408,9 +419,19 @@ impl Play {
         self.follow.update(real_dt, ball, self.heading_view, lifted);
     }
 
-    /// Level objects that props replace; hide them in the level's renderer.
-    pub fn placeholders(&self) -> &[usize] {
-        &self.props.placeholders
+    /// Level objects that props and modules replace; hide them in the
+    /// level's renderer.
+    pub fn placeholders(&self) -> impl Iterator<Item = usize> + '_ {
+        self.props
+            .placeholders
+            .iter()
+            .chain(&self.modules.placeholders)
+            .copied()
+    }
+
+    /// (modules placed, modules simulated).
+    pub fn module_count(&self) -> (usize, usize) {
+        self.modules.count()
     }
 
     pub fn prop_count(&self) -> usize {
@@ -472,6 +493,16 @@ impl Play {
             .renderer
             .render(gpu, encoder, color, depth, camera, aspect, &opts);
         self.props.render(
+            gpu,
+            encoder,
+            color,
+            depth,
+            camera,
+            aspect,
+            &opts,
+            &self.world,
+        );
+        self.modules.render(
             gpu,
             encoder,
             color,

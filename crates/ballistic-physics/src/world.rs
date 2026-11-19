@@ -1,7 +1,7 @@
-//! The simulation world: dynamic bodies (spheres, boxes) against static
-//! triangle geometry and each other.
+//! The simulation world: dynamic bodies (spheres, boxes, convex hulls) against
+//! static triangle geometry and each other, with hinge joints.
 
-use glam::{Quat, Vec3};
+use glam::{Mat3, Quat, Vec3};
 
 use crate::bvh::Aabb;
 use crate::collide::{self, Contact, Point, Poly};
@@ -27,6 +27,9 @@ pub struct BodyDesc {
     pub linear_damping: f32,
     pub rotational_damping: f32,
     pub group: String,
+    /// Starts asleep (the original's "Start Frozen"): it doesn't move, and
+    /// others collide with it as if it were fixed, until it's woken up.
+    pub asleep: bool,
 }
 
 impl Default for BodyDesc {
@@ -41,6 +44,7 @@ impl Default for BodyDesc {
             linear_damping: 0.0,
             rotational_damping: 0.0,
             group: String::new(),
+            asleep: false,
         }
     }
 }
@@ -58,8 +62,10 @@ pub struct Body {
     pub linear_damping: f32,
     pub rotational_damping: f32,
     pub group: String,
-    /// Inverse principal moments of inertia (body frame).
-    inv_inertia: Vec3,
+    /// Inverse inertia tensor (body frame, about the origin = mass centre).
+    inv_inertia: Mat3,
+    /// Asleep: not moved by the simulation, and immovable for others.
+    pub asleep: bool,
     /// State before the last step (for render interpolation).
     prev_position: Vec3,
     prev_orientation: Quat,
@@ -74,16 +80,40 @@ impl Body {
     }
 
     fn inv_mass(&self) -> f32 {
-        if self.mass > 0.0 {
+        if self.mass > 0.0 && !self.asleep {
             1.0 / self.mass
         } else {
             0.0
         }
     }
 
+    /// World-space inverse inertia tensor (zero while asleep).
+    fn inv_inertia_world(&self) -> Mat3 {
+        if self.asleep {
+            return Mat3::ZERO;
+        }
+        let r = Mat3::from_quat(self.orientation);
+        r * self.inv_inertia * r.transpose()
+    }
+
     /// World-space inverse inertia tensor applied to `v`.
     fn inv_inertia_mul(&self, v: Vec3) -> Vec3 {
+        if self.asleep {
+            return Vec3::ZERO;
+        }
         self.orientation * (self.inv_inertia * (self.orientation.inverse() * v))
+    }
+
+    /// The shape as convex polyhedra at the current pose (boxes and hulls).
+    fn polys(&self) -> Vec<Poly> {
+        match &self.shape {
+            Shape::Sphere { .. } => Vec::new(),
+            Shape::Box { half } => vec![Poly::cuboid(self.position, self.orientation, *half)],
+            Shape::Hulls(h) => h
+                .iter()
+                .map(|h| Poly::hull(h, self.position, self.orientation))
+                .collect(),
+        }
     }
 
     fn aabb(&self) -> Aabb {
@@ -97,6 +127,26 @@ struct Push {
     body: BodyId,
     /// World-space impulse applied every step.
     impulse: Vec3,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct JointId(u32);
+
+/// Joint position-correction sweeps per contact pass.
+const JOINT_SWEEPS: u32 = 4;
+
+/// A hinge between body `a` and body `b` (or the world): the pivot points of
+/// both coincide and their axes stay aligned; rotation about the axis is free.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Hinge {
+    a: usize,
+    b: Option<usize>,
+    /// Pivot in `a`'s frame, and in `b`'s frame (world space without `b`).
+    anchor_a: Vec3,
+    anchor_b: Vec3,
+    /// Axis in `a`'s frame, and in `b`'s frame (world space without `b`).
+    axis_a: Vec3,
+    axis_b: Vec3,
 }
 
 /// Contacts of body `a` with static geometry (`b` = `None`) or with body `b`.
@@ -117,6 +167,7 @@ pub struct World {
     pub statics: StaticMesh,
     bodies: Vec<Option<Body>>,
     pushes: Vec<Option<Push>>,
+    joints: Vec<Option<Hinge>>,
     /// Simulated seconds not yet stepped.
     accumulator: f32,
     /// Steps taken since creation.
@@ -130,6 +181,7 @@ impl World {
             statics,
             bodies: Vec::new(),
             pushes: Vec::new(),
+            joints: Vec::new(),
             accumulator: 0.0,
             steps: 0,
         }
@@ -137,7 +189,11 @@ impl World {
 
     pub fn add_body(&mut self, d: BodyDesc) -> BodyId {
         let inertia = d.shape.inertia(d.mass);
-        let inv_inertia = Vec3::select(inertia.cmpgt(Vec3::ZERO), inertia.recip(), Vec3::ZERO);
+        let inv_inertia = if inertia.determinant().abs() > 1e-12 {
+            inertia.inverse()
+        } else {
+            Mat3::ZERO
+        };
         let body = Body {
             position: d.position,
             orientation: d.orientation,
@@ -151,6 +207,7 @@ impl World {
             rotational_damping: d.rotational_damping,
             group: d.group,
             inv_inertia,
+            asleep: d.asleep,
             prev_position: d.position,
             prev_orientation: d.orientation,
             grounded: false,
@@ -171,6 +228,61 @@ impl World {
             if p.is_some_and(|p| p.body == id) {
                 *p = None;
             }
+        }
+        let i = id.0 as usize;
+        for j in &mut self.joints {
+            if j.is_some_and(|j| j.a == i || j.b == Some(i)) {
+                *j = None;
+            }
+        }
+    }
+
+    /// Wakes a sleeping body (the original's `Physics WakeUp`).
+    pub fn wake(&mut self, id: BodyId) {
+        if let Some(b) = self.body_mut(id) {
+            b.asleep = false;
+        }
+    }
+
+    /// Adds a hinge at a world pivot about a world axis, between `a` and `b`
+    /// (or the world), in their current poses.
+    pub fn add_hinge(
+        &mut self,
+        a: BodyId,
+        b: Option<BodyId>,
+        pivot: Vec3,
+        axis: Vec3,
+    ) -> Option<JointId> {
+        let axis = axis.try_normalize()?;
+        let local = |i: usize| {
+            let body = self.bodies.get(i)?.as_ref()?;
+            let inv = body.orientation.inverse();
+            Some((inv * (pivot - body.position), inv * axis))
+        };
+        let (anchor_a, axis_a) = local(a.0 as usize)?;
+        let (anchor_b, axis_b) = match b {
+            Some(b) => local(b.0 as usize)?,
+            None => (pivot, axis),
+        };
+        let hinge = Hinge {
+            a: a.0 as usize,
+            b: b.map(|b| b.0 as usize),
+            anchor_a,
+            anchor_b,
+            axis_a,
+            axis_b,
+        };
+        if let Some(slot) = self.joints.iter().position(Option::is_none) {
+            self.joints[slot] = Some(hinge);
+            return Some(JointId(slot as u32));
+        }
+        self.joints.push(Some(hinge));
+        Some(JointId(self.joints.len() as u32 - 1))
+    }
+
+    pub fn remove_joint(&mut self, id: JointId) {
+        if let Some(j) = self.joints.get_mut(id.0 as usize) {
+            *j = None;
         }
     }
 
@@ -265,6 +377,10 @@ impl World {
         for b in self.bodies.iter_mut().flatten() {
             b.prev_position = b.position;
             b.prev_orientation = b.orientation;
+            b.grounded = false;
+            if b.asleep {
+                continue;
+            }
 
             // 2. Gravity, 3. damping.
             b.velocity += cfg.gravity * dt;
@@ -278,15 +394,16 @@ impl World {
                 let dq = Quat::from_xyzw(w.x, w.y, w.z, 0.0) * b.orientation;
                 b.orientation = (b.orientation + dq * (0.5 * dt)).normalize();
             }
-            b.grounded = false;
         }
 
-        // 5. Contacts: detect, push apart, solve velocities; repeat.
+        // 5. Contacts and joints: detect, push apart, solve velocities; repeat.
+        let has_joints = self.joints.iter().any(Option::is_some);
         for _ in 0..cfg.contact.iterations {
             let manifolds = self.detect();
-            if manifolds.is_empty() {
+            if manifolds.is_empty() && !has_joints {
                 break;
             }
+            self.wake_touched(&manifolds);
             for m in &manifolds {
                 if m.b.is_none()
                     && let Some(b) = self.bodies[m.a].as_mut()
@@ -294,10 +411,121 @@ impl World {
                     b.grounded = true;
                 }
             }
+            // Chains (plank bridges) need several sweeps to close up.
+            for _ in 0..JOINT_SWEEPS {
+                self.project_joints();
+            }
             self.project(&manifolds);
             self.solve_velocities(&manifolds);
         }
         self.steps += 1;
+    }
+
+    /// A sleeping body touched by an awake one, or hinged to one, wakes up.
+    fn wake_touched(&mut self, manifolds: &[Manifold]) {
+        let awake = |bodies: &[Option<Body>], i: usize| {
+            bodies[i]
+                .as_ref()
+                .is_some_and(|b| !b.asleep && b.mass > 0.0)
+        };
+        let mut wake = Vec::new();
+        let pairs = manifolds.iter().filter_map(|m| Some((m.a, m.b?))).chain(
+            self.joints
+                .iter()
+                .flatten()
+                .filter_map(|j| Some((j.a, j.b?))),
+        );
+        for (a, b) in pairs {
+            match (awake(&self.bodies, a), awake(&self.bodies, b)) {
+                (true, false) => wake.push(b),
+                (false, true) => wake.push(a),
+                _ => {}
+            }
+        }
+        for i in wake {
+            if let Some(b) = self.bodies[i].as_mut() {
+                b.asleep = false;
+            }
+        }
+    }
+
+    /// World pivots of `a` and `b`, and the world axes.
+    fn hinge_frames(&self, j: &Hinge) -> Option<(Vec3, Vec3, Vec3, Vec3)> {
+        let a = self.bodies[j.a].as_ref()?;
+        let pa = a.position + a.orientation * j.anchor_a;
+        let xa = a.orientation * j.axis_a;
+        let (pb, xb) = match j.b {
+            Some(bi) => {
+                let b = self.bodies[bi].as_ref()?;
+                (
+                    b.position + b.orientation * j.anchor_b,
+                    b.orientation * j.axis_b,
+                )
+            }
+            None => (j.anchor_b, j.axis_b),
+        };
+        Some((pa, pb, xa, xb))
+    }
+
+    /// Position projection of joints: align the axes, then join the pivots,
+    /// split between the bodies by inverse mass.
+    fn project_joints(&mut self) {
+        let k = self.config.contact.penetration_correction;
+        for ji in 0..self.joints.len() {
+            let Some(j) = self.joints[ji] else { continue };
+            let ima = self.bodies[j.a].as_ref().map_or(0.0, Body::inv_mass);
+            let imb =
+                j.b.and_then(|b| self.bodies[b].as_ref())
+                    .map_or(0.0, Body::inv_mass);
+            let total = ima + imb;
+            if total <= 0.0 {
+                continue;
+            }
+            let (wa, wb) = (ima / total, imb / total);
+            let Some((_, _, xa, xb)) = self.hinge_frames(&j) else {
+                continue;
+            };
+            let q = Quat::from_rotation_arc(xa, xb);
+            if let Some(a) = self.bodies[j.a].as_mut() {
+                a.orientation = (Quat::IDENTITY.slerp(q, wa * k) * a.orientation).normalize();
+            }
+            if let Some(b) = j.b.and_then(|b| self.bodies[b].as_mut()) {
+                b.orientation =
+                    (Quat::IDENTITY.slerp(q.inverse(), wb * k) * b.orientation).normalize();
+            }
+            // Pivots: a position impulse through the full effective mass, so
+            // a hinged plank turns about its other pivot instead of sliding.
+            let Some((pa, pb, _, _)) = self.hinge_frames(&j) else {
+                continue;
+            };
+            let err = (pa - pb) * k;
+            let a = self.bodies[j.a].as_ref();
+            let b = j.b.and_then(|b| self.bodies[b].as_ref());
+            let Some(a) = a else { continue };
+            let ra = pa - a.position;
+            let rb = b.map_or(Vec3::ZERO, |b| pb - b.position);
+            let (ia, ib) = (
+                a.inv_inertia_world(),
+                b.map_or(Mat3::ZERO, Body::inv_inertia_world),
+            );
+            let kmat = Mat3::from_diagonal(Vec3::splat(ima + imb))
+                - skew(ra) * ia * skew(ra)
+                - skew(rb) * ib * skew(rb);
+            if kmat.determinant().abs() < 1e-12 {
+                continue;
+            }
+            let p = kmat.inverse() * -err;
+            if let Some(a) = self.bodies[j.a].as_mut() {
+                a.position += p * ima;
+                let turn = ia * ra.cross(p);
+                a.orientation = (Quat::from_scaled_axis(turn) * a.orientation).normalize();
+            }
+            if let Some(b) = j.b.and_then(|b| self.bodies[b].as_mut()) {
+                b.position -= p * imb;
+                let turn = ib * rb.cross(p);
+                b.orientation = (Quat::from_scaled_axis(-turn) * b.orientation).normalize();
+            }
+        }
     }
 
     fn detect(&self) -> Vec<Manifold> {
@@ -305,9 +533,12 @@ impl World {
         let mut out = Vec::new();
         for (i, slot) in self.bodies.iter().enumerate() {
             let Some(b) = slot else { continue };
-            let contacts = match b.shape {
-                Shape::Sphere { radius } => sphere_statics(&self.statics, b, radius, cfg),
-                Shape::Box { half } => box_statics(&self.statics, b, half, cfg),
+            if b.asleep {
+                continue;
+            }
+            let contacts = match &b.shape {
+                Shape::Sphere { radius } => sphere_statics(&self.statics, b, *radius, cfg),
+                Shape::Box { .. } | Shape::Hulls(_) => poly_statics(&self.statics, b, cfg),
             };
             for (contact, material) in contacts {
                 let m = &self.statics.materials[material as usize];
@@ -325,13 +556,15 @@ impl World {
             let box_a = a.aabb();
             for (j, slot) in self.bodies.iter().enumerate().skip(i + 1) {
                 let Some(b) = slot else { continue };
-                if cfg.contact.same_group_ignores && !a.group.is_empty() && a.group == b.group {
+                if (a.asleep && b.asleep)
+                    || (cfg.contact.same_group_ignores && !a.group.is_empty() && a.group == b.group)
+                {
                     continue;
                 }
                 if !box_a.overlaps(&b.aabb()) {
                     continue;
                 }
-                if let Some(contact) = body_body(a, b) {
+                for contact in body_body(a, b) {
                     out.push(Manifold {
                         a: i,
                         b: Some(j),
@@ -377,6 +610,18 @@ impl World {
         reason = "one solver: rows, iterations, write-back"
     )]
     fn solve_velocities(&mut self, manifolds: &[Manifold]) {
+        /// A hinge: world pivots and axes, effective masses.
+        struct JointRow {
+            a: usize,
+            b: Option<usize>,
+            ra: Vec3,
+            rb: Vec3,
+            /// Inverse of the 3×3 effective mass of the pivot constraint.
+            k_inv: Mat3,
+            /// Two directions perpendicular to the axis, and their effective masses.
+            t: [Vec3; 2],
+            kt: [f32; 2],
+        }
         struct Row {
             m: usize,
             ra: Vec3,
@@ -451,7 +696,65 @@ impl World {
             }
         };
 
+        let mut jrows = Vec::new();
+        for j in self.joints.iter().flatten() {
+            let Some((pa, _, xa, _)) = self.hinge_frames(j) else {
+                continue;
+            };
+            let Some(a) = get(j.a) else { continue };
+            let b = j.b.and_then(get);
+            let ra = pa - a.position;
+            let rb = b.map_or(Vec3::ZERO, |b| pa - b.position);
+            let (ia, ib) = (
+                a.inv_inertia_world(),
+                b.map_or(Mat3::ZERO, Body::inv_inertia_world),
+            );
+            let (ma, mb) = (a.inv_mass(), b.map_or(0.0, Body::inv_mass));
+            let k = Mat3::from_diagonal(Vec3::splat(ma + mb))
+                - skew(ra) * ia * skew(ra)
+                - skew(rb) * ib * skew(rb);
+            if k.determinant().abs() < 1e-12 {
+                continue;
+            }
+            let (t1, t2) = xa.any_orthonormal_pair();
+            let kt = [t1, t2].map(|t| t.dot(ia * t) + t.dot(ib * t));
+            jrows.push(JointRow {
+                a: j.a,
+                b: j.b,
+                ra,
+                rb,
+                k_inv: k.inverse(),
+                t: [t1, t2],
+                kt,
+            });
+        }
+        let apply_joint = |vel: &mut [(Vec3, Vec3)], r: &JointRow, linear: Vec3, angular: Vec3| {
+            if let Some(a) = get(r.a) {
+                vel[r.a].0 += linear * a.inv_mass();
+                vel[r.a].1 += a.inv_inertia_mul(r.ra.cross(linear) + angular);
+            }
+            if let Some(bi) = r.b
+                && let Some(b) = get(bi)
+            {
+                vel[bi].0 -= linear * b.inv_mass();
+                vel[bi].1 -= b.inv_inertia_mul(r.rb.cross(linear) + angular);
+            }
+        };
+
         for _ in 0..cfg.velocity_iterations.max(1) {
+            for r in &jrows {
+                // Pivot: equal point velocities.
+                let dv = point_velocity(&vel, Some(r.a), r.ra) - point_velocity(&vel, r.b, r.rb);
+                apply_joint(&mut vel, r, r.k_inv * -dv, Vec3::ZERO);
+                // Axis: no relative rotation across it.
+                for (t, kt) in r.t.iter().zip(r.kt) {
+                    if kt <= 0.0 {
+                        continue;
+                    }
+                    let dw = vel[r.a].1 - r.b.map_or(Vec3::ZERO, |b| vel[b].1);
+                    apply_joint(&mut vel, r, Vec3::ZERO, *t * (-dw.dot(*t) / kt));
+                }
+            }
             for row in &mut rows {
                 let m = &manifolds[row.m];
                 let n = m.contact.normal;
@@ -489,12 +792,23 @@ impl World {
         }
 
         for (slot, (v, w)) in self.bodies.iter_mut().zip(vel) {
-            if let Some(b) = slot {
+            if let Some(b) = slot
+                && !b.asleep
+            {
                 b.velocity = v;
                 b.angular_velocity = w;
             }
         }
     }
+}
+
+/// The cross-product matrix: `skew(r) * v == r.cross(v)`.
+fn skew(r: Vec3) -> Mat3 {
+    Mat3::from_cols(
+        Vec3::new(0.0, r.z, -r.y),
+        Vec3::new(-r.z, 0.0, r.x),
+        Vec3::new(r.y, -r.x, 0.0),
+    )
 }
 
 fn ignores(cfg: &WorldConfig, body_group: &str, surface_group: &str) -> bool {
@@ -555,16 +869,11 @@ fn sphere_statics(
     out
 }
 
-/// Contacts of a box with static geometry: one manifold per distinct normal,
-/// with the points of every triangle sharing it (a box on a floor made of two
-/// triangles gets its four corners).
-fn box_statics(
-    statics: &StaticMesh,
-    b: &Body,
-    half: Vec3,
-    cfg: &WorldConfig,
-) -> Vec<(Contact, u32)> {
-    let poly = Poly::cuboid(b.position, b.orientation, half);
+/// Contacts of a box or hulls with static geometry: one manifold per distinct
+/// normal, with the points of every triangle sharing it (a box on a floor made
+/// of two triangles gets its four corners).
+fn poly_statics(statics: &StaticMesh, b: &Body, cfg: &WorldConfig) -> Vec<(Contact, u32)> {
+    let polys = b.polys();
     let mut merged: Vec<(Contact, u32)> = Vec::new();
     statics.query(&b.aabb(), |ti| {
         let t = &statics.triangles[ti as usize];
@@ -574,19 +883,14 @@ fn box_statics(
             return;
         }
         let tri = Poly::triangle(t.a, t.b, t.c, t.normal);
-        if !poly.in_front_of(&tri) {
-            return;
-        }
-        let Some(c) = collide::poly_poly(&poly, &tri) else {
-            return;
-        };
-        if let Some((m, _)) = merged
-            .iter_mut()
-            .find(|(m, _)| m.normal.dot(c.normal) >= 0.995)
-        {
-            m.points.extend(c.points);
-        } else {
-            merged.push((c, t.material));
+        for poly in &polys {
+            if !poly.in_front_of(&tri) {
+                continue;
+            }
+            let Some(c) = collide::poly_poly(poly, &tri) else {
+                continue;
+            };
+            merge(&mut merged, c, t.material);
         }
     });
     for (c, _) in &mut merged {
@@ -596,22 +900,58 @@ fn box_statics(
     merged
 }
 
-/// Contact between two bodies; the normal pushes `a` out of `b`.
-fn body_body(a: &Body, b: &Body) -> Option<Contact> {
-    match (a.shape, b.shape) {
-        (Shape::Sphere { radius: ra }, Shape::Sphere { radius: rb }) => {
-            collide::sphere_sphere(a.position, ra, b.position, rb)
+/// Adds a contact to the manifold with the same normal, or as a new one.
+fn merge<T: Copy>(merged: &mut Vec<(Contact, T)>, c: Contact, tag: T) {
+    if let Some((m, _)) = merged
+        .iter_mut()
+        .find(|(m, _)| m.normal.dot(c.normal) >= 0.995)
+    {
+        m.points.extend(c.points);
+    } else {
+        merged.push((c, tag));
+    }
+}
+
+/// Contacts between two bodies; the normals push `a` out of `b`.
+fn body_body(a: &Body, b: &Body) -> Vec<Contact> {
+    let sphere_vs = |center: Vec3, radius: f32, other: &Body| -> Option<Contact> {
+        match &other.shape {
+            Shape::Sphere { radius: r } => {
+                collide::sphere_sphere(center, radius, other.position, *r)
+            }
+            Shape::Box { half } => {
+                collide::sphere_box(center, radius, other.position, other.orientation, *half)
+            }
+            Shape::Hulls(_) => other
+                .polys()
+                .iter()
+                .filter_map(|p| collide::sphere_poly(center, radius, p))
+                .max_by(|x, y| x.max_depth().total_cmp(&y.max_depth())),
         }
-        (Shape::Sphere { radius }, Shape::Box { half }) => {
-            collide::sphere_box(a.position, radius, b.position, b.orientation, half)
+    };
+    match (&a.shape, &b.shape) {
+        (Shape::Sphere { radius }, _) => sphere_vs(a.position, *radius, b).into_iter().collect(),
+        (_, Shape::Sphere { radius }) => sphere_vs(b.position, *radius, a)
+            .map(Contact::flipped)
+            .into_iter()
+            .collect(),
+        _ => {
+            let mut merged: Vec<(Contact, ())> = Vec::new();
+            let pb = b.polys();
+            for pa in a.polys() {
+                for q in &pb {
+                    if let Some(c) = collide::poly_poly(&pa, q) {
+                        merge(&mut merged, c, ());
+                    }
+                }
+            }
+            merged
+                .into_iter()
+                .map(|(mut c, ())| {
+                    c.points = collide::reduce(c.points);
+                    c
+                })
+                .collect()
         }
-        (Shape::Box { half }, Shape::Sphere { radius }) => {
-            collide::sphere_box(b.position, radius, a.position, a.orientation, half)
-                .map(Contact::flipped)
-        }
-        (Shape::Box { half: ha }, Shape::Box { half: hb }) => collide::poly_poly(
-            &Poly::cuboid(a.position, a.orientation, ha),
-            &Poly::cuboid(b.position, b.orientation, hb),
-        ),
     }
 }

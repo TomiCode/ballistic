@@ -18,17 +18,20 @@
 
 mod bvh;
 mod collide;
+mod hull;
 mod level;
 mod mesh;
+pub mod modules;
 pub mod props;
 mod shape;
 mod world;
 
 pub use glam::{Mat4, Quat, Vec3};
+pub use hull::Hull;
 pub use level::{LevelBuildReport, build_level};
 pub use mesh::{StaticMesh, SurfaceMaterial};
 pub use shape::Shape;
-pub use world::{Body, BodyDesc, BodyId, PushId, World};
+pub use world::{Body, BodyDesc, BodyId, JointId, PushId, World};
 
 /// Integration steps per second of simulated time (`physics_RT.dll`: 1/66 s).
 pub const STEP_HZ: f32 = 66.0;

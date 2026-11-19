@@ -178,3 +178,98 @@ fn props_settle_where_they_are_placed() {
         "still moving after 3 s: {moving:#?}"
     );
 }
+
+#[test]
+fn modules_hold_together_on_every_level() {
+    let Some(mut b) = bundle() else {
+        eprintln!("skipping: BALLISTIC_BUNDLE not set");
+        return;
+    };
+    let physics = b.physics().unwrap();
+    assert!(
+        physics.modules.len() >= 10,
+        "{} modules",
+        physics.modules.len()
+    );
+    let mut placed = 0;
+    let mut simulated = 0;
+    for level in 1..=12 {
+        let scene = b.scene(&format!("level/level_{level:02}")).unwrap();
+        let (mut statics, _) = build_level(&scene, &physics);
+        statics.finish();
+        let cfg = WorldConfig {
+            gravity: Vec3::from(physics.gravity),
+            time_factor: physics.time_factor,
+            ..WorldConfig::default()
+        };
+        let mut w = World::new(cfg, statics);
+        let mut pivots = Vec::new();
+        for setup in &physics.modules {
+            let spawns = props::placeholders(&scene, &setup.group);
+            if spawns.is_empty() {
+                continue;
+            }
+            let prefab = b
+                .scene(&format!("ph/{}", setup.group.to_lowercase()))
+                .unwrap();
+            for s in &spawns {
+                let plan = modules::plan(setup, &prefab, s.transform)
+                    .unwrap_or_else(|e| panic!("level {level} {}: {e:#}", setup.group));
+                placed += 1;
+                if !modules::simulated(setup) {
+                    continue;
+                }
+                simulated += 1;
+                let ids: Vec<_> = plan
+                    .bodies
+                    .iter()
+                    .map(|pb| {
+                        let mut d = pb.desc.clone();
+                        d.asleep = false; // as if the ball came near
+                        w.add_body(d)
+                    })
+                    .collect();
+                for h in &plan.hinges {
+                    w.add_hinge(ids[h.body], h.other.map(|o| ids[o]), h.pivot, h.axis)
+                        .unwrap();
+                    let body = w.body(ids[h.body]).unwrap();
+                    let local = body.orientation.inverse() * (h.pivot - body.position);
+                    pivots.push((
+                        setup.group.clone(),
+                        ids[h.body],
+                        local,
+                        h.pivot,
+                        h.other.is_none(),
+                    ));
+                }
+            }
+        }
+        for _ in 0..198 {
+            w.step();
+        }
+        for (group, id, local, pivot, to_world) in &pivots {
+            let body = w.body(*id).unwrap();
+            if std::env::var_os("PROPS_DEBUG").is_some() {
+                eprintln!(
+                    "level {level} {group}: speed {:.3} spin {:.3} up {}",
+                    body.velocity.length(),
+                    body.angular_velocity.length(),
+                    body.orientation * Vec3::Y
+                );
+            }
+            assert!(body.position.is_finite(), "level {level} {group}: exploded");
+            if *to_world {
+                let now = body.position + body.orientation * *local;
+                assert!(
+                    now.distance(*pivot) < 0.2,
+                    "level {level} {group}: pivot moved {} ({now} vs {pivot})",
+                    now.distance(*pivot)
+                );
+            }
+        }
+    }
+    assert!(
+        placed > 10 && simulated > 5,
+        "placed {placed}, simulated {simulated}"
+    );
+}

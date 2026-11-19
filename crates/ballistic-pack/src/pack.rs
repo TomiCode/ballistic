@@ -160,7 +160,7 @@ pub fn build(opts: &Options) -> Result<Report> {
             if !scenes::has_geometry(&file) && !key.starts_with("ph/") {
                 return Ok(None);
             }
-            let c = scenes::convert(&file, &resolver)
+            let c = scenes::convert(&file, &resolver, key.starts_with("ph/"))
                 .with_context(|| format!("converting {}", path.display()))?;
             Ok(Some((key.clone(), c)))
         })

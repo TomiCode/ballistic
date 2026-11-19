@@ -108,17 +108,7 @@ impl Props {
                 .with_context(|| format!("loading {key}"))?;
             let prefab = props::prefab_root(&scene, &s.group).and_then(|root| {
                 let collider = props::collider(&params, &scene)?;
-                let mesh_offset = merged.meshes.len() as u32;
-                let material_offset = merged.materials.len() as u32;
-                merged.materials.extend(scene.materials.iter().cloned());
-                merged
-                    .meshes
-                    .extend(scene.meshes.iter().cloned().map(|mut m| {
-                        for sm in &mut m.submeshes {
-                            sm.material = sm.material.map(|i| i + material_offset);
-                        }
-                        m
-                    }));
+                let mesh_offset = append_prefab(&mut merged, &scene);
                 Some(Prefab {
                     params,
                     collider,
@@ -318,17 +308,7 @@ fn add_level_end(
     let platform = world_of(&format!("{base}_Platform"))
         .map(|m| (transform * root_inv * m).transform_point3(Vec3::ZERO))?;
 
-    let mesh_offset = merged.meshes.len() as u32;
-    let material_offset = merged.materials.len() as u32;
-    merged.materials.extend(prefab.materials.iter().cloned());
-    merged
-        .meshes
-        .extend(prefab.meshes.iter().cloned().map(|mut m| {
-            for sm in &mut m.submeshes {
-                sm.material = sm.material.map(|i| i + material_offset);
-            }
-            m
-        }));
+    let mesh_offset = append_prefab(merged, &prefab);
     let material = world.statics.add_material(SurfaceMaterial {
         friction: 0.7,
         elasticity: 0.4,
@@ -375,4 +355,21 @@ fn add_level_end(
         parts,
     };
     Some((prop, LevelEnd { platform, sector }, index as usize))
+}
+
+/// Appends a prefab's meshes and materials to a merged render scene; returns
+/// the index of its first mesh there.
+pub fn append_prefab(merged: &mut Scene, prefab: &Scene) -> u32 {
+    let mesh_offset = merged.meshes.len() as u32;
+    let material_offset = merged.materials.len() as u32;
+    merged.materials.extend(prefab.materials.iter().cloned());
+    merged
+        .meshes
+        .extend(prefab.meshes.iter().cloned().map(|mut m| {
+            for sm in &mut m.submeshes {
+                sm.material = sm.material.map(|i| i + material_offset);
+            }
+            m
+        }));
+    mesh_offset
 }

@@ -28,7 +28,13 @@ pub fn has_geometry(file: &CkFile) -> bool {
         .any(|o| o.class_id == ClassId::MESH && o.chunk.is_some())
 }
 
-pub fn convert(file: &CkFile, textures: &dyn TextureResolver) -> Result<Converted> {
+/// Converts a file's scene. With `all_meshes`, meshes no object uses are kept
+/// too (prefabs: their collision meshes are referenced only by scripts).
+pub fn convert(
+    file: &CkFile,
+    textures: &dyn TextureResolver,
+    all_meshes: bool,
+) -> Result<Converted> {
     let decoded: Vec<Option<Decoded>> = file
         .objects
         .iter()
@@ -82,6 +88,14 @@ pub fn convert(file: &CkFile, textures: &dyn TextureResolver) -> Result<Converte
             parent: e.parent.and_then(|p| entity_map.get(&p).copied()),
             hidden: e.hidden,
         });
+    }
+
+    if all_meshes {
+        for (i, d) in decoded.iter().enumerate() {
+            if matches!(d, Some(Decoded::Mesh(_))) {
+                cx.mesh(i);
+            }
+        }
     }
 
     let mut groups = Vec::new();

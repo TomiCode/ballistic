@@ -207,6 +207,7 @@ pub fn extract(install: &Install) -> Result<bb::PhysicsData> {
         balls,
         surfaces,
         props,
+        modules: crate::modules::extract(install)?,
     })
 }
 

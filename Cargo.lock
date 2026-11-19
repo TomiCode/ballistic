@@ -218,6 +218,7 @@ dependencies = [
 name = "ballistic-physics"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "ballistic-bundle",
  "glam",
 ]

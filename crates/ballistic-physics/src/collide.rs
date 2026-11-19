@@ -10,6 +10,9 @@
 
 use glam::{Mat3, Quat, Vec3};
 
+use crate::hull::Hull;
+use crate::mesh::closest_point;
+
 /// One contact point (world space) and its penetration depth.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Point {
@@ -101,6 +104,54 @@ pub(crate) fn sphere_box(
     })
 }
 
+/// A sphere (first) against a convex polyhedron (second).
+pub(crate) fn sphere_poly(center: Vec3, radius: f32, poly: &Poly) -> Option<Contact> {
+    let (sep, face) = poly.max_separation(center);
+    if sep >= radius {
+        return None;
+    }
+    if sep <= 0.0 {
+        // Centre inside: out through the nearest face.
+        let n = poly.faces[face].0;
+        return Some(Contact {
+            normal: n,
+            points: vec![Point {
+                pos: center - n * sep,
+                depth: radius - sep,
+            }],
+        });
+    }
+    // Outside: the closest point on the surface (faces as triangle fans).
+    let mut best: Option<(f32, Vec3)> = None;
+    for (_, l) in &poly.faces {
+        for k in 1..l.len().saturating_sub(1) {
+            let q = closest_point(
+                center,
+                poly.verts[l[0]],
+                poly.verts[l[k]],
+                poly.verts[l[k + 1]],
+            )
+            .point;
+            let d2 = center.distance_squared(q);
+            if best.is_none_or(|(b, _)| d2 < b) {
+                best = Some((d2, q));
+            }
+        }
+    }
+    let (d2, q) = best?;
+    if d2 >= radius * radius || d2 < 1e-12 {
+        return None;
+    }
+    let dist = d2.sqrt();
+    Some(Contact {
+        normal: (center - q) / dist,
+        points: vec![Point {
+            pos: q,
+            depth: radius - dist,
+        }],
+    })
+}
+
 /// A convex polyhedron in world space.
 #[derive(Debug, Clone)]
 pub(crate) struct Poly {
@@ -154,6 +205,26 @@ impl Poly {
             edges,
             one_sided: None,
         }
+    }
+
+    /// A convex hull (body frame) placed at a pose.
+    pub fn hull(h: &Hull, pos: Vec3, rot: Quat) -> Self {
+        let m = Mat3::from_quat(rot);
+        Self {
+            verts: h.verts.iter().map(|v| pos + m * *v).collect(),
+            faces: h.faces.iter().map(|(n, l)| (m * *n, l.clone())).collect(),
+            edges: h.edges.clone(),
+            one_sided: None,
+        }
+    }
+
+    /// Signed distance of `p` to each face plane; the largest, and its face.
+    fn max_separation(&self, p: Vec3) -> (f32, usize) {
+        self.faces
+            .iter()
+            .enumerate()
+            .map(|(i, (n, l))| (n.dot(p - self.verts[l[0]]), i))
+            .fold((f32::MIN, 0), |a, b| if b.0 > a.0 { b } else { a })
     }
 
     /// A level triangle, counter-clockwise around `normal`.
@@ -524,5 +595,38 @@ mod tests {
         let b = Poly::cuboid(Vec3::new(0.0, -0.5, 0.0), Quat::IDENTITY, Vec3::ONE);
         let c = poly_poly(&b, &floor_tri()).expect("contact");
         assert!(c.normal.y > 0.99, "{}", c.normal);
+    }
+
+    #[test]
+    fn sphere_against_hull() {
+        let cube: Vec<Vec3> = (0..8)
+            .map(|i| {
+                Vec3::new(
+                    if i & 1 == 0 { -1.0 } else { 1.0 },
+                    if i & 2 == 0 { -1.0 } else { 1.0 },
+                    if i & 4 == 0 { -1.0 } else { 1.0 },
+                )
+            })
+            .collect();
+        let h = Hull::new(&cube).unwrap();
+        let p = Poly::hull(&h, Vec3::ZERO, Quat::IDENTITY);
+        let c = sphere_poly(Vec3::new(0.0, 1.5, 0.0), 1.0, &p).unwrap();
+        assert!(c.normal.abs_diff_eq(Vec3::Y, 1e-5));
+        assert!((c.points[0].depth - 0.5).abs() < 1e-5);
+        let corner = Vec3::splat(1.0 + 0.5 / 3f32.sqrt());
+        let c = sphere_poly(corner, 1.0, &p).unwrap();
+        assert!((c.points[0].depth - 0.5).abs() < 1e-4);
+        assert!(sphere_poly(Vec3::new(0.0, 2.5, 0.0), 1.0, &p).is_none());
+        // A hull on a floor triangle: four corner points.
+        let floor = Poly::triangle(
+            Vec3::new(-50.0, -1.1, -50.0),
+            Vec3::new(-50.0, -1.1, 50.0),
+            Vec3::new(50.0, -1.1, 0.0),
+            Vec3::Y,
+        );
+        let p = Poly::hull(&h, Vec3::new(0.0, -0.0, 0.0), Quat::IDENTITY);
+        assert!(poly_poly(&p, &floor).is_none());
+        let p = Poly::hull(&h, Vec3::new(0.0, -0.2, 0.0), Quat::IDENTITY);
+        assert_eq!(poly_poly(&p, &floor).unwrap().points.len(), 4);
     }
 }
