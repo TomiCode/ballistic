@@ -51,6 +51,17 @@ enum Command {
     },
     /// Decode every mesh/material/texture/entity/group under a directory.
     SceneCheck { dir: PathBuf },
+    /// Decode and validate every script object under a directory.
+    ScriptCheck { dir: PathBuf },
+    /// Print a file's scripts as an indented tree (or JSON / Graphviz DOT).
+    Scripts {
+        file: PathBuf,
+        /// Only scripts whose name contains this text.
+        #[arg(long)]
+        filter: Option<String>,
+        #[arg(long, value_enum, default_value_t = ScriptFormat::Tree)]
+        format: ScriptFormat,
+    },
     /// Print decoded scene objects of one file as JSON.
     Scene {
         file: PathBuf,
@@ -78,6 +89,13 @@ enum Command {
     },
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum ScriptFormat {
+    Tree,
+    Json,
+    Dot,
+}
+
 fn main() -> Result<()> {
     match Cli::parse().command {
         Command::Info { file } => info(&file),
@@ -99,6 +117,12 @@ fn main() -> Result<()> {
         Command::Scan { dir } => scan(&dir),
         Command::Identifiers { dir, class } => identifiers(&dir, class.as_deref()),
         Command::SceneCheck { dir } => scene_check(&dir),
+        Command::ScriptCheck { dir } => script_check(&dir),
+        Command::Scripts {
+            file,
+            filter,
+            format,
+        } => scripts(&file, filter.as_deref(), format),
         Command::Scene { file, class } => scene(&file, class.as_deref()),
         Command::Render {
             file,
@@ -147,6 +171,111 @@ fn scene_check(dir: &Path) -> Result<()> {
     }
     if failures > 0 {
         bail!("{failures} object(s) failed to decode");
+    }
+    Ok(())
+}
+
+fn scripts(path: &Path, filter: Option<&str>, format: ScriptFormat) -> Result<()> {
+    let f = open(path)?;
+    let s = ckscript::Scripts::decode(&f)?;
+    let d = ckscript::describe::Describer {
+        file: &f,
+        scripts: &s,
+    };
+    let mut nodes = Vec::new();
+    for &(root, owner) in &s.roots {
+        let Some(node) = d.node(root) else { continue };
+        if filter.is_some_and(|q| !node.name.contains(q)) {
+            continue;
+        }
+        nodes.push((owner, node));
+    }
+    match format {
+        ScriptFormat::Tree => {
+            for (owner, node) in &nodes {
+                let on = owner.map_or("(unattached)".into(), |o| {
+                    ckscript::types::object_label(&f, o)
+                });
+                let mut out = format!(
+                    "== script on {on}
+"
+                );
+                ckscript::describe::write_tree(&mut out, node, 0);
+                println!("{out}");
+            }
+        }
+        ScriptFormat::Json => {
+            let v: Vec<_> = nodes
+                .iter()
+                .map(|(owner, n)| serde_json::json!({ "owner": owner, "script": n }))
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&v)?);
+        }
+        ScriptFormat::Dot => {
+            for (_, n) in &nodes {
+                println!("{}", ckscript::describe::to_dot(n));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn script_check(dir: &Path) -> Result<()> {
+    let (mut files, mut objects, mut roots, mut attached, mut problems) = (0, 0, 0, 0, 0);
+    let mut conformance = ckscript::conform::Conformance::default();
+    let mut kinds: BTreeMap<&'static str, usize> = BTreeMap::new();
+    for p in walk(dir)? {
+        let f = open(&p)?;
+        let s =
+            ckscript::Scripts::decode(&f).with_context(|| format!("decoding {}", p.display()))?;
+        files += 1;
+        roots += s.roots.len();
+        attached += s.roots.iter().filter(|(_, owner)| owner.is_some()).count();
+        for o in s.objects.iter().flatten() {
+            objects += 1;
+            let k = match o {
+                ckscript::ScriptObject::Behavior(b) if b.is_graph() => "graph",
+                ckscript::ScriptObject::Behavior(_) => "building block",
+                ckscript::ScriptObject::Io(_) => "pin",
+                ckscript::ScriptObject::Link(_) => "link",
+                ckscript::ScriptObject::In(_) => "param in",
+                ckscript::ScriptObject::Out(_) => "param out",
+                ckscript::ScriptObject::Local(_) => "param local",
+                ckscript::ScriptObject::Parameter(_) => "parameter",
+                ckscript::ScriptObject::Operation(_) => "operation",
+            };
+            *kinds.entry(k).or_default() += 1;
+        }
+        ckscript::conform::check(&f, &s, ckscript::Catalogue::builtin(), &mut conformance);
+        for msg in s.validate(&f) {
+            problems += 1;
+            if problems <= 30 {
+                println!("{}: {msg}", p.display());
+            }
+        }
+    }
+    println!(
+        "{files} files, {objects} script objects, {roots} root behaviours ({attached} attached to scene objects)"
+    );
+    for (k, n) in &kinds {
+        println!("  {n:>6}  {k}");
+    }
+    println!("{problems} structural problem(s)");
+    let c = &conformance;
+    println!(
+        "catalogue: {} building-block nodes, {} match their declaration exactly, {} unknown prototypes",
+        c.nodes, c.exact, c.unknown
+    );
+    let mut totals: BTreeMap<&str, usize> = BTreeMap::new();
+    for (bb, d) in &c.differences {
+        println!("  differs: {bb:<32} {d:?}");
+        for (k, n) in d {
+            *totals.entry(k).or_default() += n;
+        }
+    }
+    println!("difference totals: {totals:?}");
+    if problems > 0 {
+        bail!("validation failed");
     }
     Ok(())
 }

@@ -400,6 +400,7 @@ dependencies = [
  "anyhow",
  "ckfile",
  "ckscene",
+ "ckscript",
  "clap",
  "image",
  "serde_json",
@@ -411,6 +412,15 @@ version = "0.1.0"
 dependencies = [
  "ckfile",
  "serde",
+]
+
+[[package]]
+name = "ckscript"
+version = "0.1.0"
+dependencies = [
+ "ckfile",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

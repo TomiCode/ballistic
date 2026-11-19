@@ -36,7 +36,7 @@ pub mod chunk_options {
 /// The only chunk layout version found in Ballance files.
 pub const SUPPORTED_CHUNK_VERSION: u32 = 7;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct StateChunk {
     /// Class that wrote the chunk. Can differ from the object's own class: a

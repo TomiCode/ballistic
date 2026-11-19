@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ckfile", "crates/ckscene", "crates/ballistic-bundle", "crates/ballistic-pack", "crates/ballistic-render", "apps/ballistic-viewer", "tools/ckinspect"]
+members = ["crates/ckfile", "crates/ckscene", "crates/ckscript", "crates/ballistic-bundle", "crates/ballistic-pack", "crates/ballistic-render", "apps/ballistic-viewer", "tools/ckinspect"]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,6 +12,7 @@ authors = ["Tomasz Król <tomicode@gmail.com>"]
 [workspace.dependencies]
 ckfile = { path = "crates/ckfile" }
 ckscene = { path = "crates/ckscene" }
+ckscript = { path = "crates/ckscript" }
 image = { version = "0.25", default-features = false, features = ["bmp", "tga", "png"] }
 flate2 = "1"
 thiserror = "2"

@@ -6,6 +6,7 @@
 |---|---|
 | `crates/ckfile` | Reader for Virtools composition files (`.nmo` / `.cmo`, file version 8): container, object table, `StateChunk` sections and sub-chunks. Used by the asset packer. Never used by the game at runtime. |
 | `crates/ckscene` | Decoders for scene classes on top of `ckfile`: `Mesh`, `Material`, `Texture`, `Entity3d` (3D objects, lights, cameras), `Group` |
+| `crates/ckscript` | Decoders for behaviour graphs on top of `ckfile`: behaviours, pins, links, parameters, operations, plus a resolved tree/DOT view. Embeds the building-block catalogue (`data/bb-catalogue.json`: names, GUIDs, pin and parameter declarations, parameter types; regenerated from the research repo with `export_catalogue.py`) |
 | `crates/ballistic-bundle` | Bundle format: manifest and scene types, zip reader/writer. The engine's only data dependency |
 | `crates/ballistic-pack` | The packer (library and CLI): install verification, scene/texture/audio conversion |
 | `crates/ballistic-render` | wgpu renderer for bundle scenes (fixed-function-style shading in gamma space), camera, off-screen targets |
@@ -29,6 +30,8 @@ ckinspect scan <dir>                          # parse every .nmo/.cmo, report fa
 ckinspect identifiers <dir> [--class Texture] # section identifier statistics per class
 ckinspect scene-check <dir>                   # decode every scene object, report failures
 ckinspect scene <file> [--class Material]     # decoded scene objects as JSON
+ckinspect script-check <dir>                  # decode + validate every script object
+ckinspect scripts <file> [--filter name] [--format tree|json|dot]
 ckinspect render <file> --out x.png [--textures <install>/Textures]
           [--azimuth 35 --elevation 35 --size 2048 --include-hidden]
 ```

@@ -1,0 +1,20 @@
+[package]
+name = "ckscript"
+description = "Decoders for Virtools behaviour graphs (scripts, building blocks, pins, links, parameters)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[features]
+# Serialize derives on the decoded types.
+serde = ["ckfile/serde"]
+
+[dependencies]
+ckfile.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

@@ -11,6 +11,7 @@ publish = false
 [dependencies]
 ckfile = { workspace = true, features = ["serde"] }
 ckscene = { workspace = true, features = ["serde"] }
+ckscript = { workspace = true, features = ["serde"] }
 image.workspace = true
 clap.workspace = true
 anyhow.workspace = true
