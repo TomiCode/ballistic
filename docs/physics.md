@@ -32,8 +32,9 @@ options so they can be calibrated later.
   use ball joints or forces are static stand-ins for now.
 - **Sleeping**: a body can start asleep (the original's "Start Frozen"). It
   doesn't move, and others collide with it as if it were fixed, until it's
-  woken: explicitly (the scripts' Physics WakeUp), by a hinge to a moving body,
-  or by an awake body touching it.
+  woken: explicitly (the scripts' Physics WakeUp), by a joint or spring to a
+  moving body, or by an awake body touching it. These are the original's
+  rules (research findings 13).
 - **Contacts between bodies**: sphere–sphere, sphere–box, sphere–hull and
   between boxes and hulls.
 - Not yet: ball joints and the scripts' forces, ball transformers.
@@ -102,9 +103,9 @@ world) and let it move only along the axis.
 world), with force `constant · (distance − length)` along the line between
 them. Damping is `linear_damping` times the points' relative velocity along
 that line, plus `global_damping` times their whole relative velocity. The
-forces are applied as impulses each step, with the pushes. Whether the
-original's constants are in these units (or relative to mass) is to be
-calibrated.
+forces are applied as impulses each step, with the pushes. A sleeping body
+gets none, and a spring doesn't wake it. That's the original's spring, with
+absolute values (research findings 13).
 
 **Collision detection.** Spheres use closest points (to triangles, boxes, hulls
 and other spheres). Boxes and triangles are convex polyhedra: the separating-axis

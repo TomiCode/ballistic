@@ -98,8 +98,9 @@ the ball comes near (each module's own wake-up distance), and then fall,
 swing or tip by themselves.
 - Simulated: the hinged ones (bridges that fall over, flaps, seesaws, the plank
   bridge), the rotating arms (hinge and spring), the lift (slider and spring),
-  the sliding stone (slider) and the pusher. The lift doesn't rise yet: see
-  research findings 13.
+  the sliding stone (slider) and the pusher. The lift doesn't rise: with the
+  original's values it can't carry the walls standing on it (research
+  findings 13).
 - Fixed in place for now: modules that also use ball joints or forces (the
   swing, the fan, the punching bag).
 
