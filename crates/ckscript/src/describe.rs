@@ -99,7 +99,11 @@ impl Describer<'_> {
             Some(Some(ScriptObject::Out(o))) => {
                 let mut v = format_value(self.file, o.type_guid, &o.value);
                 if !o.destinations.is_empty() {
-                    let d: Vec<String> = o.destinations.iter().map(|&d| self.name(d)).collect();
+                    let d: Vec<String> = o
+                        .destinations
+                        .iter()
+                        .map(|&d| format!("#{d} {}", self.name(d)))
+                        .collect();
                     let _ = write!(v, " -> {}", d.join(", "));
                 }
                 (o.type_guid, v)
@@ -137,7 +141,7 @@ impl Describer<'_> {
                 if owner == self.scripts.owner.get(&i).copied() {
                     v
                 } else {
-                    format!("{v}  (local {:?})", self.name(src))
+                    format!("{v}  (local #{src} {:?})", self.name(src))
                 }
             }
             Some(Some(ScriptObject::Out(_))) => match self.scripts.owner.get(&src) {
@@ -273,11 +277,16 @@ pub fn write_tree(out: &mut String, n: &Node, depth: usize) {
         ("local", &n.locals),
     ] {
         for p in list {
-            let _ = writeln!(
+            let _ = write!(
                 out,
                 "{ind}    {label:<5} {:<28} {:<14} {}",
                 p.name, p.type_name, p.value
             );
+            // Locals are referenced by index (names repeat within a graph).
+            if label == "local" {
+                let _ = write!(out, "  #{}", p.index);
+            }
+            out.push('\n');
         }
     }
     for op in &n.operations {

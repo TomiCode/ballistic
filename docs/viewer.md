@@ -25,7 +25,7 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--screenshot out.png [--size 1920x1080]` | Render one frame off-screen and exit, no window |
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
 | `--play` | Play mode: roll a ball on the level |
-| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3` |
+| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait` |
 
 The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 
@@ -59,6 +59,7 @@ behind it, both as the original sets them. Control works like the original:
 |---|---|
 | Arrows | Push the ball forward / back / left / right, relative to the camera |
 | **Shift** + **Left / Right** | Turn the camera 90° |
+| **Space** (hold) | Lift view: the camera rises 50 units for a look from above |
 | **R** | Respawn |
 | **1** | Next ball type (wood, stone, paper) |
 
@@ -78,7 +79,9 @@ The camera follows like the original: a point chases the ball, and the camera
 chases a spot 22 units behind and 35 above that point, with the original's pull
 and momentum per axis. It reacts slowly in height, so it stays high when the
 ball drops. Field of view is the original's at 4:3 (45° vertical), kept at
-every aspect ratio. In the original this filter ran once per rendered frame,
+every aspect ratio. Holding Space lifts the camera's goal 50 units and
+strengthens its vertical pull, as the original's lift view does; it changes
+nothing else. In the original this filter ran once per rendered frame,
 so its feel depended on frame rate. Here it runs at a fixed 60 Hz and is
 interpolated, so it feels the same at any refresh rate. The turn's easing
 curve is still an approximation.

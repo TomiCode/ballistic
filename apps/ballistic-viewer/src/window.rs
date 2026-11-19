@@ -31,6 +31,7 @@ controls:
 play mode (--play):
   arrows                     roll the ball (relative to the camera)
   Shift + Left / Right       turn the camera 90°
+  Space                      lift the camera (hold)
   R  respawn                 1  next ball type";
 
 pub fn run(args: Args, bundle: Bundle) -> Result<()> {
@@ -268,6 +269,7 @@ impl State {
                 KeyCode::ArrowLeft => Some(K::Left),
                 KeyCode::ArrowRight => Some(K::Right),
                 KeyCode::ShiftLeft | KeyCode::ShiftRight => Some(K::Rotate),
+                KeyCode::Space => Some(K::Lift),
                 _ => None,
             };
             if let Some(k) = k {

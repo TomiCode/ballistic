@@ -40,6 +40,8 @@ pub enum PlayKey {
     Left,
     Right,
     Rotate,
+    /// `CamUp`: the lift view.
+    Lift,
 }
 
 /// Direction keys in the push order used by the scripts.
@@ -62,7 +64,7 @@ pub struct Play {
     start: Vec3,
     start_heading: f32,
     fall_y: f32,
-    held: [bool; 5],
+    held: [bool; 6],
     pushes: [Option<PushId>; 4],
     nav_on: bool,
     /// Frames until control switches back on after an *Update*.
@@ -85,6 +87,7 @@ fn key_index(k: PlayKey) -> usize {
         PlayKey::Left => 2,
         PlayKey::Right => 3,
         PlayKey::Rotate => 4,
+        PlayKey::Lift => 5,
     }
 }
 
@@ -139,7 +142,7 @@ impl Play {
             start,
             start_heading: heading,
             fall_y,
-            held: [false; 5],
+            held: [false; 6],
             pushes: [None; 4],
             nav_on: true,
             nav_on_in: None,
@@ -179,7 +182,7 @@ impl Play {
             PlayKey::Down => Vec3::Z,
             PlayKey::Left => Vec3::NEG_X,
             PlayKey::Right => Vec3::X,
-            PlayKey::Rotate => Vec3::ZERO,
+            PlayKey::Rotate | PlayKey::Lift => Vec3::ZERO,
         };
         r * local
     }
@@ -224,6 +227,8 @@ impl Play {
         self.held[i] = pressed;
         let rotating = self.held[key_index(PlayKey::Rotate)];
         match k {
+            // Only the camera reads it (in `update`).
+            PlayKey::Lift => {}
             PlayKey::Rotate if pressed => self.nav_off(),
             PlayKey::Rotate => {
                 self.nav_on_in = None;
@@ -329,7 +334,8 @@ impl Play {
             self.respawn();
         }
         let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
-        self.follow.update(real_dt, ball, self.heading_view);
+        let lifted = self.held[key_index(PlayKey::Lift)];
+        self.follow.update(real_dt, ball, self.heading_view, lifted);
     }
 
     pub fn ball_pose(&self) -> Option<(Vec3, Quat)> {
@@ -382,11 +388,20 @@ impl Play {
     pub fn status(&self) -> String {
         let b = self.world.body(self.ball);
         format!(
-            "{} speed {:.1} {}{}",
+            "{} speed {:.1} {}{}{}",
             self.ball_name(),
             b.map_or(0.0, |b| b.velocity.length()),
             if self.nav_on { "" } else { "[no control] " },
-            if self.turn.is_some() { "[turning]" } else { "" }
+            if self.turn.is_some() {
+                "[turning] "
+            } else {
+                ""
+            },
+            if self.held[key_index(PlayKey::Lift)] {
+                "[lift]"
+            } else {
+                ""
+            }
         )
     }
 }

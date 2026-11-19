@@ -32,7 +32,7 @@ ckinspect identifiers <dir> [--class Texture] # section identifier statistics pe
 ckinspect scene-check <dir>                   # decode every scene object, report failures
 ckinspect scene <file> [--class Material]     # decoded scene objects as JSON
 ckinspect script-check <dir>                  # decode + validate every script object
-ckinspect scripts <file> [--filter name] [--format tree|json|dot]
+ckinspect scripts <file> [--filter name] [--format tree|json|dot]   # locals and shared outputs show their object index (#n): names repeat
 ckinspect arrays <file> [--filter name]       # data arrays (script tables) with resolved cells
 ckinspect physics <install> [--json out.json] # physics nodes + Physicalize_* tables, values traced to their source
 ckinspect render <file> --out x.png [--textures <install>/Textures]

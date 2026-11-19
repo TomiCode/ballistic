@@ -53,7 +53,7 @@ pub struct Args {
     #[arg(long)]
     play: bool,
     /// Scripted input for play mode in screenshots: `up:2,rotate+left:0.4,wait:1`
-    /// (keys held for seconds; keys: up down left right rotate wait).
+    /// (keys held for seconds; keys: up down left right rotate lift wait).
     #[arg(long)]
     play_script: Option<String>,
 }
@@ -200,6 +200,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<(Vec<play::PlayKey>, f32)>> {
                     "left" => Some(Ok(K::Left)),
                     "right" => Some(Ok(K::Right)),
                     "rotate" => Some(Ok(K::Rotate)),
+                    "lift" => Some(Ok(K::Lift)),
                     "wait" => None,
                     other => Some(Err(anyhow::anyhow!("unknown key {other:?}"))),
                 })
