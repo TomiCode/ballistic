@@ -50,7 +50,9 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      element's bodies, joints, forces, timers and tests from its prefab script
      (`PH/P_Modul_*.nmo`, and the level end's `PH/PE_Balloon.nmo` without its
      UFO sequence), and the ball transformers' reach, pull and delays from
-     `Gameplay.nmo`'s `Trafo Manager` → `data/physics.json`
+     `Gameplay.nmo`'s `Trafo Manager`, their animation from `AnimTrafo.nmo`,
+     and each ball type's burst into pieces from `Balls.nmo` (progression
+     curves decoded from their 2D curve parameters) → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

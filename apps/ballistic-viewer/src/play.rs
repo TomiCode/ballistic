@@ -25,6 +25,7 @@ use glam::Mat4;
 
 use crate::follow::Follow;
 use crate::modules::Modules;
+use crate::pieces::Pieces;
 use crate::progress::{self, Progress};
 use crate::props::Props;
 use crate::transformers::{self, Transformers};
@@ -86,6 +87,7 @@ pub struct Play {
     props: Props,
     modules: Modules,
     transformers: Transformers,
+    pieces: Pieces,
     /// The ball's pose while a transformer holds it out of the simulation.
     held: Option<(Vec3, Quat)>,
     progress: Progress,
@@ -146,6 +148,7 @@ impl Play {
 
         let balls = load_scene(gpu, bundle, "balls", format)?;
         let ball_scene = bundle.scene("balls")?;
+        let pieces = Pieces::new(&physics, &ball_scene);
         let ball_objects = physics
             .balls
             .iter()
@@ -179,6 +182,7 @@ impl Play {
             props,
             modules,
             transformers,
+            pieces,
             held: None,
             progress,
             elapsed: 0.0,
@@ -224,7 +228,9 @@ impl Play {
         if self.pushes[i].is_none() {
             let dir = self.direction(k);
             let force = self.params().force;
-            self.pushes[i] = Some(self.world.add_push(self.ball, dir, force));
+            if let Some(ball) = self.ball_id() {
+                self.pushes[i] = Some(self.world.add_push(ball, dir, force));
+            }
         }
     }
 
@@ -316,7 +322,11 @@ impl Play {
     /// Development aid: puts the ball, at rest, on the nearest transformer of
     /// another type.
     pub fn warp_to_transformer(&mut self) {
-        let Some(ball) = self.world.body(self.ball).map(|b| b.position) else {
+        let Some(ball) = self
+            .ball_id()
+            .and_then(|id| self.world.body(id))
+            .map(|b| b.position)
+        else {
             return;
         };
         if let Some(target) = self.transformers.nearest_other(ball, self.active_ball) {
@@ -364,7 +374,15 @@ impl Play {
         use transformers::Event as E;
         for e in events {
             match e {
-                E::Begin => self.nav_off(),
+                E::Begin => {
+                    self.nav_off();
+                    self.pieces.triggered(self.active_ball);
+                }
+                E::Burst(ball) => {
+                    if let Some((p, _)) = self.held {
+                        self.pieces.burst(&mut self.world, ball, p);
+                    }
+                }
                 E::Release => {
                     self.held = self
                         .world
@@ -405,6 +423,7 @@ impl Play {
             (self.start, self.start_heading) = reset_pose(m);
         }
         self.progress.respawn();
+        self.pieces.reset_all();
         self.apply_sector_changes();
         self.world.reset_body(self.ball, self.start);
         self.follow.reset(self.start, self.start_heading);
@@ -456,9 +475,12 @@ impl Play {
 
         self.world.advance(real_dt);
         self.props.update(&mut self.world, self.fall_y);
+        self.pieces.frame(&mut self.world, real_dt);
         self.elapsed += real_dt;
         if let Some(ball) = self.ball_pose().map(|(p, _)| p) {
-            self.modules.frame(self.ball, real_dt, &mut self.world);
+            if let Some(id) = self.ball_id() {
+                self.modules.frame(id, real_dt, &mut self.world);
+            }
             if let Some(p) = self.modules.level_end_platform(&self.world) {
                 self.progress.set_level_end_target(p);
             }
@@ -482,8 +504,8 @@ impl Play {
         self.apply_sector_changes();
 
         if self
-            .world
-            .body(self.ball)
+            .ball_id()
+            .and_then(|id| self.world.body(id))
             .is_some_and(|b| b.position.y < self.fall_y)
         {
             self.respawn();
@@ -522,6 +544,12 @@ impl Play {
         )
     }
 
+    /// The ball's body, unless a transformer holds the ball out of the world
+    /// (its old id may then belong to another body).
+    fn ball_id(&self) -> Option<BodyId> {
+        self.held.is_none().then_some(self.ball)
+    }
+
     pub fn ball_pose(&self) -> Option<(Vec3, Quat)> {
         self.held.or_else(|| self.world.interpolated(self.ball))
     }
@@ -542,6 +570,7 @@ impl Play {
     }
 
     pub fn sync_render(&mut self, gpu: &Gpu) {
+        self.pieces.sync(gpu, &mut self.balls.renderer, &self.world);
         let Some((p, q)) = self.ball_pose() else {
             return;
         };
@@ -596,9 +625,9 @@ impl Play {
     }
 
     pub fn status(&self) -> String {
-        let b = self.world.body(self.ball);
+        let b = self.ball_id().and_then(|id| self.world.body(id));
         format!(
-            "{} speed {:.1} checkpoint {}/{} {}{}{}{}",
+            "{} speed {:.1} checkpoint {}/{} {}{}{}{}{}",
             self.ball_name(),
             b.map_or(0.0, |b| b.velocity.length()),
             self.progress.reached(),
@@ -613,9 +642,13 @@ impl Play {
                 ""
             },
             if self.keys_held[key_index(PlayKey::Lift)] {
-                "[lift]"
+                "[lift] "
             } else {
                 ""
+            },
+            match self.pieces.count() {
+                0 => String::new(),
+                n => format!("[{n} pieces]"),
             }
         )
     }

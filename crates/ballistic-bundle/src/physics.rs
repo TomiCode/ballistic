@@ -41,6 +41,164 @@ pub struct TransformerParams {
     pub hold_ms: f32,
     /// Then this long until the new ball replaces it.
     pub swap_ms: f32,
+    /// The transformer's animation (`AnimTrafo`).
+    pub animation: TransformerAnimation,
+    /// The old ball's pieces, one set per ball type.
+    pub pieces: Vec<BallPieces>,
+    /// A ball type's pieces fade out this long after a transformation from it
+    /// (or at once if the ball transforms from that type again first).
+    pub pieces_fade_after_ms: f32,
+}
+
+/// `AnimTrafo_MF Script` (`AnimTrafo.nmo`), played at the transformer that
+/// transforms the ball. Object and material names refer to the `animtrafo`
+/// scene; offsets are in bundle space.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TransformerAnimation {
+    /// The animation's root frame, put at the transformer's matrix.
+    pub root: String,
+    /// Shown in place of the transformer while the animation plays (with its
+    /// children: the ring parts, their frames and the flash field).
+    pub bars: String,
+    /// The ring parts and the frames they move in.
+    pub ring_parts: Vec<RingPart>,
+    /// Opening moves each part to `ring_offset` × the curve in its frame.
+    pub ring_offset: [f32; 3],
+    pub ring_open: Progression,
+    pub ring_close: Progression,
+    /// The bars rise to `bars_offset` × the curve in the root frame.
+    pub bars_offset: [f32; 3],
+    pub lift: Progression,
+    /// Meanwhile the transformer type's shadow material goes from the first
+    /// diffuse colour to the second, by the same curve.
+    pub shadow_colors: [[f32; 4]; 2],
+    /// Shown while the bars move; its texture scrolls by the two offsets in
+    /// turn, one every `flash_ms`.
+    pub flash: String,
+    pub flash_scroll: [[f32; 2]; 2],
+    pub flash_ms: f32,
+    /// Takes the diffuse colour (RGB) and emissive of the transformer mesh's
+    /// second material.
+    pub ring_material: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RingPart {
+    pub object: String,
+    pub frame: String,
+}
+
+/// A *Bezier Progression*: over `duration_ms`, a value from 0 to 1 shaped by
+/// a curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Progression {
+    pub duration_ms: f32,
+    pub curve: Vec<CurvePoint>,
+}
+
+/// A control point of a 2D curve: position and Hermite tangents.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct CurvePoint {
+    pub position: [f32; 2],
+    pub in_tangent: [f32; 2],
+    pub out_tangent: [f32; 2],
+}
+
+impl Progression {
+    /// The value after `elapsed_ms` (the curve's end value once it's over).
+    pub fn value(&self, elapsed_ms: f32) -> f32 {
+        let x = if self.duration_ms > 0.0 {
+            (elapsed_ms / self.duration_ms).clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
+        curve_y(&self.curve, x)
+    }
+
+    pub fn done(&self, elapsed_ms: f32) -> bool {
+        elapsed_ms >= self.duration_ms
+    }
+}
+
+/// A 2D curve's y at `x`: Hermite segments between the control points, with
+/// each point's out tangent and the next one's in tangent. The parameter is
+/// solved from x (Ballance's tangents make x linear in it).
+pub fn curve_y(points: &[CurvePoint], x: f32) -> f32 {
+    let (Some(first), Some(last)) = (points.first(), points.last()) else {
+        return x;
+    };
+    if x <= first.position[0] {
+        return first.position[1];
+    }
+    if x >= last.position[0] {
+        return last.position[1];
+    }
+    let Some(w) = points
+        .windows(2)
+        .find(|w| x >= w[0].position[0] && x <= w[1].position[0])
+    else {
+        return last.position[1];
+    };
+    let (p0, p1) = (w[0], w[1]);
+    let hermite = |t: f32, a: f32, ma: f32, b: f32, mb: f32| {
+        let (t2, t3) = (t * t, t * t * t);
+        (2.0 * t3 - 3.0 * t2 + 1.0) * a
+            + (t3 - 2.0 * t2 + t) * ma
+            + (-2.0 * t3 + 3.0 * t2) * b
+            + (t3 - t2) * mb
+    };
+    let at = |t: f32, i: usize| {
+        hermite(
+            t,
+            p0.position[i],
+            p0.out_tangent[i],
+            p1.position[i],
+            p1.in_tangent[i],
+        )
+    };
+    // x(t) is increasing: bisect for t.
+    let (mut lo, mut hi) = (0.0_f32, 1.0_f32);
+    for _ in 0..32 {
+        let mid = f32::midpoint(lo, hi);
+        if at(mid, 0) < x {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    at(f32::midpoint(lo, hi), 1)
+}
+
+/// One ball type's pieces (`Ball_Explosion_<Type>`, `Ball_ResetPieces_<Type>`
+/// in `Balls.nmo`). Names refer to the `balls` scene; vectors are in bundle
+/// space.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BallPieces {
+    /// Ball type name, e.g. `Ball_Wood`.
+    pub ball: String,
+    /// The group of piece objects, and the frame they're children of (put at
+    /// the old ball's position).
+    pub group: String,
+    pub frame: String,
+    /// The pieces' materials (faded out at the end).
+    pub materials: Vec<String>,
+    /// Physicalize: a convex body from each piece's own mesh. Mass and friction
+    /// are drawn at random from these ranges for each piece (equal ends: fixed).
+    pub mass: [f32; 2],
+    pub friction: [f32; 2],
+    pub elasticity: f32,
+    pub linear_damping: f32,
+    pub rotational_damping: f32,
+    pub collision_group: String,
+    /// Then *Physics Impulse*: a random size from this range, along
+    /// `impulse_direction` at `impulse_position`, both in the piece's frame.
+    pub impulse: [f32; 2],
+    pub impulse_position: [f32; 3],
+    pub impulse_direction: [f32; 3],
+    /// The fade: the material's diffuse colour from the first colour to the
+    /// second by the curve; then the pieces are removed.
+    pub fade: Progression,
+    pub fade_colors: [[f32; 4]; 2],
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -256,4 +414,42 @@ pub struct PropParams {
     pub rotational_damping: f32,
     /// Set for props physicalized as a sphere primitive.
     pub sphere_radius: Option<f32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn evaluates_hermite_curves() {
+        // AnimTrafo's Ring_Close: (0, 1) to (1, 0), flat start, steep end.
+        let close = [
+            CurvePoint {
+                position: [0.0, 1.0],
+                in_tangent: [0.0001, 0.000_005],
+                out_tangent: [1.0, 0.05],
+            },
+            CurvePoint {
+                position: [1.0, 0.0],
+                in_tangent: [1.0, -2.48],
+                out_tangent: [0.001, -0.002_48],
+            },
+        ];
+        assert!((curve_y(&close, 0.0) - 1.0).abs() < 1e-6);
+        assert!((curve_y(&close, 1.0)).abs() < 1e-6);
+        // x is linear in the parameter: t = 0.5 at x = 0.5.
+        let t = 0.5_f32;
+        let expected = (2.0 * t.powi(3) - 3.0 * t * t + 1.0) * 1.0
+            + (t.powi(3) - 2.0 * t * t + t) * 0.05
+            + (t.powi(3) - t * t) * -2.48;
+        assert!((curve_y(&close, 0.5) - expected).abs() < 1e-4);
+        // Outside: the end values.
+        assert!((curve_y(&close, -1.0) - 1.0).abs() < 1e-6);
+        let p = Progression {
+            duration_ms: 200.0,
+            curve: close.to_vec(),
+        };
+        assert!((p.value(100.0) - expected).abs() < 1e-4);
+        assert!(p.value(500.0).abs() < 1e-6 && p.done(200.0));
+    }
 }

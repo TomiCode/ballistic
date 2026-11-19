@@ -9,6 +9,12 @@
 //!
 //! Each `P_Trafo_<X>` prefab carries the transformer attribute with the value
 //! the script maps to `Ball_<X>`, so a transformer's ball follows its name.
+//!
+//! Also:
+//! - the transformer's animation from `AnimTrafo.nmo` (`AnimTrafo_MF Script`);
+//! - each ball type's pieces from `Balls.nmo` (`Ball_Explosion_<Type>`,
+//!   `Ball_ResetPieces_<Type>`);
+//! - when they fade: the `Fadeout Manager`'s Timer in the Trafo Manager.
 
 use anyhow::{Context, Result};
 use ballistic_bundle as bb;
@@ -82,6 +88,12 @@ pub fn extract(
     let hold_ms = after("dephysic Ball")?;
     let swap_ms = after("start Explosion")?;
 
+    let pieces_fade_after_ms = nodes
+        .iter()
+        .find(|n| n.building_block == "Timer" && n.path.iter().any(|p| p == "Fadeout Manager"))
+        .and_then(|n| float(input(n, "Duration")))
+        .context("Trafo Manager: Fadeout Manager Timer not found")?;
+
     let mut types = Vec::new();
     for b in balls {
         let Some(kind) = b.name.strip_prefix("Ball_") else {
@@ -108,7 +120,231 @@ pub fn extract(
         pull_ms,
         hold_ms,
         swap_ms,
+        animation: animation(install)?,
+        pieces: pieces(install, balls)?,
+        pieces_fade_after_ms,
     })
+}
+
+struct Loaded {
+    file: CkFile,
+    scripts: Scripts,
+}
+
+fn load(install: &Install, key: &str) -> Result<Loaded> {
+    let path = install.get(key).with_context(|| format!("{key} missing"))?;
+    let file = CkFile::open(path).with_context(|| format!("reading {key}"))?;
+    let scripts = Scripts::decode(&file).with_context(|| format!("decoding scripts of {key}"))?;
+    Ok(Loaded { file, scripts })
+}
+
+/// `AnimTrafo_MF Script`'s graphs.
+fn animation(install: &Install) -> Result<bb::TransformerAnimation> {
+    let g = load(install, "3d entities/animtrafo.nmo")?;
+    let ex = Extractor::new(&g.file, &g.scripts);
+    let nodes = ex.nodes(&|_| true);
+    let graph = |name: &str| -> Vec<&NodeParams> {
+        nodes
+            .iter()
+            .filter(|n| n.path.last().map(String::as_str) == Some(name))
+            .collect()
+    };
+    let one = |graph: &[&NodeParams], bb: &str| -> Result<NodeParams> {
+        graph
+            .iter()
+            .find(|n| n.building_block == bb)
+            .map(|n| (*n).clone())
+            .with_context(|| format!("AnimTrafo: {bb} not found"))
+    };
+    let open = graph("Ring_Open");
+    let close = graph("Ring_Close");
+    let lift = graph("Up ´n Down");
+    let intro = graph("lntro");
+    let flash = graph("FlashAnim");
+    let colors = graph("Get Colors");
+
+    let ring_parts = open
+        .iter()
+        .filter(|n| n.building_block == "Set Position")
+        .map(|n| {
+            Ok(bb::RingPart {
+                object: target(n).context("AnimTrafo: ring part")?,
+                frame: text(input(n, "Referential")).context("AnimTrafo: ring frame")?,
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let interp = |graph: &[&NodeParams], len: usize, pin: &str| -> Result<Vec<f32>> {
+        graph
+            .iter()
+            .filter(|n| n.building_block == "Interpolator")
+            .find_map(|n| vector(input(n, pin)).filter(|v| v.len() == len))
+            .with_context(|| format!("AnimTrafo: Interpolator {pin} ({len} values)"))
+    };
+    let mirror = |v: Vec<f32>| [v[0], v[1], 0.0 - v[2]];
+    let colors_of = |graph: &[&NodeParams]| -> Result<[[f32; 4]; 2]> {
+        let a = interp(graph, 4, "A")?;
+        let b = interp(graph, 4, "B")?;
+        Ok([[a[0], a[1], a[2], a[3]], [b[0], b[1], b[2], b[3]]])
+    };
+    let scroll = one(&flash, "Parameter Selector")?;
+    let v2 = |name: &str| -> Result<[f32; 2]> {
+        let v = vector(input(&scroll, name)).with_context(|| format!("FlashAnim {name}"))?;
+        Ok([v[0], v[1]])
+    };
+    Ok(bb::TransformerAnimation {
+        root: target(&one(&intro, "Set World Matrix")?).context("AnimTrafo: root")?,
+        bars: target(&one(&lift, "Set Position")?).context("AnimTrafo: bars")?,
+        ring_parts,
+        ring_offset: mirror(interp(&open, 3, "B")?),
+        ring_open: progression(&one(&open, "Bezier Progression")?)?,
+        ring_close: progression(&one(&close, "Bezier Progression")?)?,
+        bars_offset: mirror(interp(&lift, 3, "B")?),
+        lift: progression(&one(&lift, "Bezier Progression")?)?,
+        shadow_colors: colors_of(&lift)?,
+        flash: target(&one(&lift, "Show")?).context("AnimTrafo: flash field")?,
+        flash_scroll: [v2("pIn 0")?, v2("pIn 1")?],
+        flash_ms: float(input(&one(&flash, "Delayer")?, "Time to Wait"))
+            .context("FlashAnim: Delayer")?,
+        ring_material: target(&one(&colors, "Set Diffuse")?).context("AnimTrafo: ring material")?,
+    })
+}
+
+/// Each `Ball_Explosion_<Type>` and its `Ball_ResetPieces_<Type>`.
+fn pieces(install: &Install, balls: &[bb::BallParams]) -> Result<Vec<bb::BallPieces>> {
+    let g = load(install, "3d entities/balls.nmo")?;
+    let ex = Extractor::new(&g.file, &g.scripts);
+    let nodes = ex.nodes(&|_| true);
+    let mut out = Vec::new();
+    for b in balls {
+        let Some(kind) = b.name.strip_prefix("Ball_") else {
+            continue;
+        };
+        let explosion = format!("Ball_Explosion_{kind}");
+        let reset = format!("Ball_ResetPieces_{kind}");
+        let under = |root: &str, bb: &str| {
+            nodes
+                .iter()
+                .find(|n| {
+                    n.building_block == bb && n.path.first().map(String::as_str) == Some(root)
+                })
+                .with_context(|| format!("{root}: {bb} not found"))
+        };
+        let phys = under(&explosion, "Physicalize")?;
+        let impulse = under(&explosion, "Physics Impulse")?;
+        // A value from a constant, or the range of the Random that writes it.
+        let range = |n: &NodeParams, pin: &str| -> Result<[f32; 2]> {
+            if let Some(v) = float(input(n, pin)) {
+                return Ok([v, v]);
+            }
+            let r = writer_of(&g.file, &g.scripts, n.node, pin)
+                .and_then(|w| {
+                    nodes
+                        .iter()
+                        .find(|r| r.node == w && r.building_block == "Random")
+                })
+                .with_context(|| format!("{explosion}: {pin} is neither constant nor Random"))?;
+            Ok([
+                float(input(r, "Min")).context("Random Min")?,
+                float(input(r, "Max")).context("Random Max")?,
+            ])
+        };
+        let constant = |n: &NodeParams, pin: &str| {
+            float(input(n, pin)).with_context(|| format!("{explosion}: {pin}"))
+        };
+        let v3 = |n: &NodeParams, pin: &str| -> Result<[f32; 3]> {
+            let v = vector(input(n, pin)).with_context(|| format!("{explosion}: {pin}"))?;
+            Ok([v[0], v[1], 0.0 - v[2]])
+        };
+        let iter = under(&explosion, "Group Iterator")?;
+        let fade_colors = {
+            let i = under(&reset, "Interpolator")?;
+            let c = |pin: &str| -> Result<[f32; 4]> {
+                let v = vector(input(i, pin)).with_context(|| format!("{reset}: {pin}"))?;
+                Ok([v[0], v[1], v[2], v[3]])
+            };
+            [c("A")?, c("B")?]
+        };
+        out.push(bb::BallPieces {
+            ball: b.name.clone(),
+            group: text(input(iter, "Group")).with_context(|| format!("{explosion}: group"))?,
+            frame: target(under(&explosion, "Set Position")?)
+                .with_context(|| format!("{explosion}: frame"))?,
+            materials: nodes
+                .iter()
+                .filter(|n| {
+                    n.building_block == "Set Diffuse"
+                        && n.path.first().map(String::as_str) == Some(reset.as_str())
+                })
+                .filter_map(target)
+                .collect(),
+            mass: range(phys, "Mass")?,
+            friction: range(phys, "Friction")?,
+            elasticity: constant(phys, "Elasticity")?,
+            linear_damping: constant(phys, "Linear Speed Dampening")?,
+            rotational_damping: constant(phys, "Rot Speed Dampening")?,
+            collision_group: text(input(phys, "Collision Group")).unwrap_or_default(),
+            impulse: range(impulse, "Impulse")?,
+            impulse_position: v3(impulse, "Position")?,
+            impulse_direction: v3(impulse, "Direction")?,
+            fade: progression(under(&reset, "Bezier Progression")?)?,
+            fade_colors,
+        });
+    }
+    Ok(out)
+}
+
+fn progression(n: &NodeParams) -> Result<bb::Progression> {
+    let duration_ms = float(input(n, "Duration")).context("Bezier Progression: Duration")?;
+    let curve = match input(n, "Progression Curve").map(|i| &i.value) {
+        Some(Resolved::Constant {
+            value: Value::Curve(points),
+        }) => points
+            .iter()
+            .map(|p| bb::CurvePoint {
+                position: [p.x, p.y],
+                in_tangent: p.in_tangent,
+                out_tangent: p.out_tangent,
+            })
+            .collect(),
+        other => anyhow::bail!("Bezier Progression: no curve ({other:?})"),
+    };
+    Ok(bb::Progression { duration_ms, curve })
+}
+
+/// The behaviour whose output feeds `node`'s input `pin`.
+fn writer_of(file: &CkFile, scripts: &Scripts, node: ObjRef, pin: &str) -> Option<ObjRef> {
+    let b = scripts.behavior(node)?;
+    let param = b
+        .input_params
+        .iter()
+        .copied()
+        .find(|&p| file.objects.get(p).and_then(|o| o.name.as_deref()) == Some(pin))?;
+    let Some(Some(ScriptObject::In(i))) = scripts.objects.get(param) else {
+        return None;
+    };
+    scripts.owner.get(&i.source?).copied()
+}
+
+fn target(n: &NodeParams) -> Option<String> {
+    text(n.target.as_ref())
+}
+
+fn text(v: Option<&NamedValue>) -> Option<String> {
+    match &v?.value {
+        Resolved::Constant {
+            value: Value::Text(s) | Value::Object(Some(s)),
+        } => Some(s.clone()),
+        _ => None,
+    }
+}
+
+fn vector(v: Option<&NamedValue>) -> Option<Vec<f32>> {
+    match &v?.value {
+        Resolved::Constant {
+            value: Value::Vector(v),
+        } => Some(v.iter().map(|&x| x as f32).collect()),
+        _ => None,
+    }
 }
 
 /// Names of the behaviours whose outputs are linked to `node`'s inputs in its

@@ -24,6 +24,8 @@ struct Material {
     emissive: vec4<f32>,
     // x = alpha ref (0..1), y = alpha func (0 = no test), z = texture blend, w = flags
     params: vec4<f32>,
+    // xy = texture coordinate offset
+    uv: vec4<f32>,
 };
 
 const FLAG_ENV_MAP: u32 = 1u;
@@ -87,7 +89,7 @@ fn fs_main(i: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     // Sphere-map style environment mapping from the view-space normal.
     let vn = normalize((globals.view * vec4<f32>(n, 0.0)).xyz);
     let env_uv = vec2<f32>(vn.x * 0.5 + 0.5, -vn.y * 0.5 + 0.5);
-    let uv = select(i.uv, env_uv, (flags & FLAG_ENV_MAP) != 0u);
+    let uv = select(i.uv + material.uv.xy, env_uv, (flags & FLAG_ENV_MAP) != 0u);
     let t = textureSample(tex, samp, uv);
 
     var c: vec4<f32>;

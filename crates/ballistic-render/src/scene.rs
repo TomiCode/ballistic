@@ -79,6 +79,8 @@ struct MaterialUniform {
     ambient: [f32; 4],
     emissive: [f32; 4],
     params: [f32; 4],
+    /// xy: texture coordinate offset (scrolled textures).
+    uv: [f32; 4],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -91,6 +93,8 @@ struct PipelineKey {
 
 struct GpuMaterial {
     bind_group: wgpu::BindGroup,
+    buffer: wgpu::Buffer,
+    uniform: MaterialUniform,
     blend: Option<(bb::BlendFactor, bb::BlendFactor)>,
     z_write: bool,
     z_func: bb::CompareFunc,
@@ -255,11 +259,12 @@ impl SceneRenderer {
                     f32::from(blend_code(m.texture_blend)),
                     f32::from(u8::from(m.environment_map)),
                 ],
+                uv: [0.0; 4],
             };
             let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&m.name),
                 contents: bytemuck::bytes_of(&uniform),
-                usage: wgpu::BufferUsages::UNIFORM,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             });
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some(&m.name),
@@ -281,6 +286,8 @@ impl SceneRenderer {
             });
             GpuMaterial {
                 bind_group,
+                buffer,
+                uniform,
                 blend: m.blend.then_some((m.src_blend, m.dest_blend)),
                 z_write: m.z_write,
                 z_func: m.z_func,
@@ -448,6 +455,38 @@ impl SceneRenderer {
                 o.hidden = hidden;
             }
         }
+    }
+
+    /// Changes a material's diffuse colour (by its index in `Scene::materials`),
+    /// like the original's *Set Diffuse*.
+    pub fn set_material_diffuse(&mut self, gpu: &Gpu, index: usize, rgba: [f32; 4]) {
+        self.update_material(gpu, index, |u| u.diffuse = rgba);
+    }
+
+    /// Changes a material's emissive colour (*Set Emissive*).
+    pub fn set_material_emissive(&mut self, gpu: &Gpu, index: usize, rgba: [f32; 4]) {
+        self.update_material(gpu, index, |u| u.emissive = rgba);
+    }
+
+    /// Offsets a material's texture coordinates (a scrolled texture).
+    pub fn set_material_uv_offset(&mut self, gpu: &Gpu, index: usize, offset: [f32; 2]) {
+        self.update_material(gpu, index, |u| u.uv = [offset[0], offset[1], 0.0, 0.0]);
+    }
+
+    /// A material's diffuse and emissive colours now.
+    pub fn material_colors(&self, index: usize) -> Option<([f32; 4], [f32; 4])> {
+        self.materials
+            .get(index)
+            .map(|m| (m.uniform.diffuse, m.uniform.emissive))
+    }
+
+    fn update_material(&mut self, gpu: &Gpu, index: usize, f: impl FnOnce(&mut MaterialUniform)) {
+        let Some(m) = self.materials.get_mut(index) else {
+            return;
+        };
+        f(&mut m.uniform);
+        gpu.queue
+            .write_buffer(&m.buffer, 0, bytemuck::bytes_of(&m.uniform));
     }
 
     fn material(&self, idx: Option<u32>) -> &GpuMaterial {

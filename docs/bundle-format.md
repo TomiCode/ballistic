@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 7,
+  "format_version": 8,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -155,7 +155,24 @@ and useful to read). Since version 2.
     "types": [ { "group": "P_Trafo_Stone", "ball": "Ball_Stone" }, "…" ],
     "reach": 4.3, "pull_force": [2.0, 2.0, 2.0], "pull_damping": [0.7, 0.7, 0.7],
     "pull_offset": [0.0, -3.0, 0.0], "pull_ms": 1350.0, "hold_ms": 1000.0,
-    "swap_ms": 150.0 }
+    "swap_ms": 150.0,
+    "animation": { "root": "AnimTrafo_MF", "bars": "AnimTrafo_Bars",
+      "ring_parts": [ { "object": "AnimTrafo_Ringpart1", "frame": "AnimTrafo_Frame01" }, "…" ],
+      "ring_offset": [-0.5, 0.0, 0.5],
+      "ring_open": { "duration_ms": 350.0, "curve": [
+        { "position": [0.0, 0.0], "in_tangent": [0.0001, 0.0], "out_tangent": [0.4, 0.02] }, "…" ] },
+      "ring_close": "…", "bars_offset": [0.0, 5.2, 0.0], "lift": "…",
+      "shadow_colors": [[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 0.196]],
+      "flash": "AnimTrafo_Flashfield", "flash_scroll": [[0.5, 0.0], [-0.5, 0.0]],
+      "flash_ms": 50.0, "ring_material": "AnimTrafo_RingParts_Color" },
+    "pieces": [ { "ball": "Ball_Wood", "group": "Ball_Wood_Pieces",
+      "frame": "Ball_WoodPieces_Frame", "materials": ["Ball_Wood_Pieces"],
+      "mass": [0.2, 0.2], "friction": [2.0, 2.0], "elasticity": 1.0,
+      "linear_damping": 0.3, "rotational_damping": 0.2, "collision_group": "Ball",
+      "impulse": [1.5, 3.0], "impulse_position": [0.0, 1.0, 0.0],
+      "impulse_direction": [0.0, 1.0, 0.0], "fade": "…",
+      "fade_colors": [[1.0, 1.0, 1.0, 1.0], [1.0, 1.0, 1.0, 0.0]] }, "…" ],
+    "pieces_fade_after_ms": 20000.0 }
 }
 ```
 
@@ -205,6 +222,28 @@ and useful to read). Since version 2.
   - `pull_ms`, `hold_ms`, `swap_ms`: how long the pull runs, how long the
     ball then hangs before it bursts, and how long until the new ball
     appears (real time).
+  - `animation`: the transformer's animation, with names from the
+    `animtrafo` scene:
+    - `root` is put at the transformer, and `bars` (with its children)
+      stands in for it.
+    - The ring parts move to `ring_offset` × the `ring_open` and `ring_close`
+      progressions, each in its frame.
+    - The bars move to `bars_offset` × `lift`, while the type's shadow
+      material goes between the `shadow_colors`.
+    - The `flash` field's texture scrolls by the `flash_scroll` offsets in
+      turn, every `flash_ms`.
+    - `ring_material` takes the transformer mesh's second material's
+      colours.
+  - A progression is a `duration_ms` and a 2D `curve`: control points with
+    Hermite tangents, x from 0 to 1.
+  - `pieces`: per ball type, the burst into pieces, with names from the
+    `balls` scene. Each piece of `group` (children of `frame`) becomes a
+    convex body. `mass` and `friction` are ranges, drawn per piece. Then each
+    piece gets an impulse from the `impulse` range, along
+    `impulse_direction` at `impulse_position`, in its own frame. `fade` and
+    `fade_colors` fade the `materials` out.
+  - `pieces_fade_after_ms`: when a type's pieces fade out after a
+    transformation from it.
 
 ## Versioning rules
 
@@ -215,4 +254,5 @@ and useful to read). Since version 2.
   `sliders`, `springs` and the wake-up targets. **5** adds `ball_joints`,
   `forces`, `delays_ms`, `proximities` and `boxes`. **6** adds the balloon
   (`PE_Balloon`), hinge `breakable`, force `graph`, and own-mesh bodies.
-  **7** adds `transformers`.
+  **7** adds `transformers`. **8** adds the transformer `animation`, the
+  ball `pieces` and `pieces_fade_after_ms`.

@@ -213,22 +213,14 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
         } else {
             m.transform_point3(Vec3::from(b.shift_mass_center))
         };
-        let inv = rotation.inverse();
-        let hulls: Vec<Hull> = hull_points
-            .iter()
-            .filter_map(|pts| {
-                let local: Vec<Vec3> = pts.iter().map(|p| inv * (*p - center)).collect();
-                Hull::new(&local)
-            })
-            .collect();
-        let pose = Mat4::from_rotation_translation(rotation, center);
+        let (shape, object_from_body) = convex_shape(&hull_points, m, center);
         body_of.push((b.object.clone(), plan.bodies.len()));
         plan.bodies.push(PlannedBody {
             object: oi,
             desc: BodyDesc {
                 position: center,
                 orientation: rotation,
-                shape: Shape::Hulls(Arc::from(hulls)),
+                shape,
                 mass: b.mass,
                 friction: b.friction,
                 elasticity: b.elasticity,
@@ -238,7 +230,7 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
                 asleep: b.start_frozen,
                 collides: b.collision,
             },
-            object_from_body: pose.inverse() * m,
+            object_from_body,
         });
     }
     let index = |name: &str| body_of.iter().find(|(n, _)| n == name).map(|(_, i)| *i);
@@ -334,4 +326,21 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
 /// Rotation of a matrix without scale (for objects drawn with a body).
 pub fn rotation_of(m: Mat4) -> Quat {
     m.to_scale_rotation_translation().1
+}
+
+/// A convex body's shape from point sets in world space (one hull each), with
+/// the body at `center` turned like `object` (an object's world matrix), and
+/// the object's matrix relative to the body.
+pub fn convex_shape(point_sets: &[Vec<Vec3>], object: Mat4, center: Vec3) -> (Shape, Mat4) {
+    let (_, rotation, _) = object.to_scale_rotation_translation();
+    let inv = rotation.inverse();
+    let hulls: Vec<Hull> = point_sets
+        .iter()
+        .filter_map(|pts| {
+            let local: Vec<Vec3> = pts.iter().map(|p| inv * (*p - center)).collect();
+            Hull::new(&local)
+        })
+        .collect();
+    let pose = Mat4::from_rotation_translation(rotation, center);
+    (Shape::Hulls(Arc::from(hulls)), pose.inverse() * object)
 }

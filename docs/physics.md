@@ -45,6 +45,10 @@ options so they can be calibrated later.
 - Ball transformers aren't physics: the play mode takes the ball out of the
   world while it's pulled in, and adds the new ball as a new body (viewer
   docs).
+- **One-off impulses** (the original's *Physics Impulse*): the velocity change
+  of one push step, once, at a world point. The burst gives each piece of the
+  old ball one. The pieces are convex bodies built like the moving elements'
+  (`modules::convex_shape`).
 
 ## Time
 

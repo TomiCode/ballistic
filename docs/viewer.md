@@ -133,8 +133,20 @@ original's script (research findings 14):
 - It hangs there for 1 s; 0.15 s later the new ball appears in its place.
 - Two frames later the new ball is simulated, at rest, and control comes back.
 
-The ball keeps its new type when it respawns. The ring animation, the burst,
-the old ball's pieces and the sounds aren't done yet.
+Meanwhile the transformer plays its animation:
+- The transformer is replaced by the animation's copy, in its colour.
+- A frame later the ring springs open (0.35 s).
+- The bars rise and sink again (2 s), the flash field flickering between them.
+  Meanwhile the shadows of that transformer type fade and come back.
+- The ring closes (0.2 s) and the transformer is back.
+
+At the burst the old ball falls apart into its pieces (16 wood, 17 stone or 18
+paper). They fly outwards and land on the level, but never touch the ball.
+They fade out 20 s after the transformation, or at once if the ball
+transforms from the same type again, or at a respawn.
+
+The ball keeps its new type when it respawns. The transformer and piece
+sounds aren't done yet. The status line counts the pieces out.
 A prop that falls out of the level is gone until its sector is entered again.
 
 The camera follows like the original: a point chases the ball, and the camera
@@ -171,6 +183,5 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: pickups, the transformers' animation and burst, checkpoint
-  flames and fan particles, the end sequence (and the last level's UFO) and
-  score
+- In play mode: pickups, checkpoint flames and fan particles, sounds, the end
+  sequence (and the last level's UFO) and score

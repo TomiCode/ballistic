@@ -480,6 +480,18 @@ impl World {
         PushId(self.pushes.len() as u32 - 1)
     }
 
+    /// A one-off impulse (the original's *Physics Impulse*): the velocity
+    /// change of one step of a push of `magnitude` along `direction`
+    /// (normalised), at a world point.
+    pub fn apply_impulse_at(&mut self, body: BodyId, direction: Vec3, magnitude: f32, point: Vec3) {
+        let impulse = direction.try_normalize().unwrap_or(Vec3::X) * magnitude;
+        if let Some(Some(b)) = self.bodies.get_mut(body.0 as usize) {
+            b.velocity += impulse * b.inv_mass();
+            let r = point - b.position;
+            b.angular_velocity += b.inv_inertia_mul(r.cross(impulse));
+        }
+    }
+
     pub fn remove_push(&mut self, id: PushId) {
         if let Some(p) = self.pushes.get_mut(id.0 as usize) {
             *p = None;

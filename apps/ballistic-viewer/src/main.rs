@@ -2,6 +2,7 @@
 
 mod follow;
 mod modules;
+mod pieces;
 mod play;
 mod progress;
 mod props;

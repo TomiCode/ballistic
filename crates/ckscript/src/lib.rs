@@ -15,6 +15,7 @@ mod array;
 mod behavior;
 pub mod catalogue;
 pub mod conform;
+pub mod curve;
 pub mod describe;
 pub mod extract;
 mod graph;

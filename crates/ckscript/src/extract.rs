@@ -21,6 +21,8 @@ pub enum Value {
     Text(String),
     /// Object reference by name (`None` = null).
     Object(Option<String>),
+    /// A 2D curve's control points.
+    Curve(Vec<crate::curve::CurvePoint>),
     /// Anything without a typed decoding.
     Other(String),
 }
@@ -101,6 +103,12 @@ pub fn typed_value(file: &CkFile, type_guid: Guid, v: &ParamValue) -> Value {
                 ) => Value::Vector(f32s().into_iter().map(round).collect()),
                 _ => Value::Other(crate::types::format_value(file, type_guid, v)),
             }
+        }
+        ParamValue::Chunk(Some(c)) if crate::types::type_name(type_guid) == "2D Curve" => {
+            crate::curve::decode(&c.data).map_or_else(
+                || Value::Other(crate::types::format_value(file, type_guid, v)),
+                Value::Curve,
+            )
         }
         _ => Value::Other(crate::types::format_value(file, type_guid, v)),
     }
@@ -330,6 +338,13 @@ impl std::fmt::Display for Value {
             Value::Text(t) => write!(f, "{t:?}"),
             Value::Object(Some(n)) => write!(f, "@{n}"),
             Value::Object(None) => f.write_str("null"),
+            Value::Curve(points) => {
+                let s: Vec<String> = points
+                    .iter()
+                    .map(|p| format!("({}, {})", p.x, p.y))
+                    .collect();
+                write!(f, "curve [{}]", s.join(", "))
+            }
             Value::Other(s) => f.write_str(s),
         }
     }
