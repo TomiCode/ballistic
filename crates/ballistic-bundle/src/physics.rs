@@ -17,6 +17,38 @@ pub struct PhysicsData {
     pub props: Vec<PropParams>,
     /// Moving elements (`P_Modul_*` prefabs): bodies and joints from their scripts.
     pub modules: Vec<ModuleSetup>,
+    /// Ball transformers (`Gameplay_Ingame > Trafo Manager`).
+    pub transformers: TransformerParams,
+}
+
+/// How a transformer swaps the player's ball (`Trafo Manager` in `Gameplay.nmo`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TransformerParams {
+    /// Transformer prefab groups and the ball each one turns the ball into.
+    pub types: Vec<TransformerType>,
+    /// The ball's centre must come nearer than this to a transformer's origin
+    /// (and the ball must be of another type).
+    pub reach: f32,
+    /// The pull into the transformer: *TT Set Dynamic Position* in the
+    /// transformer's frame, per axis (bundle space). The ball settles at
+    /// `−offset` in that frame.
+    pub pull_force: [f32; 3],
+    pub pull_damping: [f32; 3],
+    pub pull_offset: [f32; 3],
+    /// How long the pull runs.
+    pub pull_ms: f32,
+    /// Then the ball hangs there this long until it bursts.
+    pub hold_ms: f32,
+    /// Then this long until the new ball replaces it.
+    pub swap_ms: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TransformerType {
+    /// Prefab group, e.g. `P_Trafo_Wood`.
+    pub group: String,
+    /// Ball type name (see [`BallParams::name`]), e.g. `Ball_Wood`.
+    pub ball: String,
 }
 
 /// One moving element's physics, as its prefab script sets it up. Object and

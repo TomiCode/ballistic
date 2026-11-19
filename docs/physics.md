@@ -42,7 +42,9 @@ options so they can be calibrated later.
   fixed in world space when created, as for the ball.
 - **Bodies without collision** (the original's "Enable Collision" off) move
   and take part in joints, but touch nothing (the punching bag's rope).
-- Not yet: ball transformers.
+- Ball transformers aren't physics: the play mode takes the ball out of the
+  world while it's pulled in, and adds the new ball as a new body (viewer
+  docs).
 
 ## Time
 

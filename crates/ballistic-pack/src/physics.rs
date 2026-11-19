@@ -4,7 +4,8 @@
 //! - `Balls.nmo` table `Physicalize_GameBall`: player ball types
 //! - `Levelinit.nmo` tables `Physicalize_Floors`, `Physicalize_Convex`, `Physicalize_Balls`
 //! - `Gameplay.nmo`: `Set Physics Globals` in `Init Ingame` (gravity, time factor),
-//!   and `physicalize new Ball` (which ball is a sphere, with what radius)
+//!   `physicalize new Ball` (which ball is a sphere, with what radius), and the
+//!   `Trafo Manager` (ball transformers, in [`crate::transformers`])
 
 use std::collections::HashSet;
 
@@ -104,6 +105,7 @@ fn constant(r: &Resolved) -> Option<&Value> {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn extract(install: &Install) -> Result<bb::PhysicsData> {
     let balls_nmo = load(install, "3d entities/balls.nmo")?;
     let levelinit = load(install, "3d entities/levelinit.nmo")?;
@@ -204,10 +206,16 @@ pub fn extract(install: &Install) -> Result<bb::PhysicsData> {
     Ok(bb::PhysicsData {
         gravity,
         time_factor,
-        balls,
         surfaces,
         props,
         modules: crate::modules::extract(install)?,
+        transformers: crate::transformers::extract(
+            install,
+            &gameplay.file,
+            &gameplay.scripts,
+            &balls,
+        )?,
+        balls,
     })
 }
 

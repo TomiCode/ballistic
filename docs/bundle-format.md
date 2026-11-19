@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 6,
+  "format_version": 7,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -150,7 +150,12 @@ and useful to read). Since version 2.
         "exactness": [55.0, 100.0], "frame_delay": [10, 60], "xz": true,
         "bodies": ["P_Modul_25_Bridge"] },
       "unsupported": [] }
-  ]
+  ],
+  "transformers": {
+    "types": [ { "group": "P_Trafo_Stone", "ball": "Ball_Stone" }, "…" ],
+    "reach": 4.3, "pull_force": [2.0, 2.0, 2.0], "pull_damping": [0.7, 0.7, 0.7],
+    "pull_offset": [0.0, -3.0, 0.0], "pull_ms": 1350.0, "hold_ms": 1000.0,
+    "swap_ms": 150.0 }
 }
 ```
 
@@ -190,6 +195,16 @@ and useful to read). Since version 2.
     (`bodies`) it wakes.
   - `unsupported`: every other physics building block the script uses (none
     in Ballance now).
+- `transformers`: the ball transformers (`Trafo Manager` in `Gameplay.nmo`).
+  - `types`: each transformer prefab group (`ph/<group>`) and the ball it
+    turns the ball into.
+  - `reach`: the ball's centre must come nearer than this to the nearest
+    transformer's origin.
+  - `pull_*`: the pull into the transformer (*TT Set Dynamic Position*), in
+    the transformer's frame, per axis. The ball settles at −`pull_offset`.
+  - `pull_ms`, `hold_ms`, `swap_ms`: how long the pull runs, how long the
+    ball then hangs before it bursts, and how long until the new ball
+    appears (real time).
 
 ## Versioning rules
 
@@ -200,3 +215,4 @@ and useful to read). Since version 2.
   `sliders`, `springs` and the wake-up targets. **5** adds `ball_joints`,
   `forces`, `delays_ms`, `proximities` and `boxes`. **6** adds the balloon
   (`PE_Balloon`), hinge `breakable`, force `graph`, and own-mesh bodies.
+  **7** adds `transformers`.

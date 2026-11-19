@@ -354,3 +354,22 @@ fn modules_hold_together_on_every_level() {
     );
     assert_eq!(balloons, 12, "a level end on every level");
 }
+
+#[test]
+fn transformers_are_extracted() {
+    let Some(mut b) = bundle() else {
+        eprintln!("skipping: BALLISTIC_BUNDLE not set");
+        return;
+    };
+    let t = b.physics().unwrap().transformers;
+    eprintln!("{t:?}");
+    assert_eq!(t.types.len(), 3, "{:?}", t.types);
+    assert!(
+        t.types
+            .iter()
+            .all(|k| k.group.replace("P_Trafo_", "Ball_") == k.ball)
+    );
+    assert!((t.reach - 4.3).abs() < 1e-4);
+    assert_eq!(t.pull_offset, [0.0, -3.0, 0.0]);
+    assert_eq!((t.pull_ms, t.hold_ms, t.swap_ms), (1350.0, 1000.0, 150.0));
+}

@@ -5,6 +5,7 @@ mod modules;
 mod play;
 mod progress;
 mod props;
+mod transformers;
 mod window;
 
 use std::path::PathBuf;
@@ -190,6 +191,8 @@ pub struct Segment {
     pub warp: bool,
     /// Wake every active moving element first (`wake`).
     pub wake: bool,
+    /// Put the ball on the nearest transformer of another type first.
+    pub trafo: bool,
 }
 
 /// Parses `up:2,rotate+left:0.4,wait:1,next:1` into segments.
@@ -208,6 +211,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
             anyhow::ensure!(seconds >= 0.0, "segment {part:?}: negative duration");
             let warp = keys.split('+').any(|k| k.trim() == "next");
             let wake = keys.split('+').any(|k| k.trim() == "wake");
+            let trafo = keys.split('+').any(|k| k.trim() == "trafo");
             let keys = keys
                 .split('+')
                 .filter_map(|k| match k.trim() {
@@ -217,7 +221,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                     "right" => Some(Ok(K::Right)),
                     "rotate" => Some(Ok(K::Rotate)),
                     "lift" => Some(Ok(K::Lift)),
-                    "wait" | "next" | "wake" => None,
+                    "wait" | "next" | "wake" | "trafo" => None,
                     other => Some(Err(anyhow::anyhow!("unknown key {other:?}"))),
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -226,6 +230,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                 seconds,
                 warp,
                 wake,
+                trafo,
             })
         })
         .collect()
@@ -269,6 +274,9 @@ fn screenshot(
             if seg.wake {
                 p.wake_modules();
             }
+            if seg.trafo {
+                p.warp_to_transformer();
+            }
             for &k in &keys {
                 p.input(k, true);
             }
@@ -289,7 +297,7 @@ fn screenshot(
             }
         }
         eprintln!(
-            "play: {} after {} steps, {} respawns, {} props ({} active), {} modules ({} simulated), checkpoints {}/{}",
+            "play: {} after {} steps, {} respawns, {} props ({} active), {} modules ({} simulated), {} transformers, checkpoints {}/{}",
             p.status(),
             p.world.steps,
             p.respawns,
@@ -297,6 +305,7 @@ fn screenshot(
             p.progress().0,
             p.module_count().0,
             p.module_count().1,
+            p.transformer_count(),
             p.progress().1,
             p.progress().2
         );

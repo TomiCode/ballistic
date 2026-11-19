@@ -18,7 +18,8 @@ pub use manifest::{
 };
 pub use physics::{
     BallJointParams, BallParams, BallShape, ForceParams, HingeParams, ModuleBody, ModuleSetup,
-    PhysicsData, PropParams, SliderParams, SpringAnchor, SpringParams, SurfaceParams, WakeParams,
+    PhysicsData, PropParams, SliderParams, SpringAnchor, SpringParams, SurfaceParams,
+    TransformerParams, TransformerType, WakeParams,
 };
 pub use scene::{
     AddressMode, BlendFactor, CompareFunc, Group, Material, Mesh, ObjectKind, Scene, SceneObject,
@@ -29,7 +30,7 @@ pub use scene::{
 pub const FORMAT_NAME: &str = "ballistic-bundle";
 /// Version of the bundle layout. Bump on any incompatible change.
 /// v2: adds `data/physics.json`.
-pub const FORMAT_VERSION: u32 = 6;
+pub const FORMAT_VERSION: u32 = 7;
 /// Version of the `.bscn` scene encoding.
 pub const SCENE_VERSION: u32 = 1;
 /// Magic at the start of every `.bscn` entry.

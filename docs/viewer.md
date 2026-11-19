@@ -25,7 +25,7 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--screenshot out.png [--size 1920x1080]` | Render one frame off-screen and exit, no window |
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
 | `--play` | Play mode: roll a ball on the level |
-| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end) and `wake` wakes every active moving element as if the ball came near (its wake-up targets), both at the start of their segment. With `--camera` too, the camera stays at that view instead of following the ball |
+| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:1,up:2,rotate+left:0.3`. Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), and `trafo` puts the ball on the nearest transformer of another type (shown ones first), all at the start of their segment. With `--camera` too, the camera stays at that view instead of following the ball |
 
 The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 
@@ -121,6 +121,20 @@ good, and the window title shows the time since the level started.
   along its slider: the balloon drifts away with the ball.
 - There's no end sequence or score screen yet, and the last level's UFO isn't
   drawn.
+
+**Transformers** (`P_Trafo_Paper`, `_Stone`, `_Wood`) stand at their
+placeholders, shown while their sector is active. They work like the
+original's script (research findings 14):
+- Every frame it takes the transformer nearest to the ball, shown or not.
+- If the ball's centre is within 4.3 of it and the ball is of another type,
+  ball control goes off.
+- Two frames later the ball leaves the simulation and is pulled into the
+  ring for 1.35 s, to 3 above the transformer's origin.
+- It hangs there for 1 s; 0.15 s later the new ball appears in its place.
+- Two frames later the new ball is simulated, at rest, and control comes back.
+
+The ball keeps its new type when it respawns. The ring animation, the burst,
+the old ball's pieces and the sounds aren't done yet.
 A prop that falls out of the level is gone until its sector is entered again.
 
 The camera follows like the original: a point chases the ball, and the camera
@@ -157,5 +171,6 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: pickups, transformers, checkpoint flames and fan particles,
-  the end sequence (and the last level's UFO) and score
+- In play mode: pickups, the transformers' animation and burst, checkpoint
+  flames and fan particles, the end sequence (and the last level's UFO) and
+  score

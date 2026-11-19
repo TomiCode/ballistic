@@ -27,6 +27,7 @@ use crate::follow::Follow;
 use crate::modules::Modules;
 use crate::progress::{self, Progress};
 use crate::props::Props;
+use crate::transformers::{self, Transformers};
 use crate::{LoadedScene, load_scene};
 
 pub type Bundle = BundleReader<BufReader<std::fs::File>>;
@@ -69,7 +70,7 @@ pub struct Play {
     start: Vec3,
     start_heading: f32,
     fall_y: f32,
-    held: [bool; 6],
+    keys_held: [bool; 6],
     pushes: [Option<PushId>; 4],
     nav_on: bool,
     /// Frames until control switches back on after an *Update*.
@@ -84,6 +85,9 @@ pub struct Play {
     follow: Follow,
     props: Props,
     modules: Modules,
+    transformers: Transformers,
+    /// The ball's pose while a transformer holds it out of the simulation.
+    held: Option<(Vec3, Quat)>,
     progress: Progress,
     /// Real seconds of play since the level started.
     elapsed: f32,
@@ -123,6 +127,7 @@ impl Play {
         let mut world = World::new(config, statics);
         let props = Props::new(gpu, bundle, level, &physics, &mut world, format)?;
         let modules = Modules::new(gpu, bundle, level, &physics, &mut world, format)?;
+        let transformers = Transformers::new(gpu, bundle, level, &physics, format)?;
         let layout = progress::layout(level, |key| bundle.scene(key).ok());
         let spawn_matrix = layout.reset_points.first().copied();
         let progress = Progress::start(layout, modules.level_end);
@@ -162,7 +167,7 @@ impl Play {
             start,
             start_heading: heading,
             fall_y,
-            held: [false; 6],
+            keys_held: [false; 6],
             pushes: [None; 4],
             nav_on: true,
             nav_on_in: None,
@@ -173,6 +178,8 @@ impl Play {
             follow: Follow::new(start, heading),
             props,
             modules,
+            transformers,
+            held: None,
             progress,
             elapsed: 0.0,
             finished_at: None,
@@ -238,12 +245,12 @@ impl Play {
     fn nav_on(&mut self) {
         // After Level_Finish the original switches ball and camera navigation
         // off for good.
-        if self.finished_at.is_some() {
+        if self.finished_at.is_some() || self.transformers.busy() {
             return;
         }
         self.nav_on = true;
         for k in DIRS {
-            if self.held[key_index(k)] {
+            if self.keys_held[key_index(k)] {
                 self.create_push(k);
             }
         }
@@ -251,14 +258,14 @@ impl Play {
 
     pub fn input(&mut self, k: PlayKey, pressed: bool) {
         let i = key_index(k);
-        if self.held[i] == pressed {
+        if self.keys_held[i] == pressed {
             return;
         }
-        self.held[i] = pressed;
+        self.keys_held[i] = pressed;
         if self.finished_at.is_some() {
             return;
         }
-        let rotating = self.held[key_index(PlayKey::Rotate)];
+        let rotating = self.keys_held[key_index(PlayKey::Rotate)];
         match k {
             // Only the camera reads it (in `update`).
             PlayKey::Lift => {}
@@ -299,8 +306,23 @@ impl Play {
         let Some(target) = self.progress.next_target() else {
             return;
         };
+        if self.held.is_some() {
+            return;
+        }
         self.world.reset_body(self.ball, target);
         self.follow.reset(target, self.heading_view);
+    }
+
+    /// Development aid: puts the ball, at rest, on the nearest transformer of
+    /// another type.
+    pub fn warp_to_transformer(&mut self) {
+        let Some(ball) = self.world.body(self.ball).map(|b| b.position) else {
+            return;
+        };
+        if let Some(target) = self.transformers.nearest_other(ball, self.active_ball) {
+            self.world.reset_body(self.ball, target);
+            self.follow.reset(target, self.heading_view);
+        }
     }
 
     /// Development aid: wakes every active moving element.
@@ -309,6 +331,9 @@ impl Play {
     }
 
     pub fn cycle_ball(&mut self) {
+        if self.held.is_some() {
+            return;
+        }
         self.active_ball = (self.active_ball + 1) % self.physics.balls.len();
         let pos = self
             .world
@@ -321,6 +346,10 @@ impl Play {
         if self.nav_on {
             self.nav_on();
         }
+        self.show_active_ball();
+    }
+
+    fn show_active_ball(&mut self) {
         for (i, o) in self.ball_objects.clone().iter().enumerate() {
             if let Some(o) = o {
                 self.balls
@@ -330,8 +359,46 @@ impl Play {
         }
     }
 
+    /// The transformer script's requests for this frame.
+    fn transformer_events(&mut self, events: Vec<transformers::Event>) {
+        use transformers::Event as E;
+        for e in events {
+            match e {
+                E::Begin => self.nav_off(),
+                E::Release => {
+                    self.held = self
+                        .world
+                        .body(self.ball)
+                        .map(|b| (b.position, b.orientation));
+                    self.world.remove_body(self.ball);
+                    self.pushes = [None; 4];
+                }
+                E::Move(p) => {
+                    if let Some(h) = self.held.as_mut() {
+                        h.0 = p;
+                    }
+                }
+                E::Swap(ball) => {
+                    self.active_ball = ball;
+                    self.show_active_ball();
+                }
+                E::Physicalize => {
+                    if let Some((p, q)) = self.held.take() {
+                        let mut desc = body_desc(&self.physics.balls[self.active_ball], p);
+                        desc.orientation = q;
+                        self.ball = self.world.add_body(desc);
+                    }
+                    self.nav_on();
+                }
+            }
+        }
+    }
+
     /// Back to the spawn point; the camera rig is reset with the ball.
     pub fn respawn(&mut self) {
+        if self.held.is_some() {
+            return;
+        }
         // The ball comes back at the current reset point (the start, until a
         // checkpoint is reached); the current sector is reset.
         if let Some(m) = self.progress.reset_point() {
@@ -351,6 +418,7 @@ impl Play {
     fn apply_sector_changes(&mut self) {
         for (sector, on) in self.progress.take_changes() {
             self.props.set_sector_active(&mut self.world, sector, on);
+            self.transformers.set_sector_active(sector, on);
             self.modules.set_sector_active(&mut self.world, sector, on);
         }
     }
@@ -361,7 +429,7 @@ impl Play {
         if let Some(h) = self.snap_next_frame.take() {
             self.heading_ref = h;
             self.heading_view = h;
-            if !self.held[key_index(PlayKey::Rotate)] {
+            if !self.keys_held[key_index(PlayKey::Rotate)] {
                 // Cam Navigation "Update": control off now, on one frame later.
                 self.nav_off();
                 self.nav_on_in = Some(1);
@@ -389,7 +457,7 @@ impl Play {
         self.world.advance(real_dt);
         self.props.update(&mut self.world, self.fall_y);
         self.elapsed += real_dt;
-        if let Some(ball) = self.world.body(self.ball).map(|b| b.position) {
+        if let Some(ball) = self.ball_pose().map(|(p, _)| p) {
             self.modules.frame(self.ball, real_dt, &mut self.world);
             if let Some(p) = self.modules.level_end_platform(&self.world) {
                 self.progress.set_level_end_target(p);
@@ -408,6 +476,8 @@ impl Play {
                 }
                 None => {}
             }
+            let events = self.transformers.frame(ball, self.active_ball, real_dt);
+            self.transformer_events(events);
         }
         self.apply_sector_changes();
 
@@ -419,7 +489,7 @@ impl Play {
             self.respawn();
         }
         let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
-        let lifted = self.held[key_index(PlayKey::Lift)];
+        let lifted = self.keys_held[key_index(PlayKey::Lift)];
         self.follow.update(real_dt, ball, self.heading_view, lifted);
     }
 
@@ -430,6 +500,7 @@ impl Play {
             .placeholders
             .iter()
             .chain(&self.modules.placeholders)
+            .chain(&self.transformers.placeholders)
             .copied()
     }
 
@@ -452,7 +523,11 @@ impl Play {
     }
 
     pub fn ball_pose(&self) -> Option<(Vec3, Quat)> {
-        self.world.interpolated(self.ball)
+        self.held.or_else(|| self.world.interpolated(self.ball))
+    }
+
+    pub fn transformer_count(&self) -> usize {
+        self.transformers.count()
     }
 
     pub fn camera(&self, base: Camera) -> Camera {
@@ -516,6 +591,8 @@ impl Play {
             &opts,
             &self.world,
         );
+        self.transformers
+            .render(gpu, encoder, color, depth, camera, aspect, &opts);
     }
 
     pub fn status(&self) -> String {
@@ -535,7 +612,7 @@ impl Play {
             } else {
                 ""
             },
-            if self.held[key_index(PlayKey::Lift)] {
+            if self.keys_held[key_index(PlayKey::Lift)] {
                 "[lift]"
             } else {
                 ""
