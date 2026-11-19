@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 4,
+  "format_version": 5,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -141,6 +141,11 @@ and useful to read). Since version 2.
       ],
       "sliders": [],
       "springs": [],
+      "ball_joints": [],
+      "forces": [],
+      "delays_ms": [],
+      "proximities": [ { "object": "P_Modul_25_MF", "distance": 50.0, "…": "…" } ],
+      "boxes": [],
       "wake": { "object": "P_Modul_25_MF", "distance": 50.0,
         "exactness": [55.0, 100.0], "frame_delay": [10, 60], "xz": true,
         "bodies": ["P_Modul_25_Bridge"] },
@@ -170,10 +175,19 @@ and useful to read). Since version 2.
   - `springs`: from a point on `body` (`anchor`: a position in a frame, or in
     world space without one) to a point on `other` (`other_anchor`), with
     rest `length`, `constant`, `linear_damping` and `global_damping`.
+  - `ball_joints`: `body` and `other` share the `pivot` (a position in a
+    frame), rotation free.
+  - `forces`: the script's `Physics Force` nodes in script order: on `body`
+    (`null`: the player's ball), at `position` (in a frame), along
+    `direction` in `direction_frame`, with `value`. When they act is the
+    module's script logic.
+  - `delays_ms`: the script's Delayer times, `proximities`: all its proximity
+    tests, `boxes`: what it tests the ball's box against. Inputs to the
+    module's script logic.
   - `wake`: the proximity test that wakes frozen bodies, and which bodies
     (`bodies`) it wakes.
-  - `unsupported`: every other physics building block the script uses (ball
-    joints, forces), not described here yet.
+  - `unsupported`: every other physics building block the script uses (none
+    in Ballance now).
 
 ## Versioning rules
 
@@ -181,4 +195,5 @@ and useful to read). Since version 2.
 - Older bundles are never migrated; the player just re-runs the packer.
 - History: **1** first release. **2** adds `data/physics.json`. **3** adds
   `modules` to it, and keeps every mesh in prefab scenes. **4** adds module
-  `sliders`, `springs` and the wake-up targets.
+  `sliders`, `springs` and the wake-up targets. **5** adds `ball_joints`,
+  `forces`, `delays_ms`, `proximities` and `boxes`.

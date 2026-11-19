@@ -28,8 +28,8 @@ options so they can be calibrated later.
   the hulls' volume (uniform density). With automatic mass centre off, the
   mass centre is the object's origin plus *Shift Mass Center*, in the object's
   frame, as the original's Physicalize builds it (with it on, the hulls'
-  centroid). Modules also use **sliders** and **springs** (below). Modules that
-  use ball joints or forces are static stand-ins for now.
+  centroid). Modules also use **sliders**, **springs** and **ball joints**
+  (below), and pushes switched on and off by their scripts.
 - **Sleeping**: a body can start asleep (the original's "Start Frozen"). It
   doesn't move, and others collide with it as if it were fixed, until it's
   woken: explicitly (the scripts' Physics WakeUp), by a joint or spring to a
@@ -37,7 +37,12 @@ options so they can be calibrated later.
   rules (research findings 13).
 - **Contacts between bodies**: sphere–sphere, sphere–box, sphere–hull and
   between boxes and hulls.
-- Not yet: ball joints and the scripts' forces, ball transformers.
+- **Pushes at a point**: a push can act at a point on the body (fixed on it
+  when created), so off the mass centre it also turns the body. Directions are
+  fixed in world space when created, as for the ball.
+- **Bodies without collision** (the original's "Enable Collision" off) move
+  and take part in joints, but touch nothing (the punching bag's rope).
+- Not yet: ball transformers.
 
 ## Time
 
@@ -98,6 +103,9 @@ world) and let it move only along the axis.
 - In the velocity iterations, relative rotation is removed (3×3 effective
   mass), and so is motion across the axis at the axis origin.
 - Past a limit, motion further out of range is removed.
+
+**Ball joints** are hinges without the axis: the pivots are joined, and
+rotation is free.
 
 **Springs** pull a point on one body towards a point on the other (or the
 world), with force `constant · (distance − length)` along the line between
@@ -187,7 +195,10 @@ The joint tests check:
 - a spring on a vertical slider oscillating at √(k/m) and, damped, settling
   mg/k below its anchor;
 - slider limits stopping a fall;
-- a spring turning a hinged arm towards its anchor.
+- a spring turning a hinged arm towards its anchor;
+- a ball-joint pendulum swinging in two directions, its pivot fixed;
+- a push off the mass centre turning a body;
+- a body without collision falling through the floor.
 
 The hull unit tests check hull construction and mass properties (parallel
 axes).

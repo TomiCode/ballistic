@@ -243,6 +243,19 @@ fn modules_hold_together_on_every_level() {
                     let body = w.body(ids[sl.body]).unwrap();
                     sliding.push((setup.group.clone(), ids[sl.body], body.position, sl.axis));
                 }
+                for j in &plan.ball_joints {
+                    w.add_ball_joint(ids[j.body], j.other.map(|o| ids[o]), j.pivot)
+                        .unwrap();
+                    let body = w.body(ids[j.body]).unwrap();
+                    let local = body.orientation.inverse() * (j.pivot - body.position);
+                    pivots.push((
+                        setup.group.clone(),
+                        ids[j.body],
+                        local,
+                        j.pivot,
+                        j.other.is_none(),
+                    ));
+                }
                 for sp in &plan.springs {
                     if std::env::var_os("PROPS_DEBUG").is_some() {
                         let body = w.body(ids[sp.body]).unwrap();

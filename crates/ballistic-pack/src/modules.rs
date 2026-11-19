@@ -14,11 +14,15 @@ use ckscript::extract::{Extractor, NamedValue, NodeParams, Resolved, Value};
 use crate::install::Install;
 
 /// Building blocks a module script may use, and whether they're extracted.
-const SUPPORTED: [&str; 6] = [
+const SUPPORTED: [&str; 10] = [
+    "Box Box Intersection",
     "Physicalize",
     "Physics Hinge",
     "Set Physics Slider",
     "Set Physics Spring",
+    "Physics Balljoint",
+    "Physics Force",
+    "Delayer",
     "Physics WakeUp",
     "TT Scaleable Proximity",
 ];
@@ -65,6 +69,11 @@ fn setup(group: String, nodes: &[NodeParams]) -> Result<bb::ModuleSetup> {
     let mut hinges = Vec::new();
     let mut sliders = Vec::new();
     let mut springs = Vec::new();
+    let mut ball_joints = Vec::new();
+    let mut forces = Vec::new();
+    let mut delays_ms = Vec::new();
+    let mut proximities = Vec::new();
+    let mut boxes = Vec::new();
     let mut wake = None;
     let wake_bodies: Vec<String> = nodes
         .iter()
@@ -94,16 +103,37 @@ fn setup(group: String, nodes: &[NodeParams]) -> Result<bb::ModuleSetup> {
                     unsupported.insert("Set Physics Slider (computed objects)".to_owned());
                 }
             },
+            "Physics Balljoint" => match ball_joint(n) {
+                Some(j) => ball_joints.push(j),
+                None => {
+                    unsupported.insert("Physics Balljoint (computed objects)".to_owned());
+                }
+            },
+            "Physics Force" => match force(n) {
+                Some(f) => forces.push(f),
+                None => {
+                    unsupported.insert("Physics Force (computed values)".to_owned());
+                }
+            },
+            "Delayer" => {
+                if let Some(t) = float(input(n, "Time to Wait")) {
+                    delays_ms.push(t);
+                }
+            }
             "Set Physics Spring" => match spring(n) {
                 Some(s) => springs.push(s),
                 None => {
                     unsupported.insert("Set Physics Spring (computed objects)".to_owned());
                 }
             },
-            "TT Scaleable Proximity" if has_wakeup && wake.is_none() => {
-                wake = proximity(n, wake_bodies.clone());
+            "TT Scaleable Proximity" => {
+                if has_wakeup && wake.is_none() {
+                    wake = proximity(n, wake_bodies.clone());
+                }
+                proximities.extend(proximity(n, Vec::new()));
             }
-            "Physics WakeUp" | "TT Scaleable Proximity" => {}
+            "Box Box Intersection" => boxes.extend(text(input(n, "Entity 2"))),
+            "Physics WakeUp" => {}
             other => {
                 unsupported.insert(other.to_owned());
             }
@@ -115,6 +145,11 @@ fn setup(group: String, nodes: &[NodeParams]) -> Result<bb::ModuleSetup> {
         hinges,
         sliders,
         springs,
+        ball_joints,
+        forces,
+        delays_ms,
+        proximities,
+        boxes,
         wake,
         unsupported: unsupported.into_iter().collect(),
     })
@@ -263,6 +298,31 @@ fn spring(n: &NodeParams) -> Option<bb::SpringParams> {
         constant: float(input(n, "Constant"))?,
         linear_damping: float(input(n, "Linear Dampening"))?,
         global_damping: float(input(n, "Global Dampening"))?,
+    })
+}
+
+fn ball_joint(n: &NodeParams) -> Option<bb::BallJointParams> {
+    Some(bb::BallJointParams {
+        body: target(n)?,
+        other: other_body(n)?,
+        pivot: bb::SpringAnchor {
+            frame: text(input(n, "Referential 1")),
+            position: vector(input(n, "Position 1")).unwrap_or([0.0; 3]),
+        },
+    })
+}
+
+/// A force; a computed target (the active ball) is `body: None`.
+fn force(n: &NodeParams) -> Option<bb::ForceParams> {
+    Some(bb::ForceParams {
+        body: target(n),
+        position: bb::SpringAnchor {
+            frame: text(input(n, "Pos Referential")),
+            position: vector(input(n, "Position")).unwrap_or([0.0; 3]),
+        },
+        direction: vector(input(n, "Direction"))?,
+        direction_frame: text(input(n, "Direction Ref")),
+        value: float(input(n, "Force Value"))?,
     })
 }
 

@@ -393,3 +393,79 @@ fn spring_turns_a_hinged_arm_back() {
     let tip = b.position + b.orientation * Vec3::new(2.0, 0.0, 0.0);
     assert!(tip.distance(target) < 0.6, "tip at {tip}");
 }
+
+#[test]
+fn ball_joint_lets_a_pendulum_swing_any_way() {
+    let mut w = World::new(no_damping(), StaticMesh::default());
+    // A weight hanging 5 below a world pivot, pushed sideways in X and Z.
+    let bob = w.add_body(hull_body(
+        Vec3::new(0.0, -5.0, 0.0),
+        vec![cuboid(Vec3::splat(0.5), Vec3::ZERO)],
+        1.0,
+    ));
+    w.add_ball_joint(bob, None, Vec3::ZERO).unwrap();
+    w.body_mut(bob).unwrap().velocity = Vec3::new(3.0, 0.0, 2.0);
+    let mut max_x: f32 = 0.0;
+    let mut max_z: f32 = 0.0;
+    for step in 0..400 {
+        w.step();
+        let b = w.body(bob).unwrap();
+        let pivot = b.position + b.orientation * Vec3::new(0.0, 5.0, 0.0);
+        assert!(
+            pivot.length() < 0.05,
+            "pivot drifted to {pivot} at step {step}"
+        );
+        max_x = max_x.max(b.position.x.abs());
+        max_z = max_z.max(b.position.z.abs());
+    }
+    assert!(
+        max_x > 1.0 && max_z > 0.5,
+        "didn't swing both ways: {max_x} {max_z}"
+    );
+}
+
+#[test]
+fn push_off_centre_turns_a_body() {
+    let cfg = WorldConfig {
+        gravity: Vec3::ZERO,
+        ..WorldConfig::default()
+    };
+    let mut w = World::new(cfg, StaticMesh::default());
+    let b = w.add_body(hull_body(
+        Vec3::ZERO,
+        vec![cuboid(Vec3::ONE, Vec3::ZERO)],
+        1.0,
+    ));
+    w.add_push_at(b, Vec3::Z, 0.1, Vec3::new(1.0, 0.0, 0.0));
+    for _ in 0..10 {
+        w.step();
+    }
+    let body = w.body(b).unwrap();
+    assert!(
+        (body.velocity.z - 1.0).abs() < 1e-4,
+        "v = {}",
+        body.velocity
+    );
+    // r × F = X × Z = −Y.
+    assert!(
+        body.angular_velocity.y < -0.1,
+        "w = {}",
+        body.angular_velocity
+    );
+}
+
+#[test]
+fn body_without_collision_falls_through() {
+    let mut w = World::new(no_damping(), floor());
+    let mut d = hull_body(
+        Vec3::new(0.0, 3.0, 0.0),
+        vec![cuboid(Vec3::ONE, Vec3::ZERO)],
+        1.0,
+    );
+    d.collides = false;
+    let b = w.add_body(d);
+    for _ in 0..66 {
+        w.step();
+    }
+    assert!(w.body(b).unwrap().position.y < -1.0);
+}

@@ -172,6 +172,7 @@ pub fn body_desc(
         rotational_damping: params.rotational_damping,
         group: params.collision_group.clone(),
         asleep: params.start_frozen,
+        collides: params.collision,
     })
 }
 

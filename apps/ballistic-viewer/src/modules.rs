@@ -5,13 +5,21 @@
 //!   physical while their sector is active. Activation physicalizes the bodies
 //!   (frozen ones asleep), creates the hinges and arms the wake-up proximity
 //!   test; deactivation removes them and restores the initial pose.
-//! - A module whose script also uses ball joints or forces is a fixed
-//!   stand-in for now: its bodies are static geometry where they're placed.
+//! - Scripted forces, as their scripts switch them (research findings 13):
+//!   the swing (08) pushes one way for 500 ms, rests 500 ms, pushes the other
+//!   way, rests, and so on; the punching bag (26) alternates every 1500 ms.
+//!   Creating the first force wakes the module each time. The fan (18):
+//!   within 80 of it (on X/Z) an inner test runs; while the ball is within 7,
+//!   each check tests the ball's box against the fan's box, and a hit switches
+//!   an upward push on the ball on, a miss switches it off.
 
 use anyhow::{Context, Result};
 use ballistic_bundle::{ModuleSetup, PhysicsData, Scene};
+use ballistic_physics::modules::PlannedForce;
 use ballistic_physics::modules::{self, ModulePlan};
-use ballistic_physics::{BodyId, Mat4, SurfaceMaterial, Vec3, World, props};
+use ballistic_physics::{
+    BodyId, Mat4, PushId, Quat, SurfaceMaterial, Vec3, World, boxes_overlap, props,
+};
 use ballistic_render::{Camera, Gpu, RenderOptions, SceneRenderer};
 
 use crate::play::Bundle;
@@ -27,10 +35,46 @@ struct Part {
     local: Mat4,
 }
 
+/// Two forces switched on in turn (`Delayer` chains in the swing's and the
+/// bag's scripts): `first` for `on`, nothing for `gap`, `second` for `on`,
+/// nothing for `gap`, again.
+#[derive(Debug, Clone)]
+struct Alternate {
+    first: usize,
+    second: usize,
+    on_ms: f32,
+    gap_ms: f32,
+    phase: u8,
+    left_ms: f32,
+    push: Option<PushId>,
+}
+
+/// The fan's script (`P_Modul_18_MF Script` and its *Physics Force* graph).
+#[derive(Debug, Clone)]
+struct Fan {
+    outer_template: Proximity,
+    inner_template: Proximity,
+    outer: Proximity,
+    inner: Proximity,
+    /// What both tests measure to (`P_Modul_18_Particle`).
+    target: Vec3,
+    /// The fan's box (`P_Modul_18_Kollisionsquader`): centre, orientation,
+    /// half extents.
+    area: (Vec3, Quat, Vec3),
+    force: PlannedForce,
+    push: Option<(BodyId, PushId)>,
+    /// The script's `TurnON` / `TurnOFF` permissions.
+    turn_on: bool,
+    turn_off: bool,
+    active: bool,
+}
+
 struct Module {
     group: String,
     sector: u32,
     plan: ModulePlan,
+    program: Option<Alternate>,
+    fan: Option<Fan>,
     /// Bodies while active (same order as `plan.bodies`).
     bodies: Vec<BodyId>,
     /// One static material per fixed part (switched with the sector).
@@ -130,6 +174,17 @@ impl Modules {
             for &mat in &m.fixed_materials {
                 world.statics.set_material_enabled(mat, on);
             }
+            if let Some(f) = m.fan.as_mut() {
+                if let Some((_, id)) = f.push.take() {
+                    world.remove_push(id);
+                }
+                f.active = on;
+                f.outer.clone_from(&f.outer_template);
+                f.inner.clone_from(&f.inner_template);
+                if on {
+                    f.outer.switch_on();
+                }
+            }
             for id in m.bodies.drain(..) {
                 world.remove_body(id);
             }
@@ -173,6 +228,21 @@ impl Modules {
                     s.damping,
                 );
             }
+            for j in &m.plan.ball_joints {
+                let other = j.other.map(|o| m.bodies[o]);
+                if world
+                    .add_ball_joint(m.bodies[j.body], other, j.pivot)
+                    .is_none()
+                {
+                    eprintln!("warning: {}: ball joint not created", m.group);
+                }
+            }
+            if let Some(p) = m.program.as_mut() {
+                p.phase = 0;
+                p.left_ms = p.on_ms;
+                p.push = push(world, &m.plan, &m.bodies, p.first);
+                wake_module(world, &m.plan, &m.bodies);
+            }
             m.wake.clone_from(&m.wake_template);
             if let Some(w) = m.wake.as_mut() {
                 w.switch_on();
@@ -180,9 +250,42 @@ impl Modules {
         }
     }
 
-    /// One frame: the wake-up tests (`TT Scaleable Proximity` → `Physics WakeUp`).
-    pub fn frame(&mut self, ball: Vec3, world: &mut World) {
+    /// One frame: the scripted forces and the wake-up tests (`TT Scaleable
+    /// Proximity` → `Physics WakeUp`).
+    pub fn frame(&mut self, ball_id: BodyId, real_dt: f32, world: &mut World) {
+        let Some((ball, ball_rot, radius)) = world
+            .body(ball_id)
+            .map(|b| (b.position, b.orientation, b.radius()))
+        else {
+            return;
+        };
         for m in &mut self.items {
+            if let Some(f) = m.fan.as_mut()
+                && f.active
+            {
+                fan_frame(f, world, ball_id, (ball, ball_rot, Vec3::splat(radius)));
+            }
+            if !m.bodies.is_empty()
+                && let Some(p) = m.program.as_mut()
+            {
+                p.left_ms -= real_dt * 1000.0;
+                if p.left_ms <= 0.0 {
+                    if let Some(id) = p.push.take() {
+                        world.remove_push(id);
+                    }
+                    // first on → gap → second on → gap → first on …
+                    p.phase = (p.phase + if p.gap_ms > 0.0 { 1 } else { 2 }) % 4;
+                    p.left_ms += if p.phase % 2 == 0 { p.on_ms } else { p.gap_ms };
+                    match p.phase {
+                        0 => {
+                            p.push = push(world, &m.plan, &m.bodies, p.first);
+                            wake_module(world, &m.plan, &m.bodies);
+                        }
+                        2 => p.push = push(world, &m.plan, &m.bodies, p.second),
+                        _ => {}
+                    }
+                }
+            }
             let (Some(w), Some(target)) = (m.wake.as_mut(), m.plan.wake_target) else {
                 continue;
             };
@@ -316,14 +419,221 @@ fn place(
             w.xz,
         )
     });
+    let program = alternate(setup, &plan);
+    let fan = fan(setup, prefab, &placed, &plan);
     Module {
         group: setup.group.clone(),
         sector,
+        program,
+        fan,
         plan,
         bodies: Vec::new(),
         fixed_materials,
         wake: None,
         wake_template,
         parts,
+    }
+}
+
+/// The two-force program of the swing and the punching bag: two forces on the
+/// same body and Delayer times. The script creates the force whose (original)
+/// direction is +Z first, which is −Z in bundle space. With four delays (the
+/// swing) the second is the rest between pushes; with one (the bag), none.
+fn alternate(setup: &ModuleSetup, plan: &ModulePlan) -> Option<Alternate> {
+    if plan.bodies.is_empty() || plan.forces.len() != 2 || setup.forces.len() != 2 {
+        return None;
+    }
+    if plan.forces[0].body.is_none() || plan.forces[0].body != plan.forces[1].body {
+        return None;
+    }
+    let on_ms = *setup.delays_ms.first()?;
+    let gap_ms = if setup.delays_ms.len() >= 4 {
+        setup.delays_ms[1]
+    } else {
+        0.0
+    };
+    let first = usize::from(setup.forces[0].direction[2] >= 0.0);
+    Some(Alternate {
+        first,
+        second: 1 - first,
+        on_ms,
+        gap_ms,
+        phase: 0,
+        left_ms: on_ms,
+        push: None,
+    })
+}
+
+/// Switches a planned force on (fixed in world space from now, like the
+/// original's `Physics Force`).
+fn push(world: &mut World, plan: &ModulePlan, bodies: &[BodyId], force: usize) -> Option<PushId> {
+    let f = plan.forces.get(force)?;
+    let body = *bodies.get(f.body?)?;
+    Some(world.add_push_at(body, f.direction, f.value, f.point))
+}
+
+/// `Physics WakeUp` on the module's wake-up targets (or all its bodies if the
+/// script names none).
+fn wake_module(world: &mut World, plan: &ModulePlan, bodies: &[BodyId]) {
+    if plan.wake_bodies.is_empty() {
+        for &id in bodies {
+            world.wake(id);
+        }
+    }
+    for &i in &plan.wake_bodies {
+        if let Some(&id) = bodies.get(i) {
+            world.wake(id);
+        }
+    }
+}
+
+/// The fan program: a force on the ball, the script's proximity tests to one
+/// object (outer: the largest, inner: the smallest), and the box it tests the
+/// ball's box against.
+fn fan(setup: &ModuleSetup, prefab: &Scene, placed: &[Mat4], plan: &ModulePlan) -> Option<Fan> {
+    let force = *plan.forces.iter().find(|f| f.body.is_none())?;
+    let inner_p = setup
+        .proximities
+        .iter()
+        .min_by(|a, b| a.distance.total_cmp(&b.distance))?;
+    let outer_p = setup
+        .proximities
+        .iter()
+        .filter(|p| p.object == inner_p.object)
+        .max_by(|a, b| a.distance.total_cmp(&b.distance))?;
+    let index = |name: &str| prefab.objects.iter().position(|o| o.name == name);
+    let target = placed
+        .get(index(&inner_p.object)?)?
+        .transform_point3(Vec3::ZERO);
+    let bi = index(setup.boxes.first()?)?;
+    let m = *placed.get(bi)?;
+    let mesh = &prefab.meshes[prefab.objects[bi].mesh? as usize];
+    let (lo, hi) = (Vec3::from(mesh.bounds_min), Vec3::from(mesh.bounds_max));
+    let (scale, rot, _) = m.to_scale_rotation_translation();
+    let area = (
+        m.transform_point3((lo + hi) * 0.5),
+        rot,
+        (hi - lo) * 0.5 * scale.abs(),
+    );
+    let proximity = |p: &ballistic_bundle::WakeParams| {
+        Proximity::new(
+            p.distance,
+            p.exactness[0],
+            p.exactness[1],
+            (p.frame_delay[0], p.frame_delay[1]),
+            p.xz,
+        )
+    };
+    let (outer, inner) = (proximity(outer_p), proximity(inner_p));
+    Some(Fan {
+        outer_template: outer.clone(),
+        inner_template: inner.clone(),
+        outer,
+        inner,
+        target,
+        area,
+        force,
+        push: None,
+        turn_on: true,
+        turn_off: false,
+        active: false,
+    })
+}
+
+fn fan_frame(f: &mut Fan, world: &mut World, ball_id: BodyId, ball_box: (Vec3, Quat, Vec3)) {
+    let ball = ball_box.0;
+    match f.outer.frame(ball, f.target) {
+        Some(Edge::Enter) => {
+            // Physics Force.input0: arm the inner test, reset, no force.
+            f.inner.clone_from(&f.inner_template);
+            f.inner.switch_on();
+            f.turn_on = true;
+            f.turn_off = false;
+            if let Some((_, id)) = f.push.take() {
+                world.remove_push(id);
+            }
+        }
+        // In 1: the inner test stops (a force that's on stays on).
+        Some(Edge::Exit) => f.inner.switch_off(),
+        None => {}
+    }
+    // InRange (in range, not just entered): the box test.
+    if let Some(r) = f.inner.check(ball, f.target)
+        && r.inside
+        && r.edge.is_none()
+    {
+        if boxes_overlap(ball_box, f.area) {
+            if f.turn_on {
+                f.turn_on = false;
+                f.turn_off = true;
+                let id = world.add_push(ball_id, f.force.direction, f.force.value);
+                f.push = Some((ball_id, id));
+            }
+        } else if f.turn_off {
+            f.turn_off = false;
+            f.turn_on = true;
+            if let Some((_, id)) = f.push.take() {
+                world.remove_push(id);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ballistic_physics::{BodyDesc, Shape, StaticMesh, WorldConfig};
+
+    fn fan_at_origin() -> Fan {
+        let outer = Proximity::new(80.0, 85.0, 100.0, (10, 60), true);
+        let inner = Proximity::new(7.0, 12.0, 20.0, (1, 10), true);
+        Fan {
+            outer_template: outer.clone(),
+            inner_template: inner.clone(),
+            outer,
+            inner,
+            target: Vec3::ZERO,
+            area: (
+                Vec3::new(0.0, 10.0, 0.0),
+                Quat::IDENTITY,
+                Vec3::new(3.0, 10.0, 3.0),
+            ),
+            force: PlannedForce {
+                body: None,
+                point: Vec3::ZERO,
+                direction: Vec3::Y,
+                value: 0.1,
+            },
+            push: None,
+            turn_on: true,
+            turn_off: false,
+            active: true,
+        }
+    }
+
+    /// Height after 2 s above the fan, for a ball of `mass`.
+    fn rise(mass: f32) -> f32 {
+        let mut w = World::new(WorldConfig::default(), StaticMesh::default());
+        let ball = w.add_body(BodyDesc {
+            position: Vec3::new(0.0, 2.0, 0.0),
+            shape: Shape::Sphere { radius: 2.0 },
+            mass,
+            ..BodyDesc::default()
+        });
+        let mut f = fan_at_origin();
+        f.outer.switch_on();
+        for _ in 0..120 {
+            let b = w.body(ball).unwrap();
+            let bx = (b.position, b.orientation, Vec3::splat(2.0));
+            fan_frame(&mut f, &mut w, ball, bx);
+            w.advance(1.0 / 60.0);
+        }
+        w.body(ball).unwrap().position.y
+    }
+
+    #[test]
+    fn fan_lifts_a_paper_ball_but_not_a_wooden_one() {
+        assert!(rise(0.2) > 2.0, "paper ball didn't rise: {}", rise(0.2));
+        assert!(rise(1.9) < 0.0, "wooden ball should fall: {}", rise(1.9));
     }
 }

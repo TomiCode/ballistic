@@ -29,6 +29,18 @@ pub struct ModuleSetup {
     pub hinges: Vec<HingeParams>,
     pub sliders: Vec<SliderParams>,
     pub springs: Vec<SpringParams>,
+    pub ball_joints: Vec<BallJointParams>,
+    /// The script's `Physics Force` nodes, in script order. When and how long
+    /// each acts is the module's script logic.
+    pub forces: Vec<ForceParams>,
+    /// The script's Delayer times in milliseconds, in script order.
+    pub delays_ms: Vec<f32>,
+    /// Every `TT Scaleable Proximity` of the script (ball to an object), in
+    /// script order (`bodies` empty).
+    pub proximities: Vec<WakeParams>,
+    /// The objects the script tests the ball's box against (`Box Box
+    /// Intersection`'s second entity).
+    pub boxes: Vec<String>,
     /// Proximity test that wakes the frozen bodies (`TT Scaleable Proximity`
     /// into `Physics WakeUp`), if the script has one.
     pub wake: Option<WakeParams>,
@@ -99,6 +111,30 @@ pub struct SpringParams {
     pub constant: f32,
     pub linear_damping: f32,
     pub global_damping: f32,
+}
+
+/// `Set Physics Ball Joint`: `body` and `other` share a pivot (rotation free).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BallJointParams {
+    pub body: String,
+    /// `None` is the world.
+    pub other: Option<String>,
+    /// The pivot: a position in a frame (world if none).
+    pub pivot: SpringAnchor,
+}
+
+/// `Physics Force`: a per-step push on `body` at a point, along a direction
+/// fixed (in world space) when it's created.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ForceParams {
+    /// `None`: computed by the script (the player's ball).
+    pub body: Option<String>,
+    /// Where it pushes: a position in a frame (world if none).
+    pub position: SpringAnchor,
+    /// Its direction in a frame (world if none).
+    pub direction: [f32; 3],
+    pub direction_frame: Option<String>,
+    pub value: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

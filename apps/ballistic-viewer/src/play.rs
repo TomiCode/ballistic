@@ -390,7 +390,7 @@ impl Play {
         self.props.update(&mut self.world, self.fall_y);
         self.elapsed += real_dt;
         if let Some(ball) = self.world.body(self.ball).map(|b| b.position) {
-            self.modules.frame(ball, &mut self.world);
+            self.modules.frame(self.ball, real_dt, &mut self.world);
             match self.progress.frame(ball) {
                 Some(progress::Event::Checkpoint(i)) => eprintln!("checkpoint {} reached", i + 1),
                 Some(progress::Event::Finished) => {

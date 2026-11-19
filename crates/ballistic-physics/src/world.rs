@@ -30,6 +30,8 @@ pub struct BodyDesc {
     /// Starts asleep (the original's "Start Frozen"): it doesn't move, and
     /// others collide with it as if it were fixed, until it's woken up.
     pub asleep: bool,
+    /// Takes part in collisions (the original's "Enable Collision").
+    pub collides: bool,
 }
 
 impl Default for BodyDesc {
@@ -45,6 +47,7 @@ impl Default for BodyDesc {
             rotational_damping: 0.0,
             group: String::new(),
             asleep: false,
+            collides: true,
         }
     }
 }
@@ -66,6 +69,8 @@ pub struct Body {
     inv_inertia: Mat3,
     /// Asleep: not moved by the simulation, and immovable for others.
     pub asleep: bool,
+    /// Takes part in collisions.
+    pub collides: bool,
     /// State before the last step (for render interpolation).
     prev_position: Vec3,
     prev_orientation: Quat,
@@ -127,6 +132,8 @@ struct Push {
     body: BodyId,
     /// World-space impulse applied every step.
     impulse: Vec3,
+    /// Where it's applied, in the body's frame.
+    point: Vec3,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -151,6 +158,8 @@ struct Hinge {
     /// Axis in `a`'s frame, and in `b`'s frame (world space without `b`).
     axis_a: Vec3,
     axis_b: Vec3,
+    /// A ball joint: the pivot only, rotation free about every axis.
+    ball: bool,
 }
 
 /// A slider (prismatic joint): `a` keeps its orientation relative to `b` (or
@@ -247,6 +256,7 @@ impl World {
             group: d.group,
             inv_inertia,
             asleep: d.asleep,
+            collides: d.collides,
             prev_position: d.position,
             prev_orientation: d.orientation,
             grounded: false,
@@ -388,8 +398,20 @@ impl World {
             anchor_b,
             axis_a,
             axis_b,
+            ball: false,
         };
         Some(JointId::Hinge(insert(&mut self.joints, hinge)))
+    }
+
+    /// Adds a ball joint at a world pivot between `a` and `b` (or the world).
+    pub fn add_ball_joint(&mut self, a: BodyId, b: Option<BodyId>, pivot: Vec3) -> Option<JointId> {
+        let id = self.add_hinge(a, b, pivot, Vec3::Y)?;
+        if let JointId::Hinge(i) = id
+            && let Some(Some(j)) = self.joints.get_mut(i as usize)
+        {
+            j.ball = true;
+        }
+        Some(id)
     }
 
     pub fn remove_joint(&mut self, id: JointId) {
@@ -428,10 +450,27 @@ impl World {
     /// Starts a per-step push of `magnitude` along `direction` (world space,
     /// normalised here, captured now: later camera changes don't affect it).
     pub fn add_push(&mut self, body: BodyId, direction: Vec3, magnitude: f32) -> PushId {
+        let point = self.body(body).map_or(Vec3::ZERO, |b| b.position);
+        self.add_push_at(body, direction, magnitude, point)
+    }
+
+    /// Like [`Self::add_push`], applied at a world point (fixed on the body
+    /// from now on): off the mass centre, it also turns the body.
+    pub fn add_push_at(
+        &mut self,
+        body: BodyId,
+        direction: Vec3,
+        magnitude: f32,
+        point: Vec3,
+    ) -> PushId {
         let dir = direction.try_normalize().unwrap_or(Vec3::X);
+        let point = self.body(body).map_or(Vec3::ZERO, |b| {
+            b.orientation.inverse() * (point - b.position)
+        });
         let push = Push {
             body,
             impulse: dir * magnitude,
+            point,
         };
         if let Some(slot) = self.pushes.iter().position(Option::is_none) {
             self.pushes[slot] = Some(push);
@@ -485,6 +524,10 @@ impl World {
         for p in self.pushes.iter().flatten() {
             if let Some(Some(b)) = self.bodies.get_mut(p.body.0 as usize) {
                 b.velocity += p.impulse * b.inv_mass();
+                if p.point != Vec3::ZERO {
+                    let r = b.orientation * p.point;
+                    b.angular_velocity += b.inv_inertia_mul(r.cross(p.impulse));
+                }
             }
         }
         self.apply_springs(dt);
@@ -716,7 +759,11 @@ impl World {
             let Some((_, _, xa, xb)) = self.hinge_frames(&j) else {
                 continue;
             };
-            let q = Quat::from_rotation_arc(xa, xb);
+            let q = if j.ball {
+                Quat::IDENTITY
+            } else {
+                Quat::from_rotation_arc(xa, xb)
+            };
             if let Some(a) = self.bodies[j.a].as_mut() {
                 a.orientation = (Quat::IDENTITY.slerp(q, wa * k) * a.orientation).normalize();
             }
@@ -764,7 +811,7 @@ impl World {
         let mut out = Vec::new();
         for (i, slot) in self.bodies.iter().enumerate() {
             let Some(b) = slot else { continue };
-            if b.asleep {
+            if b.asleep || !b.collides {
                 continue;
             }
             let contacts = match &b.shape {
@@ -787,7 +834,9 @@ impl World {
             let box_a = a.aabb();
             for (j, slot) in self.bodies.iter().enumerate().skip(i + 1) {
                 let Some(b) = slot else { continue };
-                if (a.asleep && b.asleep)
+                if !a.collides
+                    || !b.collides
+                    || (a.asleep && b.asleep)
                     || (cfg.contact.same_group_ignores && !a.group.is_empty() && a.group == b.group)
                 {
                     continue;
@@ -964,7 +1013,12 @@ impl World {
                 continue;
             }
             let (t1, t2) = xa.any_orthonormal_pair();
-            let kt = [t1, t2].map(|t| t.dot(ia * t) + t.dot(ib * t));
+            // A ball joint has no axis rows (zero effective mass skips them).
+            let kt = if j.ball {
+                [0.0; 2]
+            } else {
+                [t1, t2].map(|t| t.dot(ia * t) + t.dot(ib * t))
+            };
             jrows.push(JointRow {
                 a: j.a,
                 b: j.b,

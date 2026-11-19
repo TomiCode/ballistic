@@ -33,6 +33,16 @@ pub use mesh::{StaticMesh, SurfaceMaterial};
 pub use shape::Shape;
 pub use world::{Body, BodyDesc, BodyId, JointId, PushId, World};
 
+/// Whether two oriented boxes (centre, orientation, half extents) overlap,
+/// like the original's *Box Box Intersection* on two entities' boxes.
+pub fn boxes_overlap(a: (Vec3, Quat, Vec3), b: (Vec3, Quat, Vec3)) -> bool {
+    collide::poly_poly(
+        &collide::Poly::cuboid(a.0, a.1, a.2),
+        &collide::Poly::cuboid(b.0, b.1, b.2),
+    )
+    .is_some()
+}
+
 /// Integration steps per second of simulated time (`physics_RT.dll`: 1/66 s).
 pub const STEP_HZ: f32 = 66.0;
 /// Simulated seconds per step.

@@ -51,6 +51,23 @@ pub struct PlannedSlider {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlannedBallJoint {
+    pub body: usize,
+    pub other: Option<usize>,
+    pub pivot: Vec3,
+}
+
+/// A force the module's script can switch on: on `body` (`None`: the player's
+/// ball), at a world point, along a world direction.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlannedForce {
+    pub body: Option<usize>,
+    pub point: Vec3,
+    pub direction: Vec3,
+    pub value: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlannedSpring {
     pub body: usize,
     pub other: Option<usize>,
@@ -69,6 +86,8 @@ pub struct ModulePlan {
     pub hinges: Vec<PlannedHinge>,
     pub sliders: Vec<PlannedSlider>,
     pub springs: Vec<PlannedSpring>,
+    pub ball_joints: Vec<PlannedBallJoint>,
+    pub forces: Vec<PlannedForce>,
     /// Static geometry: fixed bodies, or every body of a module whose other
     /// physics (ball joints, forces) isn't simulated yet.
     pub fixed: Vec<FixedPart>,
@@ -146,7 +165,9 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
     let mut plan = ModulePlan::default();
     let mut body_of = Vec::new(); // (object name, index in plan.bodies)
     for b in &setup.bodies {
-        if !b.collision {
+        // Fixed bodies without collision do nothing; dynamic ones still move
+        // (the punching bag's rope).
+        if !b.collision && b.fixed {
             continue;
         }
         let oi = object(&b.object)?;
@@ -156,7 +177,7 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
             .iter()
             .map(|n| mesh_points(n, m))
             .collect::<Result<_>>()?;
-        if b.fixed || !simulate {
+        if b.fixed || (!simulate && b.collision) {
             let mut triangles = Vec::new();
             for pts in &hull_points {
                 let Some(h) = Hull::new(pts) else { continue };
@@ -205,6 +226,7 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
                 rotational_damping: b.rotational_damping,
                 group: b.collision_group.clone(),
                 asleep: b.start_frozen,
+                collides: b.collision,
             },
             object_from_body: pose.inverse() * m,
         });
@@ -246,6 +268,33 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
                 length: s.length,
                 constant: s.constant,
                 damping: (s.linear_damping, s.global_damping),
+            });
+        }
+        for j in &setup.ball_joints {
+            let Some(body) = index(&j.body) else { continue };
+            plan.ball_joints.push(PlannedBallJoint {
+                body,
+                other: other_of(&j.other)?,
+                pivot: point(&j.pivot)?,
+            });
+        }
+        for f in &setup.forces {
+            let body = match &f.body {
+                Some(b) => match index(b) {
+                    Some(i) => Some(i),
+                    None => continue,
+                },
+                None => None,
+            };
+            let direction = match &f.direction_frame {
+                Some(fr) => world[object(fr)?].transform_vector3(Vec3::from(f.direction)),
+                None => Vec3::from(f.direction),
+            };
+            plan.forces.push(PlannedForce {
+                body,
+                point: point(&f.position)?,
+                direction: direction.normalize_or_zero(),
+                value: f.value,
             });
         }
         for h in &setup.hinges {

@@ -96,13 +96,17 @@ particles).
 They're physical while their sector is active. Frozen parts stay still until
 the ball comes near (each module's own wake-up distance), and then fall,
 swing or tip by themselves.
-- Simulated: the hinged ones (bridges that fall over, flaps, seesaws, the plank
-  bridge), the rotating arms (hinge and spring), the lift (slider and spring),
-  the sliding stone (slider) and the pusher. The lift doesn't rise: with the
-  original's values it can't carry the walls standing on it (research
-  findings 13).
-- Fixed in place for now: modules that also use ball joints or forces (the
-  swing, the fan, the punching bag).
+- All of them are simulated:
+  - the hinged ones (bridges that fall over, flaps, seesaws, the plank bridge);
+  - the rotating arms (hinge and spring);
+  - the lift (slider and spring);
+  - the sliding stone (slider) and the pusher;
+  - the swing, pushed one way for 0.5 s, resting 0.5 s, pushed back, resting;
+  - the punching bags (ball joints), pushed each way in turn for 1.5 s;
+  - the fans, which push the ball up while it's in their air column. That's
+    only strong enough for the paper ball.
+- The lift doesn't rise: with the original's values it can't carry the walls
+  standing on it (research findings 13).
 
 **The level end** is the balloon, part of the last sector. The level is
 finished when the ball settles in the middle of its platform (within 1 of the
@@ -146,6 +150,5 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: ball joints and forces (the swing, fan, punching bag), the
-  balloon's moving parts, pickups, transformers, checkpoint flames, the end
-  sequence and score
+- In play mode: the balloon's moving parts, pickups, transformers, checkpoint
+  flames and fan particles, the end sequence and score

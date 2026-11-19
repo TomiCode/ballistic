@@ -40,6 +40,14 @@ pub enum Edge {
     Exit,
 }
 
+/// One check of a proximity test: in range, and Enter/Exit if it changed.
+/// In range without an edge is the block's `InRange` output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Reading {
+    pub inside: bool,
+    pub edge: Option<Edge>,
+}
+
 /// *TT Scaleable Proximity* (`TT_Toolbox_RT`): a distance test between two
 /// entities, evaluated every `delay` frames. The delay is `min_delay` within
 /// `near`, `max_delay` beyond `far`, interpolated between.
@@ -84,9 +92,15 @@ impl Proximity {
         self.on = false;
     }
 
-    /// One frame. With "Squared Distance?" set, as in Ballance, the block
-    /// compares squared distances with squared thresholds: the same test.
+    /// One frame: Enter or Exit, if the state changed at a check.
     pub fn frame(&mut self, a: Vec3, b: Vec3) -> Option<Edge> {
+        self.check(a, b).and_then(|r| r.edge)
+    }
+
+    /// One frame; `Some` when the block checked this frame. With "Squared
+    /// Distance?" set, as in Ballance, the block compares squared distances
+    /// with squared thresholds: the same test.
+    pub fn check(&mut self, a: Vec3, b: Vec3) -> Option<Reading> {
         if !self.on {
             return None;
         }
@@ -118,7 +132,7 @@ impl Proximity {
             _ => None,
         };
         self.state = u8::from(inside);
-        edge
+        Some(Reading { inside, edge })
     }
 }
 

@@ -47,7 +47,7 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
    - sounds (WAV) → Ogg Vorbis
    - physics parameters (gravity, time factor, ball types, level surfaces,
      props) read from the original's scripts and tables, and each moving
-     element's bodies, hinges, sliders, springs and wake-up test from its prefab script
+     element's bodies, joints, forces, timers and tests from its prefab script
      (`PH/P_Modul_*.nmo`) → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
