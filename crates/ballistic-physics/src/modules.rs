@@ -257,9 +257,9 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
                 other: other_of(&s.other)?,
                 origin: from,
                 axis: (to - from).normalize_or_zero(),
-                // The original's limits count the other way along the axis
-                // (inferred: the balloon's slide box has −30000 / 0 and is
-                // pushed towards `_far`; research findings 13).
+                // The original's limits bound Object2's travel relative to
+                // the body, the opposite of the body's own travel (research
+                // findings 13).
                 limits: s.limits.map(|[lo, hi]| (-hi, -lo)),
             });
         }

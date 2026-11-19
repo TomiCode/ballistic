@@ -103,10 +103,9 @@ world) and let it move only along the axis.
 - In the velocity iterations, relative rotation is removed (3×3 effective
   mass), and so is motion across the axis at the axis origin.
 - Past a limit, motion further out of range is removed.
-- The original's limits count the other way along the axis (from `axis_to`
-  towards `axis_from`), so the module plan flips their sign. That's inferred
-  from the balloon's slide box, the only slider with limits (research
-  findings 13).
+- The original's limits bound the other body's travel relative to the slider's
+  body, the opposite of its own travel, so the module plan flips their sign
+  (research findings 13). Only the balloon's slide box has limits.
 
 **Ball joints** are hinges without the axis: the pivots are joined, and
 rotation is free.
