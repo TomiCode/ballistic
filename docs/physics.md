@@ -26,9 +26,10 @@ options so they can be calibrated later.
   `modules`): bodies made of the **convex hulls** of their collision meshes,
   with **hinges** to the world or to each other. Mass properties come from
   the hulls' volume (uniform density). With automatic mass centre off, the
-  mass centre is the object's origin plus *Shift Mass Center*; that sign is an
-  assumption to check. Modules that also use sliders, springs or forces are
-  static stand-ins for now.
+  mass centre is the object's origin plus *Shift Mass Center*, in the object's
+  frame, as the original's Physicalize builds it (with it on, the hulls'
+  centroid). Modules that also use sliders, springs or forces are static
+  stand-ins for now.
 - **Sleeping**: a body can start asleep (the original's "Start Frozen"). It
   doesn't move, and others collide with it as if it were fixed, until it's
   woken: explicitly (the scripts' Physics WakeUp), by a hinge to a moving body,

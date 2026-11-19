@@ -3,9 +3,10 @@
 //!
 //! As the original's Physicalize: each body is the union of its "convex n"
 //! meshes' hulls (in the object's frame). With automatic mass centre off, the
-//! mass centre is the object's origin moved by *Shift Mass Center* (assumed
-//! added, in the object's frame). Hinges pivot at their joint frame, about its
-//! Z axis; `FixCube` is the world. Fixed bodies are static geometry.
+//! mass centre is the object's origin plus *Shift Mass Center*, in the object's
+//! frame (Physicalize puts that translation in the object template; research
+//! findings 13). Hinges pivot at their joint frame, about its Z axis;
+//! `FixCube` is the world. Fixed bodies are static geometry.
 
 use std::sync::Arc;
 
