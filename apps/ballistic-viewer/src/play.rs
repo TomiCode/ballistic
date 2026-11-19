@@ -8,7 +8,7 @@
 //!   turn the reference heading snaps to it, and if Shift is up, control is
 //!   switched off and back on one frame later (held keys re-fire, re-aiming).
 //!
-//! Camera rig from `Camera.nmo`: 22 units behind, 35 up, looking at the ball.
+//! Camera rig from `Camera.nmo` (follow behaviour in [`crate::follow`]).
 //! On spawn the scripts set both the ball and the rig root (`Cam_MF`) to the
 //! current reset point's world matrix, so the rig looks along the reset
 //! point's −X axis.
@@ -21,15 +21,17 @@ use ballistic_physics::{BodyDesc, BodyId, PushId, Quat, Vec3, World, WorldConfig
 use ballistic_render::{Camera, Gpu, RenderOptions};
 use glam::Mat4;
 
+use crate::follow::Follow;
 use crate::{LoadedScene, load_scene};
 
 type Bundle = BundleReader<BufReader<std::fs::File>>;
 
-const CAM_BACK: f32 = 22.0;
-const CAM_UP: f32 = 35.0;
 const TURN_SECONDS: f32 = 0.25;
-/// Camera follow smoothing rate (1/s). Not measured from the original yet.
-const FOLLOW_RATE: f32 = 12.0;
+/// `InGameCam`: 1.012291 rad horizontal at 4:3 (`Camera.nmo`), kept as the
+/// equivalent vertical angle at every aspect ratio.
+fn fov_y() -> f32 {
+    2.0 * ((1.012_291_f32 / 2.0).tan() * 0.75).atan()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PlayKey {
@@ -72,7 +74,7 @@ pub struct Play {
     turn: Option<Turn>,
     /// Snap of the reference heading pending for the next frame.
     snap_next_frame: Option<f32>,
-    cam_target: Vec3,
+    follow: Follow,
     pub respawns: u32,
 }
 
@@ -145,7 +147,7 @@ impl Play {
             heading_view: heading,
             turn: None,
             snap_next_frame: None,
-            cam_target: start,
+            follow: Follow::new(start, heading),
             respawns: 0,
         };
         // Show only the active ball.
@@ -278,7 +280,7 @@ impl Play {
     /// Back to the spawn point; the camera rig is reset with the ball.
     pub fn respawn(&mut self) {
         self.world.reset_body(self.ball, self.start);
-        self.cam_target = self.start;
+        self.follow.reset(self.start, self.start_heading);
         self.heading_ref = self.start_heading;
         self.heading_view = self.start_heading;
         self.turn = None;
@@ -326,24 +328,22 @@ impl Play {
         {
             self.respawn();
         }
+        let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
+        self.follow.update(real_dt, ball, self.heading_view);
     }
 
     pub fn ball_pose(&self) -> Option<(Vec3, Quat)> {
         self.world.interpolated(self.ball)
     }
 
-    pub fn camera(&mut self, real_dt: f32, base: Camera) -> Camera {
-        let target = self.ball_pose().map_or(self.start, |(p, _)| p);
-        let k = 1.0 - (-FOLLOW_RATE * real_dt).exp();
-        self.cam_target += (target - self.cam_target) * k;
-        let r = Quat::from_rotation_y(self.heading_view);
-        let forward = r * Vec3::NEG_Z;
+    pub fn camera(&self, base: Camera) -> Camera {
+        let (eye, target) = self.follow.pose();
         let mut cam = Camera {
-            position: self.cam_target - forward * CAM_BACK + Vec3::Y * CAM_UP,
-            fov_y: 45f32.to_radians(),
+            position: eye,
+            fov_y: fov_y(),
             ..base
         };
-        cam.look_at(self.cam_target);
+        cam.look_at(target);
         cam
     }
 

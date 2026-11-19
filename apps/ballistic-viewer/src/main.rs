@@ -1,5 +1,6 @@
 //! `ballistic-viewer`: fly around the scenes of a Ballistic bundle.
 
+mod follow;
 mod play;
 mod window;
 
@@ -245,7 +246,7 @@ fn screenshot(
             let frames = (seconds / dt).round() as u32;
             for _ in 0..frames {
                 p.update(dt);
-                camera = p.camera(dt, camera);
+                camera = p.camera(camera);
             }
             for &k in &keys {
                 p.input(k, false);

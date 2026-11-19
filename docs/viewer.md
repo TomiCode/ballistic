@@ -72,8 +72,16 @@ Details carried over from the original's scripts:
 Level 1 starts facing away from the path, as in the original (its tutorial
 teaches turning first): press Shift + Left twice.
 
-Physics is described in [physics.md](physics.md). The camera's follow
-smoothing and the turn's easing curve are approximations for now.
+Physics is described in [physics.md](physics.md).
+
+The camera follows like the original: a point chases the ball, and the camera
+chases a spot 22 units behind and 35 above that point, with the original's pull
+and momentum per axis. It reacts slowly in height, so it stays high when the
+ball drops. Field of view is the original's at 4:3 (45° vertical), kept at
+every aspect ratio. In the original this filter ran once per rendered frame,
+so its feel depended on frame rate. Here it runs at a fixed 60 Hz and is
+interpolated, so it feels the same at any refresh rate. The turn's easing
+curve is still an approximation.
 
 Headless check of the same thing:
 

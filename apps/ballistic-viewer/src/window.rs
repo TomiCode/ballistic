@@ -335,7 +335,7 @@ impl State {
     fn update(&mut self, dt: f32) {
         if let Some(play) = self.play.as_mut() {
             play.update(dt);
-            self.camera = play.camera(dt, self.camera);
+            self.camera = play.camera(self.camera);
             return;
         }
         let held = |k: &[KeyCode]| k.iter().any(|c| self.keys.contains(c));
