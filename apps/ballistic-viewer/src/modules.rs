@@ -5,7 +5,7 @@
 //!   physical while their sector is active. Activation physicalizes the bodies
 //!   (frozen ones asleep), creates the hinges and arms the wake-up proximity
 //!   test; deactivation removes them and restores the initial pose.
-//! - A module whose script also uses sliders, springs or forces is a fixed
+//! - A module whose script also uses ball joints or forces is a fixed
 //!   stand-in for now: its bodies are static geometry where they're placed.
 
 use anyhow::{Context, Result};
@@ -152,6 +152,27 @@ impl Modules {
                     eprintln!("warning: {}: hinge not created", m.group);
                 }
             }
+            for s in &m.plan.sliders {
+                let other = s.other.map(|o| m.bodies[o]);
+                if world
+                    .add_slider(m.bodies[s.body], other, s.origin, s.axis, s.limits)
+                    .is_none()
+                {
+                    eprintln!("warning: {}: slider not created", m.group);
+                }
+            }
+            for s in &m.plan.springs {
+                let other = s.other.map(|o| m.bodies[o]);
+                world.add_spring(
+                    m.bodies[s.body],
+                    other,
+                    s.point,
+                    s.other_point,
+                    s.length,
+                    s.constant,
+                    s.damping,
+                );
+            }
             m.wake.clone_from(&m.wake_template);
             if let Some(w) = m.wake.as_mut() {
                 w.switch_on();
@@ -167,19 +188,26 @@ impl Modules {
             };
             if w.frame(ball, target) == Some(Edge::Enter) {
                 w.switch_off();
-                for &id in &m.bodies {
-                    world.wake(id);
+                for &i in &m.plan.wake_bodies {
+                    if let Some(&id) = m.bodies.get(i) {
+                        world.wake(id);
+                    }
                 }
             }
         }
     }
 
-    /// Development aid: wakes every active module's bodies.
+    /// Development aid: wakes every active module as its proximity test
+    /// would (its wake-up targets; modules without a test are awake anyway).
     pub fn wake_all(&mut self, world: &mut World) {
         for m in &mut self.items {
-            m.wake = None;
-            for &id in &m.bodies {
-                world.wake(id);
+            if m.wake.take().is_none() {
+                continue;
+            }
+            for &i in &m.plan.wake_bodies {
+                if let Some(&id) = m.bodies.get(i) {
+                    world.wake(id);
+                }
             }
         }
     }

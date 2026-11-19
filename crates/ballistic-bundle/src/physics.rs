@@ -27,6 +27,8 @@ pub struct ModuleSetup {
     pub group: String,
     pub bodies: Vec<ModuleBody>,
     pub hinges: Vec<HingeParams>,
+    pub sliders: Vec<SliderParams>,
+    pub springs: Vec<SpringParams>,
     /// Proximity test that wakes the frozen bodies (`TT Scaleable Proximity`
     /// into `Physics WakeUp`), if the script has one.
     pub wake: Option<WakeParams>,
@@ -70,6 +72,41 @@ pub struct HingeParams {
     pub limits: Option<[f32; 2]>,
 }
 
+/// `Set Physics Slider`: `body` moves relative to `other` only along the axis
+/// from `axis_from` to `axis_to` (frame positions), without turning.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SliderParams {
+    pub body: String,
+    /// `None` is the world.
+    pub other: Option<String>,
+    pub axis_from: String,
+    pub axis_to: String,
+    /// Displacement limits along the axis (from where it started), if enabled.
+    pub limits: Option<[f32; 2]>,
+}
+
+/// `Set Physics Spring` between a point on `body` and a point on `other`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SpringParams {
+    pub body: String,
+    /// `None` is the world.
+    pub other: Option<String>,
+    /// Where it's attached to `body`: a position in a frame (world if none).
+    pub anchor: SpringAnchor,
+    /// Where it's attached to `other`.
+    pub other_anchor: SpringAnchor,
+    pub length: f32,
+    pub constant: f32,
+    pub linear_damping: f32,
+    pub global_damping: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SpringAnchor {
+    pub frame: Option<String>,
+    pub position: [f32; 3],
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WakeParams {
     /// The object the ball's distance is measured to.
@@ -79,6 +116,8 @@ pub struct WakeParams {
     pub frame_delay: [i32; 2],
     /// Only X and Z count.
     pub xz: bool,
+    /// The bodies `Physics WakeUp` is applied to.
+    pub bodies: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

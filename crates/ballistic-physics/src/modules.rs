@@ -6,7 +6,10 @@
 //! mass centre is the object's origin plus *Shift Mass Center*, in the object's
 //! frame (Physicalize puts that translation in the object template; research
 //! findings 13). Hinges pivot at their joint frame, about its Z axis;
-//! `FixCube` is the world. Fixed bodies are static geometry.
+//! `FixCube` is the world. Sliders run along the line from their first axis
+//! frame to their second. Springs join a point on the body (position in the
+//! first referential) and one on the other body (in the second). Fixed bodies
+//! are static geometry.
 
 use std::sync::Arc;
 
@@ -38,15 +41,42 @@ pub struct PlannedHinge {
     pub axis: Vec3,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlannedSlider {
+    pub body: usize,
+    pub other: Option<usize>,
+    pub origin: Vec3,
+    pub axis: Vec3,
+    pub limits: Option<(f32, f32)>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PlannedSpring {
+    pub body: usize,
+    pub other: Option<usize>,
+    /// World attachment points on `body` and on `other`.
+    pub point: Vec3,
+    pub other_point: Vec3,
+    pub length: f32,
+    pub constant: f32,
+    /// (linear, global) damping.
+    pub damping: (f32, f32),
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct ModulePlan {
     pub bodies: Vec<PlannedBody>,
     pub hinges: Vec<PlannedHinge>,
+    pub sliders: Vec<PlannedSlider>,
+    pub springs: Vec<PlannedSpring>,
     /// Static geometry: fixed bodies, or every body of a module whose other
-    /// physics (sliders, springs, forces) isn't simulated yet.
+    /// physics (ball joints, forces) isn't simulated yet.
     pub fixed: Vec<FixedPart>,
     /// Where the wake-up proximity test measures to.
     pub wake_target: Option<Vec3>,
+    /// The bodies it wakes (indices into `bodies`); the rest wake by contact
+    /// or through their joints.
+    pub wake_bodies: Vec<usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -179,14 +209,48 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
             object_from_body: pose.inverse() * m,
         });
     }
+    let index = |name: &str| body_of.iter().find(|(n, _)| n == name).map(|(_, i)| *i);
+    let other_of = |o: &Option<String>| -> Result<Option<usize>> {
+        o.as_ref()
+            .map(|o| index(o).with_context(|| format!("joint to unknown body {o}")))
+            .transpose()
+    };
     if simulate {
-        let index = |name: &str| body_of.iter().find(|(n, _)| n == name).map(|(_, i)| *i);
+        for s in &setup.sliders {
+            let Some(body) = index(&s.body) else { continue };
+            let from = world[object(&s.axis_from)?].transform_point3(Vec3::ZERO);
+            let to = world[object(&s.axis_to)?].transform_point3(Vec3::ZERO);
+            plan.sliders.push(PlannedSlider {
+                body,
+                other: other_of(&s.other)?,
+                origin: from,
+                axis: (to - from).normalize_or_zero(),
+                limits: s.limits.map(|[lo, hi]| (lo, hi)),
+            });
+        }
+        let point = |a: &bb::SpringAnchor| -> Result<Vec3> {
+            let p = Vec3::from(a.position);
+            Ok(match &a.frame {
+                Some(f) => world[object(f)?].transform_point3(p),
+                // No referential: the position is in world space.
+                None => p,
+            })
+        };
+        for s in &setup.springs {
+            let Some(body) = index(&s.body) else { continue };
+            plan.springs.push(PlannedSpring {
+                body,
+                other: other_of(&s.other)?,
+                point: point(&s.anchor)?,
+                other_point: point(&s.other_anchor)?,
+                length: s.length,
+                constant: s.constant,
+                damping: (s.linear_damping, s.global_damping),
+            });
+        }
         for h in &setup.hinges {
             let Some(body) = index(&h.body) else { continue };
-            let other = match &h.other {
-                Some(o) => Some(index(o).with_context(|| format!("hinge to unknown body {o}"))?),
-                None => None,
-            };
+            let other = other_of(&h.other)?;
             let f = world[object(&h.frame)?];
             plan.hinges.push(PlannedHinge {
                 body,
@@ -198,6 +262,7 @@ pub fn plan(setup: &bb::ModuleSetup, prefab: &bb::Scene, transform: Mat4) -> Res
     }
     if let Some(w) = &setup.wake {
         plan.wake_target = Some(world[object(&w.object)?].transform_point3(Vec3::ZERO));
+        plan.wake_bodies = w.bodies.iter().filter_map(|b| index(b)).collect();
     }
     Ok(plan)
 }

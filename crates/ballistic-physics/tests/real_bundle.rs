@@ -180,6 +180,7 @@ fn props_settle_where_they_are_placed() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines, reason = "one scenario per level")]
 fn modules_hold_together_on_every_level() {
     let Some(mut b) = bundle() else {
         eprintln!("skipping: BALLISTIC_BUNDLE not set");
@@ -204,6 +205,7 @@ fn modules_hold_together_on_every_level() {
         };
         let mut w = World::new(cfg, statics);
         let mut pivots = Vec::new();
+        let mut sliding = Vec::new();
         for setup in &physics.modules {
             let spawns = props::placeholders(&scene, &setup.group);
             if spawns.is_empty() {
@@ -229,6 +231,37 @@ fn modules_hold_together_on_every_level() {
                         w.add_body(d)
                     })
                     .collect();
+                for sl in &plan.sliders {
+                    w.add_slider(
+                        ids[sl.body],
+                        sl.other.map(|o| ids[o]),
+                        sl.origin,
+                        sl.axis,
+                        sl.limits,
+                    )
+                    .unwrap();
+                    let body = w.body(ids[sl.body]).unwrap();
+                    sliding.push((setup.group.clone(), ids[sl.body], body.position, sl.axis));
+                }
+                for sp in &plan.springs {
+                    if std::env::var_os("PROPS_DEBUG").is_some() {
+                        let body = w.body(ids[sp.body]).unwrap();
+                        eprintln!(
+                            "level {level} {}: spring {} -> {} (body at {}, asleep {})",
+                            setup.group, sp.point, sp.other_point, body.position, body.asleep
+                        );
+                    }
+                    w.add_spring(
+                        ids[sp.body],
+                        sp.other.map(|o| ids[o]),
+                        sp.point,
+                        sp.other_point,
+                        sp.length,
+                        sp.constant,
+                        sp.damping,
+                    )
+                    .unwrap();
+                }
                 for h in &plan.hinges {
                     w.add_hinge(ids[h.body], h.other.map(|o| ids[o]), h.pivot, h.axis)
                         .unwrap();
@@ -246,6 +279,22 @@ fn modules_hold_together_on_every_level() {
         }
         for _ in 0..198 {
             w.step();
+        }
+        for (group, id, start, axis) in &sliding {
+            let body = w.body(*id).unwrap();
+            assert!(body.position.is_finite(), "level {level} {group}: exploded");
+            let off = body.position - *start;
+            let across = (off - *axis * off.dot(*axis)).length();
+            assert!(
+                across < 0.2,
+                "level {level} {group}: left its slider by {across}"
+            );
+            if std::env::var_os("PROPS_DEBUG").is_some() {
+                eprintln!(
+                    "level {level} {group}: slid {:.2} along the axis",
+                    off.dot(*axis)
+                );
+            }
         }
         for (group, id, local, pivot, to_world) in &pivots {
             let body = w.body(*id).unwrap();

@@ -28,16 +28,15 @@ options so they can be calibrated later.
   the hulls' volume (uniform density). With automatic mass centre off, the
   mass centre is the object's origin plus *Shift Mass Center*, in the object's
   frame, as the original's Physicalize builds it (with it on, the hulls'
-  centroid). Modules that also use sliders, springs or forces are static
-  stand-ins for now.
+  centroid). Modules also use **sliders** and **springs** (below). Modules that
+  use ball joints or forces are static stand-ins for now.
 - **Sleeping**: a body can start asleep (the original's "Start Frozen"). It
   doesn't move, and others collide with it as if it were fixed, until it's
   woken: explicitly (the scripts' Physics WakeUp), by a hinge to a moving body,
   or by an awake body touching it.
 - **Contacts between bodies**: sphere–sphere, sphere–box, sphere–hull and
   between boxes and hulls.
-- Not yet: sliders, springs, ball joints and the scripts' forces, ball
-  transformers.
+- Not yet: ball joints and the scripts' forces, ball transformers.
 
 ## Time
 
@@ -90,6 +89,22 @@ step numbers always give bit-identical results (there's a test for it).
   (3×3 effective mass) and relative rotation across the axis is removed.
 - Rotation about the axis is free; the original's limits are off on every
   hinge in Ballance.
+
+**Sliders** keep a body's orientation relative to the other body (or the
+world) and let it move only along the axis.
+- Position correction restores the relative orientation, then moves the body
+  back onto the axis, and inside the limits if set, by inverse mass.
+- In the velocity iterations, relative rotation is removed (3×3 effective
+  mass), and so is motion across the axis at the axis origin.
+- Past a limit, motion further out of range is removed.
+
+**Springs** pull a point on one body towards a point on the other (or the
+world), with force `constant · (distance − length)` along the line between
+them. Damping is `linear_damping` times the points' relative velocity along
+that line, plus `global_damping` times their whole relative velocity. The
+forces are applied as impulses each step, with the pushes. Whether the
+original's constants are in these units (or relative to mass) is to be
+calibrated.
 
 **Collision detection.** Spheres use closest points (to triangles, boxes, hulls
 and other spheres). Boxes and triangles are convex polyhedra: the separating-axis
@@ -166,7 +181,12 @@ The joint tests check:
   fixed;
 - a chain of planks between two pivots staying connected as it sags;
 - a frozen body waiting until it's touched or woken;
-- a ball knocking over a hinged flap.
+- a ball knocking over a hinged flap;
+- a slider keeping a kicked body on its axis without turning;
+- a spring on a vertical slider oscillating at √(k/m) and, damped, settling
+  mg/k below its anchor;
+- slider limits stopping a fall;
+- a spring turning a hinged arm towards its anchor.
 
 The hull unit tests check hull construction and mass properties (parallel
 axes).
@@ -175,4 +195,5 @@ The bundle tests drop a wooden ball on Level 1's start pad and roll it, and
 place every prop of all 12 levels: after three simulated seconds nearly all
 of them rest close to their placeholders. They also place every moving
 element of all 12 levels, awake: after three seconds no simulated module has
-come apart (hinge pivots within 0.2 of their frames).
+come apart (hinge pivots within 0.2 of their frames, slider bodies within
+0.2 of their axes).

@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 3,
+  "format_version": 4,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -139,8 +139,11 @@ and useful to read). Since version 2.
         { "body": "P_Modul_25_Bridge", "other": null,
           "frame": "P_Modul_25_HingeFrame", "limits": null }
       ],
+      "sliders": [],
+      "springs": [],
       "wake": { "object": "P_Modul_25_MF", "distance": 50.0,
-        "exactness": [55.0, 100.0], "frame_delay": [10, 60], "xz": true },
+        "exactness": [55.0, 100.0], "frame_delay": [10, 60], "xz": true,
+        "bodies": ["P_Modul_25_Bridge"] },
       "unsupported": [] }
   ]
 }
@@ -161,13 +164,21 @@ and useful to read). Since version 2.
     the object's frame (bundle space).
   - `hinges`: `other: null` is the world. The pivot is the `frame` object's
     position, the axis its Z axis.
-  - `wake`: the proximity test that wakes frozen bodies.
-  - `unsupported`: other physics building blocks the script uses (sliders,
-    springs, forces), not described here yet.
+  - `sliders`: `body` moves relative to `other` only along the line from the
+    `axis_from` frame's position to the `axis_to` frame's; `limits` (if set)
+    bound the displacement from the start.
+  - `springs`: from a point on `body` (`anchor`: a position in a frame, or in
+    world space without one) to a point on `other` (`other_anchor`), with
+    rest `length`, `constant`, `linear_damping` and `global_damping`.
+  - `wake`: the proximity test that wakes frozen bodies, and which bodies
+    (`bodies`) it wakes.
+  - `unsupported`: every other physics building block the script uses (ball
+    joints, forces), not described here yet.
 
 ## Versioning rules
 
 - Any change to entry layout or to a serialised type bumps `format_version`.
 - Older bundles are never migrated; the player just re-runs the packer.
 - History: **1** first release. **2** adds `data/physics.json`. **3** adds
-  `modules` to it, and keeps every mesh in prefab scenes.
+  `modules` to it, and keeps every mesh in prefab scenes. **4** adds module
+  `sliders`, `springs` and the wake-up targets.

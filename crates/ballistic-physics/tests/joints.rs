@@ -238,3 +238,158 @@ fn ball_hits_hinged_flap_and_turns_it() {
         "pivot at {pivot}"
     );
 }
+
+#[test]
+fn slider_keeps_a_body_on_its_axis() {
+    let mut w = World::new(no_damping(), StaticMesh::default());
+    let b = w.add_body(hull_body(
+        Vec3::new(0.0, 5.0, 0.0),
+        vec![cuboid(Vec3::ONE, Vec3::ZERO)],
+        2.0,
+    ));
+    w.add_slider(b, None, Vec3::new(0.0, 5.0, 0.0), Vec3::X, None)
+        .unwrap();
+    // A sideways and upward kick and a spin; only the X part survives.
+    {
+        let body = w.body_mut(b).unwrap();
+        body.velocity = Vec3::new(3.0, 4.0, 2.0);
+        body.angular_velocity = Vec3::new(1.0, 2.0, 3.0);
+    }
+    for _ in 0..132 {
+        w.step();
+    }
+    let body = w.body(b).unwrap();
+    assert!(
+        (body.position.y - 5.0).abs() < 0.02,
+        "fell: {}",
+        body.position
+    );
+    assert!(
+        body.position.z.abs() < 0.02,
+        "left the axis: {}",
+        body.position
+    );
+    assert!(body.position.x > 3.0, "didn't slide: {}", body.position);
+    assert!(
+        body.orientation.angle_between(Quat::IDENTITY) < 0.02,
+        "turned"
+    );
+}
+
+#[test]
+fn spring_on_a_slider_oscillates_and_settles() {
+    let mut w = World::new(no_damping(), StaticMesh::default());
+    let (mass, k) = (3.0, 15.0);
+    let b = w.add_body(hull_body(
+        Vec3::ZERO,
+        vec![cuboid(Vec3::ONE, Vec3::ZERO)],
+        mass,
+    ));
+    w.add_slider(b, None, Vec3::ZERO, Vec3::Y, None).unwrap();
+    // Rest length 0 to a world point 10 above: equilibrium at 10 − m g / k = 6.
+    w.add_spring(
+        b,
+        None,
+        Vec3::ZERO,
+        Vec3::new(0.0, 10.0, 0.0),
+        0.0,
+        k,
+        (0.0, 0.0),
+    )
+    .unwrap();
+    let mut peaks = Vec::new();
+    let mut last_v = 0.0;
+    for step in 0..400 {
+        w.step();
+        let v = w.body(b).unwrap().velocity.y;
+        if last_v > 0.0 && v <= 0.0 {
+            peaks.push(step);
+        }
+        last_v = v;
+    }
+    assert!(peaks.len() >= 2, "{peaks:?}");
+    let period = (peaks[1] - peaks[0]) as f32 * STEP_DT;
+    let expected = std::f32::consts::TAU * (mass / k).sqrt();
+    assert!(
+        (period - expected).abs() < 0.05 * expected,
+        "period {period}, expected {expected}"
+    );
+
+    // With global damping it comes to rest at the equilibrium.
+    let mut w = World::new(no_damping(), StaticMesh::default());
+    let b = w.add_body(hull_body(
+        Vec3::ZERO,
+        vec![cuboid(Vec3::ONE, Vec3::ZERO)],
+        mass,
+    ));
+    w.add_slider(b, None, Vec3::ZERO, Vec3::Y, None).unwrap();
+    w.add_spring(
+        b,
+        None,
+        Vec3::ZERO,
+        Vec3::new(0.0, 10.0, 0.0),
+        0.0,
+        k,
+        (0.1, 3.0),
+    )
+    .unwrap();
+    for _ in 0..1320 {
+        w.step();
+    }
+    let y = w.body(b).unwrap().position.y;
+    let rest = 10.0 - mass * 20.0 / k;
+    assert!((y - rest).abs() < 0.05, "settled at {y}, expected {rest}");
+}
+
+#[test]
+fn slider_limits_stop_it() {
+    let mut w = World::new(no_damping(), StaticMesh::default());
+    let b = w.add_body(hull_body(
+        Vec3::ZERO,
+        vec![cuboid(Vec3::ONE, Vec3::ZERO)],
+        1.0,
+    ));
+    // Down by gravity, at most 2.
+    w.add_slider(b, None, Vec3::ZERO, Vec3::Y, Some((-2.0, 0.0)))
+        .unwrap();
+    for _ in 0..132 {
+        w.step();
+    }
+    let body = w.body(b).unwrap();
+    assert!(
+        (body.position.y + 2.0).abs() < 0.05,
+        "y = {}",
+        body.position.y
+    );
+    assert!(body.velocity.length() < 0.2, "v = {}", body.velocity);
+}
+
+#[test]
+fn spring_turns_a_hinged_arm_back() {
+    let mut w = World::new(no_damping(), StaticMesh::default());
+    // An arm hinged at the origin about Z, with a spring from its tip to a
+    // world point: it swings towards that point and settles there.
+    let arm = w.add_body(hull_body(
+        Vec3::new(2.0, 0.0, 0.0),
+        vec![cuboid(Vec3::new(2.0, 0.25, 0.25), Vec3::ZERO)],
+        1.0,
+    ));
+    w.add_hinge(arm, None, Vec3::ZERO, Vec3::Z).unwrap();
+    let target = Vec3::new(0.0, 4.0, 0.0);
+    w.add_spring(
+        arm,
+        None,
+        Vec3::new(4.0, 0.0, 0.0),
+        target,
+        0.0,
+        200.0,
+        (0.0, 10.0),
+    )
+    .unwrap();
+    for _ in 0..1320 {
+        w.step();
+    }
+    let b = w.body(arm).unwrap();
+    let tip = b.position + b.orientation * Vec3::new(2.0, 0.0, 0.0);
+    assert!(tip.distance(target) < 0.6, "tip at {tip}");
+}

@@ -14,19 +14,16 @@ use ckscript::extract::{Extractor, NamedValue, NodeParams, Resolved, Value};
 use crate::install::Install;
 
 /// Building blocks a module script may use, and whether they're extracted.
-const SUPPORTED: [&str; 4] = [
+const SUPPORTED: [&str; 6] = [
     "Physicalize",
     "Physics Hinge",
+    "Set Physics Slider",
+    "Set Physics Spring",
     "Physics WakeUp",
     "TT Scaleable Proximity",
 ];
-const OTHER_PHYSICS: [&str; 5] = [
-    "Set Physics Slider",
-    "Set Physics Spring",
-    "Set Physics Ball Joint",
-    "Physics Force",
-    "Physics Impulse",
-];
+/// Every other `physics_RT` building block counts as unsupported.
+const PHYSICS_DLL: &str = "physics_RT";
 
 pub fn extract(install: &Install) -> Result<Vec<bb::ModuleSetup>> {
     let mut out = Vec::new();
@@ -45,7 +42,7 @@ pub fn extract(install: &Install) -> Result<Vec<bb::ModuleSetup>> {
             Scripts::decode(&file).with_context(|| format!("decoding scripts of {key}"))?;
         let ex = Extractor::new(&file, &scripts);
         let nodes = ex.nodes(&|b| {
-            SUPPORTED.contains(&b.name.as_str()) || OTHER_PHYSICS.contains(&b.name.as_str())
+            SUPPORTED.contains(&b.name.as_str()) || b.dll.eq_ignore_ascii_case(PHYSICS_DLL)
         });
         let group = file
             .objects
@@ -66,7 +63,14 @@ pub fn extract(install: &Install) -> Result<Vec<bb::ModuleSetup>> {
 fn setup(group: String, nodes: &[NodeParams]) -> Result<bb::ModuleSetup> {
     let mut bodies = Vec::new();
     let mut hinges = Vec::new();
+    let mut sliders = Vec::new();
+    let mut springs = Vec::new();
     let mut wake = None;
+    let wake_bodies: Vec<String> = nodes
+        .iter()
+        .filter(|n| n.building_block == "Physics WakeUp")
+        .filter_map(target)
+        .collect();
     let mut unsupported = BTreeSet::new();
     let has_wakeup = nodes.iter().any(|n| n.building_block == "Physics WakeUp");
     for n in nodes {
@@ -84,7 +88,21 @@ fn setup(group: String, nodes: &[NodeParams]) -> Result<bb::ModuleSetup> {
                     unsupported.insert("Physics Hinge (computed objects)".to_owned());
                 }
             },
-            "TT Scaleable Proximity" if has_wakeup && wake.is_none() => wake = proximity(n),
+            "Set Physics Slider" => match slider(n) {
+                Some(s) => sliders.push(s),
+                None => {
+                    unsupported.insert("Set Physics Slider (computed objects)".to_owned());
+                }
+            },
+            "Set Physics Spring" => match spring(n) {
+                Some(s) => springs.push(s),
+                None => {
+                    unsupported.insert("Set Physics Spring (computed objects)".to_owned());
+                }
+            },
+            "TT Scaleable Proximity" if has_wakeup && wake.is_none() => {
+                wake = proximity(n, wake_bodies.clone());
+            }
             "Physics WakeUp" | "TT Scaleable Proximity" => {}
             other => {
                 unsupported.insert(other.to_owned());
@@ -95,6 +113,8 @@ fn setup(group: String, nodes: &[NodeParams]) -> Result<bb::ModuleSetup> {
         group,
         bodies,
         hinges,
+        sliders,
+        springs,
         wake,
         unsupported: unsupported.into_iter().collect(),
     })
@@ -189,15 +209,67 @@ fn body(n: &NodeParams) -> Result<Option<bb::ModuleBody>> {
     }))
 }
 
-/// A hinge with constant objects; a computed Object2 is the `FixCube` world
-/// anchor (`variable "FixCube Object"`).
+/// Object2 of a joint: a computed `FixCube` (`variable "FixCube Object"`) is
+/// the world. `None` if it's computed some other way.
+#[allow(
+    clippy::option_option,
+    reason = "outer: decodable; inner: None is the world"
+)]
+fn other_body(n: &NodeParams) -> Option<Option<String>> {
+    let p = input(n, "Object2")?;
+    match &p.value {
+        Resolved::Dynamic { from, .. } if from.contains("FixCube") => Some(None),
+        _ => Some(Some(text(Some(p))?)),
+    }
+}
+
+/// A vector input, mirrored into bundle space.
+fn vector(v: Option<&NamedValue>) -> Option<[f32; 3]> {
+    match v.and_then(constant)? {
+        Value::Vector(v) if v.len() == 3 => Some([v[0] as f32, v[1] as f32, 0.0 - v[2] as f32]),
+        _ => None,
+    }
+}
+
+fn slider(n: &NodeParams) -> Option<bb::SliderParams> {
+    let limited = boolean(input(n, "Limitations (meter)")).unwrap_or(false);
+    Some(bb::SliderParams {
+        body: target(n)?,
+        other: other_body(n)?,
+        axis_from: text(input(n, "Axis first Point"))?,
+        axis_to: text(input(n, "Axis second Point"))?,
+        limits: limited
+            .then(|| {
+                Some([
+                    float(input(n, "Lower Limit"))?,
+                    float(input(n, "Upper Limit"))?,
+                ])
+            })
+            .flatten(),
+    })
+}
+
+fn spring(n: &NodeParams) -> Option<bb::SpringParams> {
+    let anchor = |k: u8| bb::SpringAnchor {
+        frame: text(input(n, &format!("Referential {k}"))),
+        position: vector(input(n, &format!("Position {k}"))).unwrap_or([0.0; 3]),
+    };
+    Some(bb::SpringParams {
+        body: target(n)?,
+        other: other_body(n)?,
+        anchor: anchor(1),
+        other_anchor: anchor(2),
+        length: float(input(n, "Length"))?,
+        constant: float(input(n, "Constant"))?,
+        linear_damping: float(input(n, "Linear Dampening"))?,
+        global_damping: float(input(n, "Global Dampening"))?,
+    })
+}
+
+/// A hinge with constant objects (Object2 `FixCube` = the world).
 fn hinge(n: &NodeParams) -> Option<bb::HingeParams> {
     let body = target(n)?;
-    let other_param = input(n, "Object2")?;
-    let other = match &other_param.value {
-        Resolved::Dynamic { from, .. } if from.contains("FixCube") => None,
-        _ => Some(text(Some(other_param))?),
-    };
+    let other = other_body(n)?;
     let frame = text(input(n, "Joint Referential"))?;
     let limited = boolean(input(n, "Limitations (-180 to 180 degree)")).unwrap_or(false);
     let limits = limited
@@ -216,7 +288,7 @@ fn hinge(n: &NodeParams) -> Option<bb::HingeParams> {
     })
 }
 
-fn proximity(n: &NodeParams) -> Option<bb::WakeParams> {
+fn proximity(n: &NodeParams, bodies: Vec<String>) -> Option<bb::WakeParams> {
     let axes = int(local(n, "Check Axis:")).unwrap_or(7);
     Some(bb::WakeParams {
         object: text(input(n, "ObjectB"))?,
@@ -231,5 +303,6 @@ fn proximity(n: &NodeParams) -> Option<bb::WakeParams> {
         ],
         // Bit 1 is Y.
         xz: axes & 2 == 0,
+        bodies,
     })
 }

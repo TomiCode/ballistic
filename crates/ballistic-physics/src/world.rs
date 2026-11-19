@@ -1,5 +1,5 @@
 //! The simulation world: dynamic bodies (spheres, boxes, convex hulls) against
-//! static triangle geometry and each other, with hinge joints.
+//! static triangle geometry and each other, with hinges, sliders and springs.
 
 use glam::{Mat3, Quat, Vec3};
 
@@ -130,7 +130,11 @@ struct Push {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct JointId(u32);
+pub enum JointId {
+    Hinge(u32),
+    Slider(u32),
+    Spring(u32),
+}
 
 /// Joint position-correction sweeps per contact pass.
 const JOINT_SWEEPS: u32 = 4;
@@ -147,6 +151,37 @@ struct Hinge {
     /// Axis in `a`'s frame, and in `b`'s frame (world space without `b`).
     axis_a: Vec3,
     axis_b: Vec3,
+}
+
+/// A slider (prismatic joint): `a` keeps its orientation relative to `b` (or
+/// the world) and moves only along the axis; optionally within limits.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Slider {
+    a: usize,
+    b: Option<usize>,
+    /// The axis origin in `a`'s frame, and in `b`'s frame (world without `b`).
+    anchor_a: Vec3,
+    anchor_b: Vec3,
+    /// Axis in `b`'s frame (world without `b`).
+    axis_b: Vec3,
+    /// `a`'s orientation relative to `b`'s (to the world without `b`).
+    relative: Quat,
+    limits: Option<(f32, f32)>,
+}
+
+/// A damped spring between a point on `a` and a point on `b` (or the world).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Spring {
+    a: usize,
+    b: Option<usize>,
+    anchor_a: Vec3,
+    anchor_b: Vec3,
+    length: f32,
+    constant: f32,
+    /// Damping of the anchors' relative velocity along the spring.
+    linear_damping: f32,
+    /// Damping of the anchors' whole relative velocity.
+    global_damping: f32,
 }
 
 /// Contacts of body `a` with static geometry (`b` = `None`) or with body `b`.
@@ -168,6 +203,8 @@ pub struct World {
     bodies: Vec<Option<Body>>,
     pushes: Vec<Option<Push>>,
     joints: Vec<Option<Hinge>>,
+    sliders: Vec<Option<Slider>>,
+    springs: Vec<Option<Spring>>,
     /// Simulated seconds not yet stepped.
     accumulator: f32,
     /// Steps taken since creation.
@@ -182,6 +219,8 @@ impl World {
             bodies: Vec::new(),
             pushes: Vec::new(),
             joints: Vec::new(),
+            sliders: Vec::new(),
+            springs: Vec::new(),
             accumulator: 0.0,
             steps: 0,
         }
@@ -235,6 +274,84 @@ impl World {
                 *j = None;
             }
         }
+        for j in &mut self.sliders {
+            if j.is_some_and(|j| j.a == i || j.b == Some(i)) {
+                *j = None;
+            }
+        }
+        for j in &mut self.springs {
+            if j.is_some_and(|j| j.a == i || j.b == Some(i)) {
+                *j = None;
+            }
+        }
+    }
+
+    /// Point (world) and orientation of a body, or the world origin.
+    fn frame_of(&self, i: Option<usize>) -> Option<(Vec3, Quat)> {
+        match i {
+            Some(i) => self
+                .bodies
+                .get(i)?
+                .as_ref()
+                .map(|b| (b.position, b.orientation)),
+            None => Some((Vec3::ZERO, Quat::IDENTITY)),
+        }
+    }
+
+    /// Adds a slider: `a` moves relative to `b` (or the world) only along the
+    /// world axis through `origin`, keeping its current relative orientation.
+    /// `limits` bound the displacement along the axis from where it is now.
+    pub fn add_slider(
+        &mut self,
+        a: BodyId,
+        b: Option<BodyId>,
+        origin: Vec3,
+        axis: Vec3,
+        limits: Option<(f32, f32)>,
+    ) -> Option<JointId> {
+        let axis = axis.try_normalize()?;
+        let (pa, qa) = self.frame_of(Some(a.0 as usize))?;
+        let bi = b.map(|b| b.0 as usize);
+        let (pb, qb) = self.frame_of(bi)?;
+        let slider = Slider {
+            a: a.0 as usize,
+            b: bi,
+            anchor_a: qa.inverse() * (origin - pa),
+            anchor_b: qb.inverse() * (origin - pb),
+            axis_b: qb.inverse() * axis,
+            relative: qb.inverse() * qa,
+            limits,
+        };
+        Some(JointId::Slider(insert(&mut self.sliders, slider)))
+    }
+
+    /// Adds a spring between world points on `a` and on `b` (or the world),
+    /// attached where they are now.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_spring(
+        &mut self,
+        a: BodyId,
+        b: Option<BodyId>,
+        point_a: Vec3,
+        point_b: Vec3,
+        length: f32,
+        constant: f32,
+        damping: (f32, f32),
+    ) -> Option<JointId> {
+        let (pa, qa) = self.frame_of(Some(a.0 as usize))?;
+        let bi = b.map(|b| b.0 as usize);
+        let (pb, qb) = self.frame_of(bi)?;
+        let spring = Spring {
+            a: a.0 as usize,
+            b: bi,
+            anchor_a: qa.inverse() * (point_a - pa),
+            anchor_b: qb.inverse() * (point_b - pb),
+            length,
+            constant,
+            linear_damping: damping.0,
+            global_damping: damping.1,
+        };
+        Some(JointId::Spring(insert(&mut self.springs, spring)))
     }
 
     /// Wakes a sleeping body (the original's `Physics WakeUp`).
@@ -272,17 +389,14 @@ impl World {
             axis_a,
             axis_b,
         };
-        if let Some(slot) = self.joints.iter().position(Option::is_none) {
-            self.joints[slot] = Some(hinge);
-            return Some(JointId(slot as u32));
-        }
-        self.joints.push(Some(hinge));
-        Some(JointId(self.joints.len() as u32 - 1))
+        Some(JointId::Hinge(insert(&mut self.joints, hinge)))
     }
 
     pub fn remove_joint(&mut self, id: JointId) {
-        if let Some(j) = self.joints.get_mut(id.0 as usize) {
-            *j = None;
+        match id {
+            JointId::Hinge(i) => remove(&mut self.joints, i),
+            JointId::Slider(i) => remove(&mut self.sliders, i),
+            JointId::Spring(i) => remove(&mut self.springs, i),
         }
     }
 
@@ -367,12 +481,13 @@ impl World {
         let dt = STEP_DT;
         let cfg = self.config;
 
-        // 1. Pushes (per-step impulses, no Δt factor).
+        // 1. Pushes (per-step impulses, no Δt factor), and springs.
         for p in self.pushes.iter().flatten() {
             if let Some(Some(b)) = self.bodies.get_mut(p.body.0 as usize) {
                 b.velocity += p.impulse * b.inv_mass();
             }
         }
+        self.apply_springs(dt);
 
         for b in self.bodies.iter_mut().flatten() {
             b.prev_position = b.position;
@@ -397,7 +512,8 @@ impl World {
         }
 
         // 5. Contacts and joints: detect, push apart, solve velocities; repeat.
-        let has_joints = self.joints.iter().any(Option::is_some);
+        let has_joints =
+            self.joints.iter().any(Option::is_some) || self.sliders.iter().any(Option::is_some);
         for _ in 0..cfg.contact.iterations {
             let manifolds = self.detect();
             if manifolds.is_empty() && !has_joints {
@@ -414,6 +530,7 @@ impl World {
             // Chains (plank bridges) need several sweeps to close up.
             for _ in 0..JOINT_SWEEPS {
                 self.project_joints();
+                self.project_sliders();
             }
             self.project(&manifolds);
             self.solve_velocities(&manifolds);
@@ -429,12 +546,27 @@ impl World {
                 .is_some_and(|b| !b.asleep && b.mass > 0.0)
         };
         let mut wake = Vec::new();
-        let pairs = manifolds.iter().filter_map(|m| Some((m.a, m.b?))).chain(
-            self.joints
-                .iter()
-                .flatten()
-                .filter_map(|j| Some((j.a, j.b?))),
-        );
+        let pairs = manifolds
+            .iter()
+            .filter_map(|m| Some((m.a, m.b?)))
+            .chain(
+                self.joints
+                    .iter()
+                    .flatten()
+                    .filter_map(|j| Some((j.a, j.b?))),
+            )
+            .chain(
+                self.sliders
+                    .iter()
+                    .flatten()
+                    .filter_map(|j| Some((j.a, j.b?))),
+            )
+            .chain(
+                self.springs
+                    .iter()
+                    .flatten()
+                    .filter_map(|j| Some((j.a, j.b?))),
+            );
         for (a, b) in pairs {
             match (awake(&self.bodies, a), awake(&self.bodies, b)) {
                 (true, false) => wake.push(b),
@@ -445,6 +577,105 @@ impl World {
         for i in wake {
             if let Some(b) = self.bodies[i].as_mut() {
                 b.asleep = false;
+            }
+        }
+    }
+
+    /// Spring forces, as impulses over `dt`, at the anchors.
+    fn apply_springs(&mut self, dt: f32) {
+        let mut deltas = Vec::new();
+        for s in self.springs.iter().flatten() {
+            let Some(a) = self.bodies[s.a].as_ref() else {
+                continue;
+            };
+            let b = s.b.and_then(|b| self.bodies[b].as_ref());
+            let pa = a.position + a.orientation * s.anchor_a;
+            let pb = b.map_or(s.anchor_b, |b| b.position + b.orientation * s.anchor_b);
+            let (ra, rb) = (pa - a.position, b.map_or(Vec3::ZERO, |b| pb - b.position));
+            let va = a.velocity + a.angular_velocity.cross(ra);
+            let vb = b.map_or(Vec3::ZERO, |b| b.velocity + b.angular_velocity.cross(rb));
+            let rel = vb - va;
+            let d = pb - pa;
+            let dist = d.length();
+            let n = if dist > 1e-6 { d / dist } else { Vec3::ZERO };
+            // Pulls a towards b when stretched, and damps their relative motion.
+            let force = n * (s.constant * (dist - s.length))
+                + n * (s.linear_damping * rel.dot(n))
+                + rel * s.global_damping;
+            let j = force * dt;
+            deltas.push((s.a, j * a.inv_mass(), a.inv_inertia_mul(ra.cross(j))));
+            if let (Some(bi), Some(b)) = (s.b, b) {
+                deltas.push((bi, -j * b.inv_mass(), -b.inv_inertia_mul(rb.cross(j))));
+            }
+        }
+        for (i, dv, dw) in deltas {
+            if let Some(b) = self.bodies[i].as_mut() {
+                b.velocity += dv;
+                b.angular_velocity += dw;
+            }
+        }
+    }
+
+    /// World axis origin on `a` and on `b`, the world axis, and the target
+    /// orientation of `a`.
+    fn slider_frames(&self, s: &Slider) -> Option<(Vec3, Vec3, Vec3, Quat)> {
+        let a = self.bodies[s.a].as_ref()?;
+        let (pb0, qb) = self.frame_of(s.b)?;
+        Some((
+            a.position + a.orientation * s.anchor_a,
+            pb0 + qb * s.anchor_b,
+            qb * s.axis_b,
+            qb * s.relative,
+        ))
+    }
+
+    /// Position projection of sliders: restore the relative orientation, then
+    /// move back onto the axis (and inside the limits), by inverse mass.
+    fn project_sliders(&mut self) {
+        let k = self.config.contact.penetration_correction;
+        for si in 0..self.sliders.len() {
+            let Some(s) = self.sliders[si] else { continue };
+            let ima = self.bodies[s.a].as_ref().map_or(0.0, Body::inv_mass);
+            let imb =
+                s.b.and_then(|b| self.bodies[b].as_ref())
+                    .map_or(0.0, Body::inv_mass);
+            let total = ima + imb;
+            if total <= 0.0 {
+                continue;
+            }
+            let (wa, wb) = (ima / total, imb / total);
+            let Some((_, _, _, target)) = self.slider_frames(&s) else {
+                continue;
+            };
+            let Some(qa) = self.bodies[s.a].as_ref().map(|a| a.orientation) else {
+                continue;
+            };
+            let q = (target * qa.inverse()).normalize();
+            if let Some(a) = self.bodies[s.a].as_mut() {
+                a.orientation = (Quat::IDENTITY.slerp(q, wa * k) * a.orientation).normalize();
+            }
+            if let Some(b) = s.b.and_then(|b| self.bodies[b].as_mut()) {
+                b.orientation =
+                    (Quat::IDENTITY.slerp(q.inverse(), wb * k) * b.orientation).normalize();
+            }
+            let Some((pa, pb, x, _)) = self.slider_frames(&s) else {
+                continue;
+            };
+            let d = pa - pb;
+            let along = d.dot(x);
+            let mut err = d - x * along;
+            if let Some((lo, hi)) = s.limits {
+                if along < lo {
+                    err += x * (along - lo);
+                } else if along > hi {
+                    err += x * (along - hi);
+                }
+            }
+            if let Some(a) = self.bodies[s.a].as_mut() {
+                a.position -= err * (k * wa);
+            }
+            if let Some(b) = s.b.and_then(|b| self.bodies[b].as_mut()) {
+                b.position += err * (k * wb);
             }
         }
     }
@@ -622,6 +853,22 @@ impl World {
             t: [Vec3; 2],
             kt: [f32; 2],
         }
+        /// A slider: the axis origin on `a` as the constraint point.
+        struct SliderRow {
+            a: usize,
+            b: Option<usize>,
+            ra: Vec3,
+            rb: Vec3,
+            /// Inverse of the 3×3 effective mass of the relative rotation.
+            k_rot_inv: Mat3,
+            /// Directions across the axis and their effective masses.
+            t: [Vec3; 2],
+            kt: [f32; 2],
+            axis: Vec3,
+            kx: f32,
+            /// -1 below the lower limit, +1 above the upper, else 0.
+            limit: f32,
+        }
         struct Row {
             m: usize,
             ra: Vec3,
@@ -728,20 +975,86 @@ impl World {
                 kt,
             });
         }
-        let apply_joint = |vel: &mut [(Vec3, Vec3)], r: &JointRow, linear: Vec3, angular: Vec3| {
-            if let Some(a) = get(r.a) {
-                vel[r.a].0 += linear * a.inv_mass();
-                vel[r.a].1 += a.inv_inertia_mul(r.ra.cross(linear) + angular);
+        let mut srows = Vec::new();
+        for s in self.sliders.iter().flatten() {
+            let Some((pa, pb, x, _)) = self.slider_frames(s) else {
+                continue;
+            };
+            let Some(a) = get(s.a) else { continue };
+            let b = s.b.and_then(get);
+            let ra = pa - a.position;
+            let rb = b.map_or(Vec3::ZERO, |b| pa - b.position);
+            let k_rot = a.inv_inertia_world() + b.map_or(Mat3::ZERO, Body::inv_inertia_world);
+            let k_rot_inv = if k_rot.determinant().abs() > 1e-12 {
+                k_rot.inverse()
+            } else {
+                Mat3::ZERO
+            };
+            let (t1, t2) = x.any_orthonormal_pair();
+            let kt = [t1, t2].map(|t| eff_mass(Some(s.a), ra, t) + eff_mass(s.b, rb, t));
+            let along = (pa - pb).dot(x);
+            let limit = match s.limits {
+                Some((lo, _)) if along < lo => -1.0,
+                Some((_, hi)) if along > hi => 1.0,
+                _ => 0.0,
+            };
+            srows.push(SliderRow {
+                a: s.a,
+                b: s.b,
+                ra,
+                rb,
+                k_rot_inv,
+                t: [t1, t2],
+                kt,
+                axis: x,
+                kx: eff_mass(Some(s.a), ra, x) + eff_mass(s.b, rb, x),
+                limit,
+            });
+        }
+        let apply_link = |vel: &mut [(Vec3, Vec3)],
+                          (ai, bi, ra, rb): (usize, Option<usize>, Vec3, Vec3),
+                          linear: Vec3,
+                          angular: Vec3| {
+            if let Some(a) = get(ai) {
+                vel[ai].0 += linear * a.inv_mass();
+                vel[ai].1 += a.inv_inertia_mul(ra.cross(linear) + angular);
             }
-            if let Some(bi) = r.b
+            if let Some(bi) = bi
                 && let Some(b) = get(bi)
             {
                 vel[bi].0 -= linear * b.inv_mass();
-                vel[bi].1 -= b.inv_inertia_mul(r.rb.cross(linear) + angular);
+                vel[bi].1 -= b.inv_inertia_mul(rb.cross(linear) + angular);
             }
+        };
+        let apply_joint = |vel: &mut [(Vec3, Vec3)], r: &JointRow, linear: Vec3, angular: Vec3| {
+            apply_link(vel, (r.a, r.b, r.ra, r.rb), linear, angular);
         };
 
         for _ in 0..cfg.velocity_iterations.max(1) {
+            for r in &srows {
+                let link = (r.a, r.b, r.ra, r.rb);
+                // No relative rotation.
+                let dw = vel[r.a].1 - r.b.map_or(Vec3::ZERO, |b| vel[b].1);
+                apply_link(&mut vel, link, Vec3::ZERO, r.k_rot_inv * -dw);
+                // No motion across the axis.
+                for (t, kt) in r.t.iter().zip(r.kt) {
+                    if kt <= 0.0 {
+                        continue;
+                    }
+                    let dv =
+                        point_velocity(&vel, Some(r.a), r.ra) - point_velocity(&vel, r.b, r.rb);
+                    apply_link(&mut vel, link, *t * (-dv.dot(*t) / kt), Vec3::ZERO);
+                }
+                // Past a limit: no further motion out of range.
+                if r.limit != 0.0 && r.kx > 0.0 {
+                    let dv =
+                        point_velocity(&vel, Some(r.a), r.ra) - point_velocity(&vel, r.b, r.rb);
+                    let vx = dv.dot(r.axis);
+                    if vx * r.limit > 0.0 {
+                        apply_link(&mut vel, link, r.axis * (-vx / r.kx), Vec3::ZERO);
+                    }
+                }
+            }
             for r in &jrows {
                 // Pivot: equal point velocities.
                 let dv = point_velocity(&vel, Some(r.a), r.ra) - point_velocity(&vel, r.b, r.rb);
@@ -953,5 +1266,21 @@ fn body_body(a: &Body, b: &Body) -> Vec<Contact> {
                 })
                 .collect()
         }
+    }
+}
+
+/// Stores a joint in the first free slot; returns its index.
+fn insert<T>(slots: &mut Vec<Option<T>>, value: T) -> u32 {
+    if let Some(i) = slots.iter().position(Option::is_none) {
+        slots[i] = Some(value);
+        return i as u32;
+    }
+    slots.push(Some(value));
+    slots.len() as u32 - 1
+}
+
+fn remove<T>(slots: &mut [Option<T>], i: u32) {
+    if let Some(s) = slots.get_mut(i as usize) {
+        *s = None;
     }
 }
