@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ckfile", "tools/ckinspect"]
+members = ["crates/ckfile", "crates/ckscene", "tools/ckinspect"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,6 +11,8 @@ authors = ["Tomasz Król <tomicode@gmail.com>"]
 
 [workspace.dependencies]
 ckfile = { path = "crates/ckfile" }
+ckscene = { path = "crates/ckscene" }
+image = { version = "0.25", default-features = false, features = ["bmp", "tga", "png"] }
 flate2 = "1"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
@@ -27,3 +29,4 @@ module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 cast_possible_truncation = "allow"
 must_use_candidate = "allow"
+many_single_char_names = "allow"

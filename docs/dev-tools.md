@@ -5,6 +5,7 @@
 | Path | What |
 |---|---|
 | `crates/ckfile` | Reader for Virtools composition files (`.nmo` / `.cmo`, file version 8): container, object table, `StateChunk` sections and sub-chunks. Used by the asset packer. Never used by the game at runtime. |
+| `crates/ckscene` | Decoders for scene classes on top of `ckfile`: `Mesh`, `Material`, `Texture`, `Entity3d` (3D objects, lights, cameras), `Group` |
 | `tools/ckinspect` | CLI for looking inside those files while reverse-engineering |
 
 ## Building
@@ -22,10 +23,18 @@ ckinspect chunk <file> <index|name> [--max-words N]   # annotated word dump of o
 ckinspect json <file>                         # everything as JSON
 ckinspect scan <dir>                          # parse every .nmo/.cmo, report failures
 ckinspect identifiers <dir> [--class Texture] # section identifier statistics per class
+ckinspect scene-check <dir>                   # decode every scene object, report failures
+ckinspect scene <file> [--class Material]     # decoded scene objects as JSON
+ckinspect render <file> --out x.png [--textures <install>/Textures]
+          [--azimuth 35 --elevation 35 --size 2048 --include-hidden]
 ```
 
 `chunk` prints each identifier section as hex words with a best-guess reading
 next to them (small ints, floats, ASCII).
+
+`render` is a small software rasteriser for checking decoders by eye. It draws an
+orthographic view of all visible geometry with textures. The PNG it writes
+contains game imagery, so save it outside the repository.
 
 ## Tests against your own install
 

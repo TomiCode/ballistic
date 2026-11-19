@@ -1,5 +1,7 @@
 //! `ckinspect`: developer tool for looking inside Virtools `.nmo` / `.cmo` files.
 
+mod render;
+
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -47,6 +49,33 @@ enum Command {
         #[arg(long)]
         class: Option<String>,
     },
+    /// Decode every mesh/material/texture/entity/group under a directory.
+    SceneCheck { dir: PathBuf },
+    /// Print decoded scene objects of one file as JSON.
+    Scene {
+        file: PathBuf,
+        #[arg(long)]
+        class: Option<String>,
+    },
+    /// Software-render a file's visible geometry to PNG (dev-only, output is
+    /// derived game data: keep it out of the repo).
+    Render {
+        file: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+        /// Directory holding the texture images (e.g. `<install>/Textures`).
+        #[arg(long)]
+        textures: Option<PathBuf>,
+        #[arg(long, default_value_t = 0.0)]
+        azimuth: f32,
+        #[arg(long, default_value_t = 90.0)]
+        elevation: f32,
+        #[arg(long, default_value_t = 2048)]
+        size: u32,
+        /// Also draw objects saved as hidden.
+        #[arg(long)]
+        include_hidden: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -69,7 +98,73 @@ fn main() -> Result<()> {
         }
         Command::Scan { dir } => scan(&dir),
         Command::Identifiers { dir, class } => identifiers(&dir, class.as_deref()),
+        Command::SceneCheck { dir } => scene_check(&dir),
+        Command::Scene { file, class } => scene(&file, class.as_deref()),
+        Command::Render {
+            file,
+            out,
+            textures,
+            azimuth,
+            elevation,
+            size,
+            include_hidden,
+        } => render::render(
+            &open(&file)?,
+            textures.as_deref(),
+            &render::View {
+                azimuth,
+                elevation,
+                size,
+                include_hidden,
+            },
+            &out,
+        ),
     }
+}
+
+fn scene_check(dir: &Path) -> Result<()> {
+    let mut counts: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    let mut failures = 0;
+    for p in walk(dir)? {
+        let f = open(&p)?;
+        for (i, o) in f.objects.iter().enumerate() {
+            let Some(res) = ckscene::decode_object(o) else {
+                continue;
+            };
+            let e = counts.entry(o.class_id.to_string()).or_default();
+            match res {
+                Ok(_) => e.0 += 1,
+                Err(err) => {
+                    e.1 += 1;
+                    failures += 1;
+                    println!("FAIL {} #{i} {:?}: {err}", p.display(), o.name);
+                }
+            }
+        }
+    }
+    for (class, (ok, bad)) in &counts {
+        println!("{class:<14} {ok:>6} ok {bad:>4} failed");
+    }
+    if failures > 0 {
+        bail!("{failures} object(s) failed to decode");
+    }
+    Ok(())
+}
+
+fn scene(path: &Path, class: Option<&str>) -> Result<()> {
+    let f = open(path)?;
+    let filter = class.map(parse_class).transpose()?;
+    let mut out = Vec::new();
+    for (i, o) in f.objects.iter().enumerate() {
+        if filter.is_some_and(|c| c != o.class_id) {
+            continue;
+        }
+        if let Some(d) = ckscene::decode_object(o) {
+            out.push(serde_json::json!({ "index": i, "name": o.name, "value": d? }));
+        }
+    }
+    println!("{}", serde_json::to_string_pretty(&out)?);
+    Ok(())
 }
 
 fn open(path: &Path) -> Result<CkFile> {
