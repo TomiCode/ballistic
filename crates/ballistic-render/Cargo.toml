@@ -1,0 +1,23 @@
+[package]
+name = "ballistic-render"
+description = "Ballistic renderer: wgpu scene rendering for bundle scenes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+ballistic-bundle = { path = "../ballistic-bundle" }
+wgpu = "30"
+glam = { version = "0.34", features = ["bytemuck"] }
+bytemuck = { version = "1", features = ["derive"] }
+ktx2 = "0.5"
+texpresso = "2"
+thiserror.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+pollster = "1"

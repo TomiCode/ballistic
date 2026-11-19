@@ -1,0 +1,218 @@
+//! `ballistic-viewer`: fly around the scenes of a Ballistic bundle.
+
+mod window;
+
+use std::path::PathBuf;
+
+use anyhow::{Context, Result, bail};
+use ballistic_bundle::BundleReader;
+use ballistic_render::{Camera, CullMode, Gpu, RenderOptions, RenderTarget, SceneRenderer};
+use clap::{Parser, ValueEnum};
+use glam::Vec3;
+
+#[derive(Parser)]
+#[command(version, about)]
+#[allow(clippy::struct_excessive_bools)] // independent CLI flags
+pub struct Args {
+    /// Bundle built by ballistic-pack.
+    #[arg(default_value = "ballance.bpk")]
+    bundle: PathBuf,
+    /// Scene key to open (see --list).
+    #[arg(long, default_value = "level/level_01")]
+    scene: String,
+    /// List the bundle's scenes and exit.
+    #[arg(long)]
+    list: bool,
+    /// Render one frame off-screen to this PNG and exit (no window).
+    #[arg(long)]
+    screenshot: Option<PathBuf>,
+    /// Off-screen image size, `WIDTHxHEIGHT`.
+    #[arg(long, default_value = "1600x900")]
+    size: String,
+    /// Initial camera: `x,y,z,yaw_deg,pitch_deg`.
+    #[arg(long, allow_hyphen_values = true)]
+    camera: Option<String>,
+    /// Also draw objects that the level hides at load time.
+    #[arg(long)]
+    show_hidden: bool,
+    /// Face culling (debugging).
+    #[arg(long, value_enum, default_value_t = CullArg::Back)]
+    cull: CullArg,
+    /// Start in borderless fullscreen.
+    #[arg(long)]
+    fullscreen: bool,
+    /// Quit after this many frames and print the average frame rate (testing).
+    #[arg(long)]
+    exit_after: Option<u32>,
+    /// Start with vsync off.
+    #[arg(long)]
+    no_vsync: bool,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum CullArg {
+    Back,
+    None,
+    Front,
+}
+
+impl From<CullArg> for CullMode {
+    fn from(c: CullArg) -> Self {
+        match c {
+            CullArg::Back => CullMode::Back,
+            CullArg::None => CullMode::None,
+            CullArg::Front => CullMode::Front,
+        }
+    }
+}
+
+fn main() -> Result<()> {
+    let args = Args::parse();
+    let bundle = BundleReader::open(&args.bundle)
+        .with_context(|| format!("opening {}", args.bundle.display()))?;
+    if args.list {
+        for s in &bundle.manifest().scenes {
+            println!(
+                "{:<28} {:>5} objects {:>5} meshes",
+                s.key, s.objects, s.meshes
+            );
+        }
+        return Ok(());
+    }
+    if let Some(path) = args.screenshot.clone() {
+        return screenshot(&args, bundle, &path);
+    }
+    window::run(args, bundle)
+}
+
+/// Loaded scene plus the state the viewer keeps per scene.
+pub struct LoadedScene {
+    pub key: String,
+    pub renderer: SceneRenderer,
+    pub home: Camera,
+}
+
+pub fn load_scene(
+    gpu: &Gpu,
+    bundle: &mut BundleReader<std::io::BufReader<std::fs::File>>,
+    key: &str,
+    format: wgpu::TextureFormat,
+) -> Result<LoadedScene> {
+    let scene = bundle
+        .scene(key)
+        .with_context(|| format!("loading scene {key}"))?;
+    let (renderer, warnings) =
+        SceneRenderer::new(gpu, &scene, format, &mut |k| bundle.texture(k).ok())?;
+    for w in warnings {
+        eprintln!("warning: {w}");
+    }
+    let home = home_camera(&renderer);
+    Ok(LoadedScene {
+        key: key.to_owned(),
+        renderer,
+        home,
+    })
+}
+
+/// Starting view: behind and above the level start, or overlooking the bounds.
+fn home_camera(r: &SceneRenderer) -> Camera {
+    let (lo, hi) = r.bounds;
+    let size = (hi - lo).length().max(10.0);
+    let mut cam = Camera {
+        far: (size * 3.0).max(2000.0),
+        ..Camera::default()
+    };
+    if let Some(start) = r.start_position {
+        cam.position = start + Vec3::new(0.0, 18.0, 30.0);
+        cam.look_at(start);
+    } else {
+        let center = (lo + hi) * 0.5;
+        cam.position = center + Vec3::new(0.0, size * 0.35, size * 0.6);
+        cam.look_at(center);
+    }
+    cam
+}
+
+pub fn parse_camera(s: &str, base: Camera) -> Result<Camera> {
+    let v: Vec<f32> = s
+        .split(',')
+        .map(|p| p.trim().parse::<f32>())
+        .collect::<Result<_, _>>()
+        .context("--camera expects x,y,z,yaw_deg,pitch_deg")?;
+    if v.len() != 5 {
+        bail!("--camera expects 5 numbers, got {}", v.len());
+    }
+    Ok(Camera {
+        position: Vec3::new(v[0], v[1], v[2]),
+        yaw: v[3].to_radians(),
+        pitch: v[4].to_radians(),
+        ..base
+    })
+}
+
+pub fn format_camera(c: &Camera) -> String {
+    format!(
+        "{:.2},{:.2},{:.2},{:.1},{:.1}",
+        c.position.x,
+        c.position.y,
+        c.position.z,
+        c.yaw.to_degrees(),
+        c.pitch.to_degrees()
+    )
+}
+
+pub fn options(args: &Args) -> RenderOptions {
+    RenderOptions {
+        show_hidden: args.show_hidden,
+        cull: args.cull.into(),
+        ..RenderOptions::default()
+    }
+}
+
+fn screenshot(
+    args: &Args,
+    mut bundle: BundleReader<std::io::BufReader<std::fs::File>>,
+    path: &std::path::Path,
+) -> Result<()> {
+    let (w, h) = args
+        .size
+        .split_once('x')
+        .and_then(|(a, b)| Some((a.parse::<u32>().ok()?, b.parse::<u32>().ok()?)))
+        .context("--size expects WIDTHxHEIGHT")?;
+    let gpu = pollster::block_on(Gpu::headless())?;
+    eprintln!(
+        "adapter: {} (BC textures: {})",
+        gpu.adapter_name(),
+        gpu.bc_textures
+    );
+    let format = ballistic_render::OFFSCREEN_FORMAT;
+    let mut scene = load_scene(&gpu, &mut bundle, &args.scene, format)?;
+    let camera = match &args.camera {
+        Some(s) => parse_camera(s, scene.home)?,
+        None => scene.home,
+    };
+    let target = RenderTarget::new(&gpu, w, h, format);
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    scene.renderer.render(
+        &gpu,
+        &mut encoder,
+        &target.color_view,
+        &target.depth_view,
+        &camera,
+        w as f32 / h as f32,
+        &options(args),
+    );
+    gpu.queue.submit([encoder.finish()]);
+    let rgba = target.read_rgba(&gpu)?;
+    image::save_buffer(path, &rgba, w, h, image::ExtendedColorType::Rgba8)
+        .with_context(|| format!("writing {}", path.display()))?;
+    eprintln!(
+        "wrote {} ({} triangles, camera {})",
+        path.display(),
+        scene.renderer.triangle_count,
+        format_camera(&camera)
+    );
+    Ok(())
+}

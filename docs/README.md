@@ -6,6 +6,7 @@ repository.
 
 - [packer.md](packer.md): building your asset bundle with `ballistic-pack`
 - [bundle-format.md](bundle-format.md): the `.bpk` bundle specification
+- [viewer.md](viewer.md): the level viewer, its controls and how it renders
 - [dev-tools.md](dev-tools.md): workspace layout, `ckinspect`, tests against your own install
 
 Planned pages:

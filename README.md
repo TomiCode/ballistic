@@ -4,7 +4,7 @@ A from-scratch, cross-platform reimplementation of the *Ballance* engine,
 written in Rust. It targets Windows, Linux and macOS, with any resolution and
 windowed play.
 
-> **Status: pre-alpha / planning.** Nothing playable yet.
+> **Status: pre-alpha.** The asset packer and a level viewer work. Nothing playable yet.
 
 ## You need your own copy of Ballance
 

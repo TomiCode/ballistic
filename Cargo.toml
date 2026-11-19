@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ckfile", "crates/ckscene", "crates/ballistic-bundle", "crates/ballistic-pack", "tools/ckinspect"]
+members = ["crates/ckfile", "crates/ckscene", "crates/ballistic-bundle", "crates/ballistic-pack", "crates/ballistic-render", "apps/ballistic-viewer", "tools/ckinspect"]
 
 [workspace.package]
 version = "0.1.0"

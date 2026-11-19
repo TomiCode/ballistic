@@ -8,6 +8,8 @@
 | `crates/ckscene` | Decoders for scene classes on top of `ckfile`: `Mesh`, `Material`, `Texture`, `Entity3d` (3D objects, lights, cameras), `Group` |
 | `crates/ballistic-bundle` | Bundle format: manifest and scene types, zip reader/writer. The engine's only data dependency |
 | `crates/ballistic-pack` | The packer (library and CLI): install verification, scene/texture/audio conversion |
+| `crates/ballistic-render` | wgpu renderer for bundle scenes (fixed-function-style shading in gamma space), camera, off-screen targets |
+| `apps/ballistic-viewer` | Level viewer (winit window or headless `--screenshot`) |
 | `tools/ckinspect` | CLI for looking inside those files while reverse-engineering |
 
 ## Building
