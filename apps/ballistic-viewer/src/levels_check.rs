@@ -5,7 +5,7 @@
 //! This checks the level flow, not the routes between checkpoints: the ball
 //! is warped (as the `next` play-script key does).
 
-use crate::play::{Bundle, Play};
+use crate::play::{AfterScore, Bundle, Play};
 use ballistic_bundle::BundleReader;
 use ballistic_render::{Gpu, OFFSCREEN_FORMAT};
 
@@ -64,11 +64,41 @@ fn every_level_flows_to_the_finish() {
         run(&mut p, 3.0);
         let status = p.status();
         assert!(status.contains("[finished"), "level {level}: {status}");
+        assert!(status.contains("[level end]"), "level {level}: {status}");
         assert!(
             p.fallen_modules().is_empty(),
             "level {level}: {:?}",
             p.fallen_modules()
         );
         eprintln!("level {level}: {status}");
+        // The wait cut short, fast scoring, the score screen left; the lives
+        // go one by one first.
+        assert!(p.menu_key(57), "level {level}: the wait's key");
+        // Faded in, the level bonus still to come.
+        run(&mut p, 1.0);
+        assert!(
+            p.status().contains("[score screen 0]"),
+            "level {level}: {}",
+            p.status()
+        );
+        assert!(p.menu_key(57), "level {level}: fast scoring");
+        assert!(p.menu_key(28), "level {level}: leaving");
+        assert_eq!(
+            p.take_next_level(),
+            None,
+            "level {level}: lives still going"
+        );
+        run(&mut p, 3.0);
+        let next = if level < 12 {
+            AfterScore::Level(format!("level/level_{:02}", level + 1))
+        } else {
+            AfterScore::LastLevel
+        };
+        assert_eq!(p.take_next_level(), Some(next), "level {level}");
+        assert!(
+            p.status().contains("lives 0"),
+            "level {level}: {}",
+            p.status()
+        );
     }
 }

@@ -31,6 +31,88 @@ pub struct PhysicsData {
     pub environment: Environment,
     /// The prefabs' particle systems.
     pub particles: Vec<ParticleEmitter>,
+    /// After the finish: the wait, the sky's fade.
+    pub level_end: LevelEnd,
+    /// The score screen after a level.
+    pub score_screen: ScoreScreen,
+}
+
+/// The level's end (`Gameplay_Events` after `Level_Finish`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct LevelEnd {
+    /// The score screen comes this long after the finish; after the last
+    /// level, `last_wait_ms`.
+    pub wait_ms: f32,
+    pub last_wait_ms: f32,
+    /// *fadeout Sky*: the cloud layer's colour goes from `sky_fade[0]` to
+    /// `sky_fade[1]` over `sky_fade_ms`.
+    pub sky_fade_ms: f32,
+    pub sky_fade: [[f32; 4]; 2],
+    /// The camera's far clip from the finish on.
+    pub far_clip: f32,
+    /// Keys that cut the wait short (`DirectInput` scan codes).
+    pub skip_keys: Vec<u32>,
+}
+
+/// The score screen (`Menu.nmo`'s `Menu_Score`). Rectangles are fractions of
+/// the screen (left, top, right, bottom).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ScoreScreen {
+    /// The field, the highlight and the line, at their full colours (they
+    /// fade in from transparent over `fade_ms`, and out again).
+    pub sprites: Vec<HudSprite>,
+    pub fade_ms: f32,
+    /// The highlight sprite; its top-left for each row, and with fast
+    /// scoring.
+    pub highlight: String,
+    pub highlight_rows: Vec<[f32; 2]>,
+    pub highlight_fast: [f32; 2],
+    pub font: HudFont,
+    pub shadow: TextShadow,
+    /// Level bonus, points, extra lives, total.
+    pub rows: Vec<ScoreRow>,
+    pub align: TextAlign,
+    /// Left, top, right, bottom, in pixels.
+    pub margins: [f32; 4],
+    /// Between the steps.
+    pub step_ms: f32,
+    /// The points are counted over `step` a frame while the count is below
+    /// `limit`, row by row.
+    pub count_speed: Vec<[i32; 2]>,
+    /// The counter sound's pitch for each `count_speed` row: from, to (over
+    /// `pitch_ramp_ms`).
+    pub count_pitch: Vec<[f32; 2]>,
+    pub pitch_ramp_ms: f32,
+    /// Bundle sound key.
+    pub counter_sound: String,
+    /// One life counted every `life_ms`; with fast scoring, taken every
+    /// `fast_life_ms`.
+    pub life_ms: f32,
+    pub fast_life_ms: f32,
+    /// The total shows this long (or until a key) before the screen fades.
+    pub wait_ms: f32,
+    /// Keys for fast scoring and for leaving (`DirectInput` scan codes).
+    pub keys: Vec<u32>,
+}
+
+/// A text's drop shadow (*Set Font Properties*).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct TextShadow {
+    pub color: [f32; 4],
+    /// Radians, and pixels at 480 lines.
+    pub angle: f32,
+    pub distance: f32,
+    /// The shadow glyphs' size, relative to the text's.
+    pub size: [f32; 2],
+}
+
+/// One score screen row: its label (by language: `english`, `german`, …) and
+/// value rectangles.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ScoreRow {
+    pub label: std::collections::BTreeMap<String, String>,
+    pub label_rect: [f32; 4],
+    pub value_rect: [f32; 4],
 }
 
 /// Points, lives and score.
@@ -438,7 +520,7 @@ pub struct HudSprite {
 }
 
 /// A texture font (`TT CreateFontEx`, *Set Font Properties*).
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct HudFont {
     pub texture: String,
     /// By character code.
@@ -463,10 +545,11 @@ pub struct Glyph {
     pub height: f32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TextAlign {
     Left,
+    #[default]
     Center,
     Right,
 }

@@ -39,6 +39,7 @@ use crate::pieces::Pieces;
 use crate::point_look::PointLooks;
 use crate::progress::{self, Progress};
 use crate::props::Props;
+use crate::score_screen::{self, ScoreScreen};
 use crate::transformers::{self, Transformers};
 use crate::{LoadedScene, load_scene};
 
@@ -60,6 +61,15 @@ pub enum PlayKey {
     Rotate,
     /// `CamUp`: the lift view.
     Lift,
+}
+
+/// What follows the score screen.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AfterScore {
+    /// The next level (its scene key).
+    Level(String),
+    /// That was the last level.
+    LastLevel,
 }
 
 /// Direction keys in the push order used by the scripts.
@@ -127,8 +137,8 @@ pub struct Play {
     score: Option<Score>,
     /// Roll sounds looping at the last frame (for counting starts).
     looping: Vec<String>,
-    /// Sounds to play (bundle key, volume), taken by the window.
-    sounds: Vec<(String, f32)>,
+    /// Sounds to play (bundle key, volume, pitch), taken by the window.
+    sounds: Vec<(String, f32, f32)>,
     /// How many times each sound was played (for headless runs).
     pub sound_counts: std::collections::BTreeMap<String, u32>,
     /// The ball's pose while a transformer holds it out of the simulation.
@@ -139,6 +149,15 @@ pub struct Play {
     /// When the level end was reached: (play time, physics steps).
     finished_at: Option<(f32, u64)>,
     pub respawns: u32,
+    /// The level's scene key.
+    key: String,
+    /// After the finish, until the score screen: ms since, ms to wait.
+    level_end: Option<(f32, f32)>,
+    /// The camera's place at the finish: it stays there, looking at the ball.
+    finish_eye: Option<Vec3>,
+    score_screen: ScoreScreen,
+    /// Once the score screen is gone: what comes next.
+    next_level: Option<AfterScore>,
 }
 
 fn key_index(k: PlayKey) -> usize {
@@ -221,6 +240,7 @@ impl Play {
             &physics.particles,
             format,
         )?;
+        let score_screen = ScoreScreen::new(gpu, bundle, &physics.score_screen, format, "english")?;
         let mut particles = ParticleRenderer::new(gpu, format);
         let mut particle_textures = std::collections::HashMap::new();
         let keys: Vec<Option<String>> = flames
@@ -313,6 +333,11 @@ impl Play {
             elapsed: 0.0,
             finished_at: None,
             respawns: 0,
+            key: key.to_owned(),
+            level_end: None,
+            finish_eye: None,
+            score_screen,
+            next_level: None,
         };
         // Start Level, then the BallManager's New Ball.
         play.events.emit("Start Level");
@@ -664,7 +689,7 @@ impl Play {
     fn queue_sounds(&mut self, sounds: impl IntoIterator<Item = (String, f32)>) {
         for (key, volume) in sounds {
             *self.sound_counts.entry(key.clone()).or_default() += 1;
-            self.sounds.push((key, volume));
+            self.sounds.push((key, volume, 1.0));
         }
     }
 
@@ -711,8 +736,9 @@ impl Play {
         loops
     }
 
-    /// Sounds to play since the last call (bundle key, volume 0–1).
-    pub fn take_sounds(&mut self) -> Vec<(String, f32)> {
+    /// Sounds to play since the last call (bundle key, volume 0–1, pitch as
+    /// a playback rate).
+    pub fn take_sounds(&mut self) -> Vec<(String, f32, f32)> {
         std::mem::take(&mut self.sounds)
     }
 
@@ -823,11 +849,118 @@ impl Play {
         }
     }
 
+    /// `Level_Finish`: ball control off; the balloon lets go; the counter
+    /// stops (the score screen's sum).
+    fn finished(&mut self) {
+        self.finished_at = Some((self.elapsed, self.world.steps));
+        self.modules.level_finished(&mut self.world);
+        self.nav_off();
+        self.ball_sounds.set_active(false);
+        self.energy.set_counting(false);
+        let s = self.energy.score();
+        self.score = Some(s);
+        eprintln!(
+            "score {}: level bonus {} + points {} + lives {}",
+            s.total, s.level_bonus, s.points, s.life_bonus
+        );
+        eprintln!(
+            "level finished after {:.2} s ({} physics steps)",
+            self.elapsed, self.world.steps
+        );
+        self.begin_level_end();
+    }
+
+    /// `Level_Finish` in `Gameplay_Events`: the camera stays where it is,
+    /// the clouds fade to black, and the score screen comes after the wait
+    /// (longer after the last level).
+    fn begin_level_end(&mut self) {
+        self.events.emit("Level_Finish");
+        let end = &self.physics.level_end;
+        let last = crate::energy::level_index(&self.key)
+            .is_some_and(|i| i + 1 >= self.physics.energy.level_bonus.len());
+        let wait = if last { end.last_wait_ms } else { end.wait_ms };
+        let fade = (0.0, end.sky_fade_ms, end.sky_fade);
+        self.level_end = Some((0.0, wait));
+        self.finish_eye = Some(self.follow.pose().0);
+        if let Some(c) = self.clouds.as_mut() {
+            c.fade = Some(fade);
+        }
+    }
+
+    /// The level end's wait and the score screen, each frame.
+    fn level_end_frame(&mut self, real_dt: f32) {
+        if let Some((ms, wait)) = self.level_end.as_mut() {
+            *ms += real_dt * 1000.0;
+            if *ms >= *wait {
+                self.start_score_screen();
+            }
+        }
+        self.score_screen.frame(real_dt);
+        for e in self.score_screen.take_events() {
+            match e {
+                score_screen::Event::Sound { key, pitch } => {
+                    *self.sound_counts.entry(key.clone()).or_default() += 1;
+                    self.sounds.push((key, 1.0, pitch));
+                }
+                score_screen::Event::Message(m) => self.events.emit(m),
+                score_screen::Event::SubLife => {
+                    self.energy.lose_life();
+                    self.hud.sub_life();
+                }
+                score_screen::Event::Points(n) => self.energy.points = n,
+                score_screen::Event::Done(total) => {
+                    eprintln!("score screen done: {total}");
+                    let next = crate::energy::level_index(&self.key)
+                        .map(|i| i + 2)
+                        .filter(|&n| n <= self.physics.energy.level_bonus.len())
+                        .map_or(AfterScore::LastLevel, |n| {
+                            AfterScore::Level(format!("level/level_{n:02}"))
+                        });
+                    self.next_level = Some(next);
+                }
+            }
+        }
+    }
+
+    /// `End Level`, then `Menu_Score`.
+    fn start_score_screen(&mut self) {
+        self.level_end = None;
+        let score = self.score.unwrap_or_else(|| self.energy.score());
+        self.score_screen.start(score, self.energy.lives);
+    }
+
+    /// A key on the level end or score screen (`DirectInput` scan code:
+    /// Space 57, Enter 28, Escape 1); whether it was taken.
+    pub fn menu_key(&mut self, scan: u32) -> bool {
+        if self.level_end.is_some() {
+            if !self.physics.level_end.skip_keys.contains(&scan) {
+                return false;
+            }
+            // The wait's keys: *Menu_Click*, and on.
+            self.events.emit("Menu_Click");
+            self.start_score_screen();
+            return true;
+        }
+        self.score_screen.active() && self.score_screen.key(scan)
+    }
+
+    /// Whether the level end or score screen is on (it takes Space, Enter
+    /// and Escape).
+    pub fn in_level_end(&self) -> bool {
+        self.level_end.is_some() || self.score_screen.active()
+    }
+
+    /// Once, when the score screen is gone: what comes next.
+    pub fn take_next_level(&mut self) -> Option<AfterScore> {
+        self.next_level.take()
+    }
+
     /// One frame: camera script, then physics.
     pub fn update(&mut self, real_dt: f32) {
         self.hud.frame(real_dt);
+        self.level_end_frame(real_dt);
         if let Some(c) = self.clouds.as_mut() {
-            c.seconds += real_dt;
+            c.frame(real_dt);
         }
         // Deferred steps from earlier frames (the scripts' one-frame link delays).
         if let Some(h) = self.snap_next_frame.take() {
@@ -890,25 +1023,7 @@ impl Play {
                     self.events.emit("Checkpoint reached");
                     eprintln!("checkpoint {} reached", i + 1);
                 }
-                Some(progress::Event::Finished) => {
-                    // Level_Finish: ball control off; the balloon lets go.
-                    self.finished_at = Some((self.elapsed, self.world.steps));
-                    self.modules.level_finished(&mut self.world);
-                    self.nav_off();
-                    self.ball_sounds.set_active(false);
-                    // Counter inactive; the score screen's sum.
-                    self.energy.set_counting(false);
-                    let s = self.energy.score();
-                    self.score = Some(s);
-                    eprintln!(
-                        "score {}: level bonus {} + points {} + lives {}",
-                        s.total, s.level_bonus, s.points, s.life_bonus
-                    );
-                    eprintln!(
-                        "level finished after {:.2} s ({} physics steps)",
-                        self.elapsed, self.world.steps
-                    );
-                }
+                Some(progress::Event::Finished) => self.finished(),
                 None => {}
             }
             let events = self.transformers.frame(ball, self.active_ball, real_dt);
@@ -982,10 +1097,14 @@ impl Play {
     pub fn camera(&self, base: Camera) -> Camera {
         let (eye, target) = self.follow.pose();
         let mut cam = Camera {
-            position: eye,
+            position: self.finish_eye.unwrap_or(eye),
             fov_y: fov_y(),
             ..base
         };
+        if self.finish_eye.is_some() {
+            // `Set Clipping Planes` at the finish.
+            cam.far = self.physics.level_end.far_clip;
+        }
         cam.look_at(target);
         cam
     }
@@ -1202,6 +1321,7 @@ impl Play {
     ) {
         self.hud
             .render(gpu, encoder, color, size, self.energy.points);
+        self.score_screen.render(gpu, encoder, color, size);
     }
 
     pub fn status(&self) -> String {
@@ -1223,6 +1343,10 @@ impl Play {
                 _ => "",
             },
             match (self.score, self.energy.game_over) {
+                (Some(_), _) if self.level_end.is_some() => "[level end] ".to_owned(),
+                (Some(_), _) if self.score_screen.active() => {
+                    format!("[score screen {}] ", self.score_screen.total())
+                }
                 (Some(s), _) => format!("[score {}] ", s.total),
                 (None, true) => "[game over] ".to_owned(),
                 _ => String::new(),
@@ -1363,6 +1487,8 @@ struct Clouds {
     scroll: [f32; 2],
     set_up: bool,
     seconds: f32,
+    /// *fadeout Sky*: ms into it, its length, from and to colours.
+    fade: Option<(f32, f32, [[f32; 4]; 2])>,
 }
 
 impl Clouds {
@@ -1391,7 +1517,15 @@ impl Clouds {
             scroll,
             set_up: false,
             seconds: 0.0,
+            fade: None,
         })
+    }
+
+    fn frame(&mut self, real_dt: f32) {
+        self.seconds += real_dt;
+        if let Some(f) = self.fade.as_mut() {
+            f.0 += real_dt * 1000.0;
+        }
     }
 
     fn apply(&mut self, gpu: &Gpu, level: &mut ballistic_render::SceneRenderer) {
@@ -1406,6 +1540,13 @@ impl Clouds {
                     self.params.z_write,
                 );
                 level.set_material_prelit(gpu, m, self.params.color);
+            }
+        }
+        if let Some((ms, length, [from, to])) = self.fade {
+            let k = (ms / length.max(1.0)).min(1.0);
+            let c = std::array::from_fn(|i| from[i] + (to[i] - from[i]) * k);
+            for &m in &self.materials {
+                level.set_material_prelit(gpu, m, c);
             }
         }
         let offset = self.scroll.map(|v| (v * self.seconds).rem_euclid(1.0));

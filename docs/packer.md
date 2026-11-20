@@ -73,7 +73,14 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      direction, the scene's ambient, the background, and the cloud layer's
      settings. The prefabs' particle systems (`PH/*.nmo`, `Balls.nmo`): each
      point, planar and spherical system's inputs and its rendering, blend,
-     variance and evolution settings → `data/physics.json`
+     variance and evolution settings. The level end from `Gameplay_Events`
+     (the wait's two times and keys, *fadeout Sky*, *Set Clipping Planes*).
+     The score screen from `Menu.nmo`'s `Menu_Score`: its sprites and the
+     colours *Einblendung* fades them to, the highlight's places, the texts'
+     boxes and font (`GameFont_04`), the labels (followed from the *2D Text*
+     to the `Language.nmo` row `Menu_Init` reads), the delays,
+     `Menu_Score_CountSpeed`, the counter's pitches, and the counter sound's
+     file (`Sound.nmo`'s wave sound) → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

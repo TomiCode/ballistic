@@ -18,7 +18,7 @@ pub use overlay::{Overlay, Quad};
 pub use particles::{ParticleBatch, ParticleRenderer, ParticleVertex};
 pub use scene::{CullMode, RenderOptions, SceneRenderer};
 pub use sky::{SkyRenderer, sky_mesh};
-pub use texture::{GpuTexture, upload_ktx2};
+pub use texture::{GpuTexture, upload_ktx2, white};
 
 /// Colour format used for off-screen targets (gamma space, like the original).
 pub const OFFSCREEN_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;

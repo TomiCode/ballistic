@@ -25,7 +25,7 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--screenshot out.png [--size 1920x1080]` | Render one frame off-screen and exit, no window |
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
 | `--play` | Play mode: roll a ball on the level |
-| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:4,up:2,rotate+left:0.3` (the ball comes 3 s after the start). Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), `trafo` puts the ball on the nearest transformer of another type (shown ones first), `pickup` on the nearest extra life or extra point, `fan` 2 above the nearest fan in an active sector, `near` 8 from the nearest pickup (to look at it without taking it), and `lose` loses the ball (as **R**), all at the start of their segment. A checkpoint arms a while after the last one, so leave 2 s or more between `next`s. The summary then also prints the points, lives and score, and any moving element that fell below the level's depth cubes. With `--camera` too, the camera stays at that view instead of following the ball |
+| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:4,up:2,rotate+left:0.3` (the ball comes 3 s after the start). Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), `trafo` puts the ball on the nearest transformer of another type (shown ones first), `pickup` on the nearest extra life or extra point, `fan` 2 above the nearest fan in an active sector, `near` 8 from the nearest pickup (to look at it without taking it), `lose` loses the ball (as **R**), and `skip` presses Space (cuts the level end's wait short, scores fast, leaves the score screen), all at the start of their segment. A checkpoint arms a while after the last one, so leave 2 s or more between `next`s. The summary then also prints the points, lives and score, and any moving element that fell below the level's depth cubes. With `--camera` too, the camera stays at that view instead of following the ball |
 
 The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 
@@ -137,8 +137,23 @@ good, and the window title shows the time since the level started.
   and out.
 - At the finish, the bridge's last hinge breaks and the slide box is pushed
   along its slider: the balloon drifts away with the ball.
-- There's no end sequence or score screen yet, and the last level's UFO isn't
-  drawn.
+- The last level's UFO isn't drawn.
+
+**The level end and the score screen**, like the original's (research
+findings 23):
+- At the finish the camera stops where it is and watches the balloon carry
+  the ball off; the clouds fade to black.
+- 10 s later (23 s after the last level), or on Space, Enter or Escape, the
+  score screen fades in over the level: the level bonus, then the points
+  counted over (the HUD counting down, with the counter's clicks rising in
+  pitch), then each life left (the HUD taking a ball each time), then the
+  total.
+- Space, Enter or Escape while it counts shows everything at once; on the
+  total they leave (it leaves by itself after 4 s).
+- Then the next level loads. After the last level the view stays (the
+  highscores and menus aren't there yet).
+- While the level end or score screen is on, Escape doesn't close the
+  viewer.
 
 **Points and lives**, as the original counts them (research findings 16):
 - A level starts with 1000 points and 3 lives.
@@ -162,8 +177,8 @@ good, and the window title shows the time since the level started.
     point doesn't.
 - At the finish the score is printed: the level's bonus (100 × its number) +
   the points left + 200 per life left.
-- The status line shows the points and lives, and `[new ball]` or `[ball
-  lost]` while one is coming or going. There's no score screen yet.
+- The status line shows the points and lives, `[new ball]` or `[ball lost]`
+  while one is coming or going, then `[level end]` and `[score screen N]`.
 
 **The HUD** is the original's (research findings 18), from its own sprites
 and font:
@@ -269,7 +284,6 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: the score screen, explosions, the other
-  sounds (the wooden flaps, the level finish, music),
-  the screen fade, the paper pieces' wind, the end
-  sequence (and the last level's UFO) and score
+- In play mode: highscores and the menus, explosions, the other sounds (the
+  wooden flaps, the level finish, music), the screen fade, the paper pieces'
+  wind, the last level's UFO

@@ -61,6 +61,9 @@ enum Command {
         #[arg(long)]
         json: Option<PathBuf>,
     },
+    /// The file's message names, by number (scripts refer to messages by
+    /// number; each file numbers its own).
+    Messages { file: PathBuf },
     /// Print a file's data arrays (script tables) with resolved cells.
     Arrays {
         file: PathBuf,
@@ -139,6 +142,13 @@ fn main() -> Result<()> {
             format,
         } => scripts(&file, filter.as_deref(), format),
         Command::Arrays { file, filter } => arrays(&file, filter.as_deref()),
+        Command::Messages { file } => {
+            let f = CkFile::open(&file)?;
+            for (i, n) in ckscript::types::message_names(&f).iter().enumerate() {
+                println!("{i:3}  {n}");
+            }
+            Ok(())
+        }
         Command::Physics { dir, json } => physics(&dir, json.as_deref()),
         Command::Scene { file, class } => scene(&file, class.as_deref()),
         Command::Render {

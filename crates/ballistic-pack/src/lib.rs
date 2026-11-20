@@ -14,5 +14,6 @@ pub mod pack;
 pub mod particles;
 mod physics;
 pub mod scenes;
+mod score;
 pub mod textures;
 mod transformers;

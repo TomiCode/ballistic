@@ -247,7 +247,12 @@ impl State {
             (cur + n - 1) % n
         };
         let key = self.scene_keys[next].clone();
-        self.scene = load_scene(&self.gpu, bundle, &key, self.view_format)?;
+        self.open_scene(bundle, &key)
+    }
+
+    /// Loads scene `key` (and play mode on it, if on).
+    fn open_scene(&mut self, bundle: &mut Bundle, key: &str) -> Result<()> {
+        self.scene = load_scene(&self.gpu, bundle, key, self.view_format)?;
         self.camera = self.scene.home;
         if self.play_mode {
             // Levels have a start marker; other scenes fall back to free-fly.
@@ -272,6 +277,22 @@ impl State {
         {
             use crate::play::PlayKey as K;
             let pressed = ev.state == ElementState::Pressed;
+            // The level end and score screen take Space, Enter and Escape
+            // (by DirectInput scan code).
+            if play.in_level_end() {
+                let scan = match code {
+                    KeyCode::Space => Some(57),
+                    KeyCode::Enter | KeyCode::NumpadEnter => Some(28),
+                    KeyCode::Escape => Some(1),
+                    _ => None,
+                };
+                if let Some(scan) = scan {
+                    if pressed {
+                        play.menu_key(scan);
+                    }
+                    return Ok(());
+                }
+            }
             let k = match code {
                 KeyCode::ArrowUp => Some(K::Up),
                 KeyCode::ArrowDown => Some(K::Down),
@@ -507,12 +528,30 @@ impl ApplicationHandler for App {
                 if !state.frame() {
                     event_loop.exit();
                 }
+                // The score screen is gone: on to the next level.
+                match state
+                    .play
+                    .as_mut()
+                    .and_then(crate::play::Play::take_next_level)
+                {
+                    Some(crate::play::AfterScore::Level(key)) => {
+                        eprintln!("next level: {key}");
+                        if let Err(e) = state.open_scene(&mut self.bundle, &key) {
+                            self.fail(event_loop, e);
+                            return;
+                        }
+                    }
+                    Some(crate::play::AfterScore::LastLevel) => {
+                        eprintln!("that was the last level");
+                    }
+                    None => {}
+                }
                 if let Some(play) = state.play.as_mut() {
                     let sounds = play.take_sounds();
                     let loops = play.loops();
                     if let Some(audio) = self.audio.as_mut() {
-                        for (key, volume) in sounds {
-                            audio.play(&mut self.bundle, &key, volume);
+                        for (key, volume, pitch) in sounds {
+                            audio.play(&mut self.bundle, &key, volume, pitch);
                         }
                         audio.sync_loops(&mut self.bundle, &loops);
                     }

@@ -34,6 +34,7 @@ ckinspect scene <file> [--class Material]     # decoded scene objects as JSON
 ckinspect script-check <dir>                  # decode + validate every script object
 ckinspect scripts <file> [--filter name] [--format tree|json|dot]   # locals and shared outputs show their object index (#n): names repeat
 ckinspect arrays <file> [--filter name]       # data arrays (script tables) with resolved cells
+ckinspect messages <file>                      # the file's message names by number (scripts send messages by number)
 ckinspect physics <install> [--json out.json] # physics nodes + Physicalize_* tables, values traced to their source
 ckinspect render <file> --out x.png [--textures <install>/Textures]
           [--azimuth 35 --elevation 35 --size 2048 --include-hidden]
@@ -71,7 +72,10 @@ The viewer's bundle tests include **every level's flow**
 - it's lost at the last checkpoint, comes back there with a life less and
   stays;
 - it's warped to the level end, and the level finishes;
-- no moving element has fallen below the level's depth cubes.
+- no moving element has fallen below the level's depth cubes;
+- Space cuts the level end's wait short, the score screen fades in, Space
+  scores fast and Enter leaves; once the lives are taken it's gone, with the
+  next level (or none after the last) to load.
 
 It needs a GPU adapter too (play mode loads its renderers), and takes about
 100 s in a debug build:

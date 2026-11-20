@@ -34,12 +34,16 @@ impl Audio {
         }
     }
 
-    /// Plays a bundle sound once at `volume` (0–1, linear).
-    pub fn play(&mut self, bundle: &mut Bundle, key: &str, volume: f32) {
+    /// Plays a bundle sound once at `volume` (0–1, linear) and `pitch` (a
+    /// playback rate).
+    pub fn play(&mut self, bundle: &mut Bundle, key: &str, volume: f32, pitch: f32) {
         let Some(data) = self.data(bundle, key) else {
             return;
         };
-        if let Err(e) = self.manager.play(data.volume(decibels(volume))) {
+        let data = data
+            .volume(decibels(volume))
+            .playback_rate(f64::from(pitch.max(0.01)));
+        if let Err(e) = self.manager.play(data) {
             eprintln!("warning: playing sound {key}: {e}");
         }
     }

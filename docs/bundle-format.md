@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 18,
+  "format_version": 19,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -262,7 +262,28 @@ and useful to read). Since version 2.
       "size": { "value": 5.0, "variance": 0.3 }, "end_size": { "value": 0.1, "variance": 0.0 },
       "color": [0.9216, 0.1647, 0.2745, 0.9804], "color_variance": [0.0, 0.0, 0.0, 0.0],
       "end_color": [0.0, 0.0, 0.0, 0.0], "end_color_variance": [0.0, 0.0, 0.0, 0.0],
-      "frames": 1, "real_time": true, "delta_ms": 20.0 }, "…" ]
+      "frames": 1, "real_time": true, "delta_ms": 20.0 }, "…" ],
+  "level_end": { "wait_ms": 10000.0, "last_wait_ms": 23000.0, "sky_fade_ms": 3000.0,
+    "sky_fade": [[0.7843, 0.7843, 0.7843, 1.0], [0.0, 0.0, 0.0, 1.0]],
+    "far_clip": 2500.0, "skip_keys": [1, 28, 57] },
+  "score_screen": {
+    "sprites": [ { "name": "M_Score_Field", "texture": "button01_special",
+      "rect": [0.3, 0.27, 0.7, 0.57], "source": [0.0, 0.99, 1.0, 1.0], "z_order": 18,
+      "color": [0.0, 0.0, 0.0, 0.4314], "shown": true }, "…" ],
+    "fade_ms": 200.0, "highlight": "M_Score_Highlight",
+    "highlight_rows": [[0.3134, 0.3], [0.3134, 0.36], [0.3134, 0.42], [0.3134, 0.5]],
+    "highlight_fast": [0.32, 0.5],
+    "font": { "texture": "font_1", "glyphs": ["…"], "scale": [0.6, 0.6], "space": [0.0, 0.0],
+      "color": [1.0, 1.0, 1.0, 1.0] },
+    "shadow": { "color": [0.0, 0.0, 0.0, 0.502], "angle": 2.0944, "distance": 2.0,
+      "size": [0.6, 0.6] },
+    "rows": [ { "label": { "english": "Level Bonus:", "german": "Level Bonus:", "…": "…" },
+      "label_rect": [0.32, 0.3, 0.57, 0.35], "value_rect": [0.58, 0.3, 0.68, 0.35] }, "…" ],
+    "align": "right", "margins": [2.0, 2.0, 2.0, 2.0], "step_ms": 1000.0,
+    "count_speed": [[80, 1], [500, 5], [9999, 25]],
+    "count_pitch": [[1.0, 1.0], [1.0, 1.1], [1.1, 1.2]], "pitch_ramp_ms": 100.0,
+    "counter_sound": "menu_counter", "life_ms": 610.0, "fast_life_ms": 700.0,
+    "wait_ms": 4000.0, "keys": [57, 28, 1] }
 }
 ```
 
@@ -429,6 +450,27 @@ and useful to read). Since version 2.
     a quad along the particle's last step; `line`, a line over its last
     step. Blended with `blend`, without depth writes.
   - `real_time`: steps by the frame time, else by `delta_ms`.
+- `level_end`: after the finish (`Gameplay_Events`). The score screen comes
+  `wait_ms` later (`last_wait_ms` after the last level), sooner on one of
+  `skip_keys` (DirectInput scan codes: Escape 1, Enter 28, Space 57). The
+  cloud layer's colour goes through `sky_fade` over `sky_fade_ms`; the
+  camera's far clip becomes `far_clip`.
+- `score_screen`: `Menu_Score`. Rectangles are fractions of a 4:3 screen.
+  - `sprites` fade in from transparent to their `color` over `fade_ms`, and
+    out again at the end. The `highlight` sprite's top-left moves to
+    `highlight_rows[i]` as row `i` is counted (`highlight_fast` with fast
+    scoring).
+  - `rows`: level bonus, points, extra lives, total; each label by
+    `Language.nmo` column name. The texts are in `font` (with `shadow`:
+    `angle` in radians, `distance` in pixels at 480 lines), aligned by `align`
+    within `margins`.
+  - The points are counted `count_speed` (`[limit, step]`) a frame: `step`
+    while the count is below `limit`, row after row, the `counter_sound`
+    every other frame at `count_pitch` (`[from, to]` over `pitch_ramp_ms`,
+    per row). Then the lives, one every `life_ms`. `step_ms` between the
+    parts; the total shows `wait_ms`.
+  - `keys` (scan codes) score fast while counting (the lives then go one
+    every `fast_life_ms`) and leave the total.
 
 ## Versioning rules
 
@@ -447,4 +489,4 @@ and useful to read). Since version 2.
   meshes' `visible` (scene encoding 2). **17** adds sprite objects (scene
   encoding 3) and the extra life's `look`; colour-keyed textures get alpha.
   **18** adds the extra point's `look`, and its trail systems to
-  `particles`.
+  `particles`. **19** adds `level_end` and `score_screen`.

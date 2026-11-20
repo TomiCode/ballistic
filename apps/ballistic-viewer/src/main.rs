@@ -19,6 +19,7 @@ mod play;
 mod point_look;
 mod progress;
 mod props;
+mod score_screen;
 mod transformers;
 mod window;
 
@@ -219,6 +220,9 @@ pub struct Segment {
     pub near: bool,
     /// Lose the ball first (as **R**).
     pub lose: bool,
+    /// Press Space first: cuts the level end's wait short, scores fast,
+    /// leaves the score screen (`skip`).
+    pub skip: bool,
 }
 
 /// Parses `up:2,rotate+left:0.4,wait:1,next:1` into segments.
@@ -242,6 +246,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
             let fan = keys.split('+').any(|k| k.trim() == "fan");
             let near = keys.split('+').any(|k| k.trim() == "near");
             let lose = keys.split('+').any(|k| k.trim() == "lose");
+            let skip = keys.split('+').any(|k| k.trim() == "skip");
             let keys = keys
                 .split('+')
                 .filter_map(|k| match k.trim() {
@@ -251,7 +256,8 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                     "right" => Some(Ok(K::Right)),
                     "rotate" => Some(Ok(K::Rotate)),
                     "lift" => Some(Ok(K::Lift)),
-                    "wait" | "next" | "wake" | "trafo" | "pickup" | "fan" | "near" | "lose" => None,
+                    "wait" | "next" | "wake" | "trafo" | "pickup" | "fan" | "near" | "lose"
+                    | "skip" => None,
                     other => Some(Err(anyhow::anyhow!("unknown key {other:?}"))),
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -265,6 +271,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                 fan,
                 near,
                 lose,
+                skip,
             })
         })
         .collect()
@@ -323,6 +330,9 @@ fn screenshot(
             if seg.lose {
                 p.respawn();
             }
+            if seg.skip {
+                p.menu_key(57);
+            }
             for &k in &keys {
                 p.input(k, true);
             }
@@ -337,6 +347,11 @@ fn screenshot(
                     scene.renderer.set_object_hidden(i, !show);
                 }
                 p.apply_level(&gpu, &mut scene.renderer);
+                match p.take_next_level() {
+                    Some(play::AfterScore::Level(key)) => eprintln!("next level: {key}"),
+                    Some(play::AfterScore::LastLevel) => eprintln!("that was the last level"),
+                    None => {}
+                }
                 // Headless: counted, not played.
                 p.take_sounds();
                 p.loops();

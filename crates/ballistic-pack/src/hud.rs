@@ -163,7 +163,12 @@ pub fn extract(install: &Install) -> Result<bb::Hud> {
 }
 
 /// The input parameter `pin` of behaviour `node`.
-fn pin_param(file: &CkFile, scripts: &Scripts, node: ObjRef, pin: &str) -> Option<ObjRef> {
+pub(crate) fn pin_param(
+    file: &CkFile,
+    scripts: &Scripts,
+    node: ObjRef,
+    pin: &str,
+) -> Option<ObjRef> {
     scripts
         .behavior(node)?
         .input_params
@@ -173,7 +178,7 @@ fn pin_param(file: &CkFile, scripts: &Scripts, node: ObjRef, pin: &str) -> Optio
 }
 
 /// The name an *Op* "get object by name" gives the local feeding input `param`.
-fn named_by(g: &Loaded, nodes: &[NodeParams], param: ObjRef) -> Option<String> {
+pub(crate) fn named_by(g: &Loaded, nodes: &[NodeParams], param: ObjRef) -> Option<String> {
     let Some(Some(ScriptObject::In(i))) = g.scripts.objects.get(param) else {
         return None;
     };
@@ -202,7 +207,7 @@ fn object(file: &CkFile, name: &str, class: ClassId) -> Result<usize> {
         .with_context(|| format!("{class:?} {name} not found"))
 }
 
-fn group_members(file: &CkFile, name: &str) -> Result<Vec<String>> {
+pub(crate) fn group_members(file: &CkFile, name: &str) -> Result<Vec<String>> {
     let i = object(file, name, ClassId::GROUP)?;
     let Some(Ok(Decoded::Group(g))) = decode_object(&file.objects[i]) else {
         bail!("{name} isn't a group");
@@ -232,7 +237,12 @@ fn texture_key_at(install: &Install, file: &CkFile, i: usize) -> Result<String> 
         .map_or(f.clone(), |(stem, _)| stem.to_owned()))
 }
 
-fn sprite(install: &Install, file: &CkFile, name: &str, shown: bool) -> Result<bb::HudSprite> {
+pub(crate) fn sprite(
+    install: &Install,
+    file: &CkFile,
+    name: &str,
+    shown: bool,
+) -> Result<bb::HudSprite> {
     let i = object(file, name, ClassId::ENTITY_2D)?;
     let Some(Ok(Decoded::Entity2d(e))) = decode_object(&file.objects[i]) else {
         bail!("{name} isn't a 2D entity");
@@ -262,7 +272,7 @@ fn sprite(install: &Install, file: &CkFile, name: &str, shown: bool) -> Result<b
 }
 
 /// The font's glyph table, by character code.
-fn glyphs(menu: &Loaded, name: &str) -> Result<Vec<bb::Glyph>> {
+pub(crate) fn glyphs(menu: &Loaded, name: &str) -> Result<Vec<bb::Glyph>> {
     let table = menu.array(name)?;
     table
         .rows

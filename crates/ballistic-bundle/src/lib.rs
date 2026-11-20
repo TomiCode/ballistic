@@ -20,11 +20,11 @@ pub use physics::{
     BallJointParams, BallParams, BallPieces, BallShape, BallSoundSet, BallSounds, CloudLayer,
     CurvePoint, EmitterShape, EnergyParams, Environment, EventSound, ExtraLife, ExtraLifeLook,
     ExtraPoint, ExtraPointLook, ForceParams, Glyph, HingeParams, HitTest, Hud, HudFont, HudGlow,
-    HudLives, HudSprite, HudText, LevelEnvironment, LevelFlow, ModuleBody, ModuleSetup,
+    HudLives, HudSprite, HudText, LevelEnd, LevelEnvironment, LevelFlow, ModuleBody, ModuleSetup,
     ObjectSoundIds, ParticleEmitter, ParticleRender, PhysicsData, PieceSounds, Progression,
-    PropParams, RingPart, SkyParams, SliderParams, SoundCue, SoundGroup, SpringAnchor,
-    SpringParams, SurfaceParams, TextAlign, TransformerAnimation, TransformerParams,
-    TransformerType, UvWave, Varied, WakeParams, curve_y,
+    PropParams, RingPart, ScoreRow, ScoreScreen, SkyParams, SliderParams, SoundCue, SoundGroup,
+    SpringAnchor, SpringParams, SurfaceParams, TextAlign, TextShadow, TransformerAnimation,
+    TransformerParams, TransformerType, UvWave, Varied, WakeParams, curve_y,
 };
 pub use scene::{
     AddressMode, BlendFactor, CompareFunc, Group, Material, Mesh, ObjectKind, Scene, SceneObject,
@@ -35,7 +35,7 @@ pub use scene::{
 pub const FORMAT_NAME: &str = "ballistic-bundle";
 /// Version of the bundle layout. Bump on any incompatible change.
 /// v2: adds `data/physics.json`.
-pub const FORMAT_VERSION: u32 = 18;
+pub const FORMAT_VERSION: u32 = 19;
 /// Version of the `.bscn` scene encoding.
 pub const SCENE_VERSION: u32 = 3;
 /// Magic at the start of every `.bscn` entry.

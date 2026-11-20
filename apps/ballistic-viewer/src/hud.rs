@@ -23,7 +23,7 @@ use ballistic_render::{Gpu, Overlay, Quad, upload_ktx2};
 use crate::play::Bundle;
 
 /// The screen height the original's pixel margins were set for.
-const REFERENCE_HEIGHT: f32 = 480.0;
+pub const REFERENCE_HEIGHT: f32 = 480.0;
 
 /// The gap between characters, per unit of *Space* × a space's advance
 /// (`Interface.dll` `0x25391bf0`).
@@ -138,6 +138,11 @@ impl Hud {
     /// *Ball Off*: the last ball goes after the delay.
     pub fn ball_off(&mut self) {
         self.lost.push(self.data.lives.lost_delay_ms);
+    }
+
+    /// *Sub Life* (the score screen counting a life): the last ball goes now.
+    pub fn sub_life(&mut self) {
+        self.queue.push_back(Change::Remove);
     }
 
     /// *Extrapoint*.
@@ -305,53 +310,19 @@ impl Hud {
         quads
     }
 
-    /// *2D Text* in `rect` (pixels), glyphs sized from the `fw` × `fh` frame.
+    /// The points' *2D Text* in `rect` (pixels).
     fn text(&self, s: &str, rect: [f32; 4], fw: f32, fh: f32) -> Vec<Quad> {
         let f = &self.data.font;
         let Some(&texture) = self.textures.get(&f.texture) else {
             return Vec::new();
         };
-        let glyph = |c: char| {
-            u32::from(c)
-                .try_into()
-                .ok()
-                .and_then(|i: usize| f.glyphs.get(i))
+        let style = TextStyle {
+            align: self.data.points.align,
+            margins: self.data.points.margins,
+            scale: f.scale,
+            color: f.color,
         };
-        let (xf, yf) = (fw * f.scale[0], fh * f.scale[1]);
-        let advance = |g: &bb::Glyph| g.before + g.width + g.after;
-        let spacing = glyph(' ').map_or(0.0, |g| advance(g) * f.space[0] * xf * SPACING_FACTOR);
-        let height = f.glyphs.first().map_or(0.0, |g| g.height) * yf;
-        let width: f32 = s
-            .chars()
-            .filter_map(glyph)
-            .map(|g| advance(g) * xf + spacing)
-            .sum();
-        let m = self.data.points.margins.map(|v| v * fh / REFERENCE_HEIGHT);
-        let (left, top, right, bottom) = (
-            rect[0] + m[0],
-            rect[1] + m[1],
-            rect[2] - m[2],
-            rect[3] - m[3],
-        );
-        let mut x = match self.data.points.align {
-            bb::TextAlign::Left => left,
-            bb::TextAlign::Right => right - width,
-            bb::TextAlign::Center => (left + right - width) * 0.5,
-        };
-        let y = (top + bottom - height) * 0.5;
-        let mut quads = Vec::new();
-        for g in s.chars().filter_map(glyph) {
-            let x1 = x + g.before * xf;
-            let x2 = x1 + g.width * xf;
-            quads.push(Quad {
-                texture,
-                rect: [x1, y, x2, y + height],
-                uv: [g.u, g.v, g.u + g.width, g.v + g.height],
-                color: f.color,
-            });
-            x = x2 + g.after * xf + spacing;
-        }
-        quads
+        text_quads(f, texture, s, rect, &style, (fw, fh))
     }
 
     pub fn render(
@@ -367,6 +338,71 @@ impl Hud {
             o.render(gpu, encoder, color, size, &quads);
         }
     }
+}
+
+/// How a *2D Text* is laid out and coloured.
+pub struct TextStyle {
+    pub align: bb::TextAlign,
+    /// Left, top, right, bottom, in pixels at 480 lines.
+    pub margins: [f32; 4],
+    /// Glyph size: texture-coordinate size × frame size × this.
+    pub scale: [f32; 2],
+    pub color: [f32; 4],
+}
+
+/// *2D Text* in `rect` (pixels) in `font` (on overlay texture `texture`),
+/// glyphs sized from the `frame` (width, height; *Screen Proportional*),
+/// centred vertically.
+pub fn text_quads(
+    font: &bb::HudFont,
+    texture: usize,
+    s: &str,
+    rect: [f32; 4],
+    style: &TextStyle,
+    frame: (f32, f32),
+) -> Vec<Quad> {
+    let (fw, fh) = frame;
+    let glyph = |c: char| {
+        u32::from(c)
+            .try_into()
+            .ok()
+            .and_then(|i: usize| font.glyphs.get(i))
+    };
+    let (xf, yf) = (fw * style.scale[0], fh * style.scale[1]);
+    let advance = |g: &bb::Glyph| g.before + g.width + g.after;
+    let spacing = glyph(' ').map_or(0.0, |g| advance(g) * font.space[0] * xf * SPACING_FACTOR);
+    let height = font.glyphs.first().map_or(0.0, |g| g.height) * yf;
+    let width: f32 = s
+        .chars()
+        .filter_map(glyph)
+        .map(|g| advance(g) * xf + spacing)
+        .sum();
+    let m = style.margins.map(|v| v * fh / REFERENCE_HEIGHT);
+    let (left, top, right, bottom) = (
+        rect[0] + m[0],
+        rect[1] + m[1],
+        rect[2] - m[2],
+        rect[3] - m[3],
+    );
+    let mut x = match style.align {
+        bb::TextAlign::Left => left,
+        bb::TextAlign::Right => right - width,
+        bb::TextAlign::Center => (left + right - width) * 0.5,
+    };
+    let y = (top + bottom - height) * 0.5;
+    let mut quads = Vec::new();
+    for g in s.chars().filter_map(glyph) {
+        let x1 = x + g.before * xf;
+        let x2 = x1 + g.width * xf;
+        quads.push(Quad {
+            texture,
+            rect: [x1, y, x2, y + height],
+            uv: [g.u, g.v, g.u + g.width, g.v + g.height],
+            color: style.color,
+        });
+        x = x2 + g.after * xf + spacing;
+    }
+    quads
 }
 
 #[cfg(test)]
