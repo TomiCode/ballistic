@@ -113,6 +113,9 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      type the ramp's test skips, the arrows each `Kapitel Aktion` graph
      shows (the move arrows by the key that grows each) and the distances
      that end them → `data/physics.json`
+   Level scenes then get the level init's reflection mapping baked into
+   their rails (`Phys_FloorRails`: texture coordinates from `FixCube` at
+   the origin, research findings 31).
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

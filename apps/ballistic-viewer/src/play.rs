@@ -182,10 +182,19 @@ pub struct Play {
     arrival: Arrival,
     /// The screen's fade when a lost ball is taken back.
     fade: ScreenFade,
-    /// The reset points' and the level start's placeholders (the level's
-    /// init deletes them).
+    /// The placeholders the level's init deletes (`INIT_DELETED`).
     init_deleted: Vec<usize>,
 }
+
+/// The placeholder groups the level's init deletes after reading them
+/// (research findings 30): its prefabs replace them, and the start's and the
+/// checkpoints' have no meshes of their own.
+const INIT_DELETED: [&str; 4] = [
+    "PR_Resetpoints",
+    "PS_Levelstart",
+    "PC_Checkpoints",
+    "PE_Levelende",
+];
 
 fn key_index(k: PlayKey) -> usize {
     match k {
@@ -346,7 +355,7 @@ impl Play {
         let init_deleted = level
             .groups
             .iter()
-            .filter(|g| g.name == "PR_Resetpoints" || g.name == "PS_Levelstart")
+            .filter(|g| INIT_DELETED.contains(&g.name.as_str()))
             .flat_map(|g| g.members.iter().map(|&m| m as usize))
             .collect();
         let pieces = Pieces::new(&physics, &ball_scene);
@@ -1334,6 +1343,25 @@ impl Play {
             self.tutorial_events();
         }
         taken
+    }
+
+    #[cfg(test)]
+    pub fn sliders_of(&self, prefix: &str) -> Vec<(u32, Option<BodyId>, Vec3, Vec3)> {
+        self.modules.sliders(prefix)
+    }
+
+    #[cfg(test)]
+    pub fn module_bodies(&self, prefix: &str) -> Vec<Vec<BodyId>> {
+        self.modules.bodies_of(prefix)
+    }
+
+    /// Makes a sector's modules physical (as entering it does).
+    #[cfg(test)]
+    pub fn activate_sector_for_test(&mut self, sector: u32) {
+        if !self.modules.sector_active(sector) {
+            self.modules
+                .set_sector_active(&mut self.world, sector, true);
+        }
     }
 
     /// The tutorial's chapter, while it runs.

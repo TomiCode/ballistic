@@ -197,8 +197,12 @@ pub fn build(opts: &Options) -> Result<Report> {
             if !scenes::has_geometry(&file) && !key.starts_with("ph/") {
                 return Ok(None);
             }
-            let c = scenes::convert(&file, &resolver, key.starts_with("ph/"))
+            let mut c = scenes::convert(&file, &resolver, key.starts_with("ph/"))
                 .with_context(|| format!("converting {}", path.display()))?;
+            if key.starts_with("level/") {
+                // `FixCube` stays at the origin.
+                scenes::reflection_map(&mut c.scene, "Phys_FloorRails", [0.0; 3]);
+            }
             Ok(Some((key.clone(), c)))
         })
         .collect::<Result<_>>()?;

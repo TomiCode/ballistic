@@ -224,6 +224,44 @@ pub(crate) fn texture_key(install: &Install, file: &CkFile, name: &str) -> Resul
     texture_key_at(install, file, i)
 }
 
+/// A texture by name alone (a script looks it up at runtime): its image
+/// under `Textures/` (`.bmp` or `.tga`), as a bundle key.
+pub(crate) fn texture_named(install: &Install, name: &str) -> Result<String> {
+    let key = name.to_lowercase();
+    ["bmp", "tga"]
+        .iter()
+        .find(|ext| install.get(&format!("textures/{key}.{ext}")).is_some())
+        .map(|_| key.clone())
+        .with_context(|| format!("texture {name} not in Textures/"))
+}
+
+/// The name an `Op` looks up (its `p1`) into the local that feeds `node`'s
+/// input `pin`, wherever that `Op` is in the file's scripts.
+pub(crate) fn looked_up(
+    g: &crate::physics::Loaded,
+    nodes: &[ckscript::extract::NodeParams],
+    node: ckscript::ObjRef,
+    pin: &str,
+) -> Option<String> {
+    use ckscript::ScriptObject;
+    let s = &g.scripts;
+    let param = pin_param(&g.file, s, node, pin)?;
+    let Some(Some(ScriptObject::In(i))) = s.objects.get(param) else {
+        return None;
+    };
+    let local = i.source?;
+    let writer = s.objects.iter().enumerate().find_map(|(idx, o)| match o {
+        Some(ScriptObject::Out(out)) if out.destinations.contains(&local) => {
+            s.owner.get(&idx).copied()
+        }
+        _ => None,
+    })?;
+    let op = nodes
+        .iter()
+        .find(|n| n.node == writer && n.building_block == "Op")?;
+    crate::transformers::text(crate::transformers::input(op, "p1"))
+}
+
 pub(crate) fn texture_key_at(install: &Install, file: &CkFile, i: usize) -> Result<String> {
     let Some(Ok(Decoded::Texture(t))) = decode_object(&file.objects[i]) else {
         bail!("object #{i} isn't a texture");

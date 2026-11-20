@@ -18,6 +18,8 @@ mod levels_check;
 mod life_look;
 mod menu_level;
 mod menus;
+#[cfg(test)]
+mod module_check;
 mod modules;
 mod music;
 mod options_screens;

@@ -473,6 +473,41 @@ impl Modules {
             .collect()
     }
 
+    /// The sliders of modules whose group starts with `prefix`: (sector,
+    /// the slider's body while active, its axis origin and direction).
+    #[cfg(test)]
+    pub fn sliders(&self, prefix: &str) -> Vec<(u32, Option<BodyId>, Vec3, Vec3)> {
+        self.items
+            .iter()
+            .filter(|m| m.group.starts_with(prefix))
+            .flat_map(|m| {
+                m.plan
+                    .sliders
+                    .iter()
+                    .map(|s| (m.sector, m.bodies.get(s.body).copied(), s.origin, s.axis))
+            })
+            .collect()
+    }
+
+    /// The bodies of modules whose group starts with `prefix`, per module
+    /// (empty while inactive), in the plan's order.
+    #[cfg(test)]
+    pub fn bodies_of(&self, prefix: &str) -> Vec<Vec<BodyId>> {
+        self.items
+            .iter()
+            .filter(|m| m.group.starts_with(prefix))
+            .map(|m| m.bodies.clone())
+            .collect()
+    }
+
+    /// Whether a sector's modules are physical.
+    #[cfg(test)]
+    pub fn sector_active(&self, sector: u32) -> bool {
+        self.items
+            .iter()
+            .any(|m| m.sector == sector && !m.bodies.is_empty())
+    }
+
     /// Development aid: wakes every active module as its proximity test
     /// would (its wake-up targets; modules without a test are awake anyway).
     pub fn wake_all(&mut self, world: &mut World) {

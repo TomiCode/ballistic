@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 26,
+  "format_version": 27,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -671,4 +671,6 @@ and useful to read). Since version 2.
   `highscores`) and the table's `back_text`. **22** adds `music` and
   `sounds.flaps`. **23** adds `menus.settings` and text's `top`. **24** adds
   `menu_level`, `menus.credits` and the menu level's particle systems.
-  **25** adds `tutorial`. **26** adds `flow.arrival` and `flow.fade`.
+  **25** adds `tutorial`. **26** adds `flow.arrival` and `flow.fade`. **27** changes content
+  only: the rails' texture coordinates are baked (reflection mapping), and
+  particle textures looked up by name are resolved.

@@ -83,8 +83,10 @@ Details carried over from the original's scripts:
   the sector is reset, and a new ball comes. Meanwhile the screen goes white
   and clears again over 2 s. (A level without depth cubes loses it 50 units
   below its lowest geometry.)
-- The reset points' and the level start's placeholders aren't drawn (the
-  level's init deletes them).
+- The reset points', level start's, checkpoints' and level end's
+  placeholders aren't drawn (the level's init deletes them).
+- Materials with a specular power get highlights (research findings 31):
+  the rails shine like chrome.
 
 Level 1 starts facing away from the path, as in the original (its tutorial
 teaches turning first): press Shift + Left twice.

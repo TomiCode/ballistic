@@ -39,7 +39,7 @@ pub use scene::{
 pub const FORMAT_NAME: &str = "ballistic-bundle";
 /// Version of the bundle layout. Bump on any incompatible change.
 /// v2: adds `data/physics.json`.
-pub const FORMAT_VERSION: u32 = 26;
+pub const FORMAT_VERSION: u32 = 27;
 /// Version of the `.bscn` scene encoding.
 pub const SCENE_VERSION: u32 = 3;
 /// Magic at the start of every `.bscn` entry.

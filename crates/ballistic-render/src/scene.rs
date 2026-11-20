@@ -84,6 +84,8 @@ struct MaterialUniform {
     params: [f32; 4],
     /// xy: texture coordinate offset (scrolled textures).
     uv: [f32; 4],
+    /// rgb: specular colour; w: its power (0: no specular, as in Virtools).
+    specular: [f32; 4],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -271,6 +273,12 @@ impl SceneRenderer {
                     f32::from(u8::from(m.environment_map)),
                 ],
                 uv: [0.0; 4],
+                specular: [
+                    m.specular[0],
+                    m.specular[1],
+                    m.specular[2],
+                    m.specular_power,
+                ],
             };
             let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&m.name),

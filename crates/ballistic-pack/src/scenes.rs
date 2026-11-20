@@ -21,6 +21,70 @@ pub struct Converted {
     pub warnings: Vec<String>,
 }
 
+/// The level init's *set Env. Mapping* (`TT_ReflectionMapping` on each member
+/// of `group`, with `FixCube` at `camera` as the camera; research findings
+/// 31). Once, so the texture coordinates are fixed: for each vertex, in its
+/// object's frame, the direction to the camera reflected about the normal,
+/// `r`, gives ((r.x + 1) / 2, (r.z + 1) / 2) in the original's left-handed
+/// space. A mesh shared by several members keeps the last one's.
+pub fn reflection_map(scene: &mut bb::Scene, group: &str, camera: [f32; 3]) {
+    let Some(g) = scene.groups.iter().find(|g| g.name == group) else {
+        return;
+    };
+    let members = g.members.clone();
+    for i in members {
+        let Some(o) = scene.objects.get(i as usize) else {
+            continue;
+        };
+        let Some(mesh) = o.mesh.and_then(|m| scene.meshes.get_mut(m as usize)) else {
+            continue;
+        };
+        let cam = to_local(&o.transform, camera);
+        for v in mesh.vertex_data.as_chunks_mut::<32>().0 {
+            let f = |k: usize| f32::from_le_bytes(v[k * 4..k * 4 + 4].try_into().unwrap_or([0; 4]));
+            let (p, n) = ([f(0), f(1), f(2)], [f(3), f(4), f(5)]);
+            let d = normalize([cam[0] - p[0], cam[1] - p[1], cam[2] - p[2]]);
+            let dn = 2.0 * (d[0] * n[0] + d[1] * n[1] + d[2] * n[2]);
+            let r = normalize([dn * n[0] - d[0], dn * n[1] - d[1], dn * n[2] - d[2]]);
+            // Bundle space mirrors Z: the original's r.z is −r.z here.
+            let uv = [f32::midpoint(r[0], 1.0), f32::midpoint(1.0, -r[2])];
+            v[24..28].copy_from_slice(&uv[0].to_le_bytes());
+            v[28..32].copy_from_slice(&uv[1].to_le_bytes());
+        }
+    }
+}
+
+fn normalize(v: [f32; 3]) -> [f32; 3] {
+    let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    if l > 0.0 { v.map(|x| x / l) } else { v }
+}
+
+/// A world point in the frame of an object whose column-major world matrix
+/// is `m` (rotation and scale, then translation).
+fn to_local(m: &[[f32; 4]; 4], p: [f32; 3]) -> [f32; 3] {
+    let d = [p[0] - m[3][0], p[1] - m[3][1], p[2] - m[3][2]];
+    // Solve M3 · x = d with the 3×3 part (columns m[0..3]).
+    let c = |j: usize| [m[j][0], m[j][1], m[j][2]];
+    let (a, b, e) = (c(0), c(1), c(2));
+    let cross = |u: [f32; 3], w: [f32; 3]| {
+        [
+            u[1] * w[2] - u[2] * w[1],
+            u[2] * w[0] - u[0] * w[2],
+            u[0] * w[1] - u[1] * w[0],
+        ]
+    };
+    let dot = |u: [f32; 3], w: [f32; 3]| u[0] * w[0] + u[1] * w[1] + u[2] * w[2];
+    let det = dot(a, cross(b, e));
+    if det.abs() < 1e-12 {
+        return d;
+    }
+    [
+        dot(d, cross(b, e)) / det,
+        dot(a, cross(d, e)) / det,
+        dot(a, cross(b, d)) / det,
+    ]
+}
+
 /// `true` if the file contains renderable geometry worth packing as a scene.
 pub fn has_geometry(file: &CkFile) -> bool {
     file.objects
@@ -422,5 +486,77 @@ mod tests {
                 "{expected:?} vs {actual:?}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod reflection_tests {
+    use super::*;
+
+    fn vertex(p: [f32; 3], n: [f32; 3]) -> Vec<u8> {
+        p.iter()
+            .chain(n.iter())
+            .chain([0.0f32, 0.0].iter())
+            .flat_map(|x| x.to_le_bytes())
+            .collect()
+    }
+
+    fn uv(scene: &bb::Scene, i: usize) -> [f32; 2] {
+        let v = &scene.meshes[0].vertex_data[i * 32..i * 32 + 32];
+        let f = |k: usize| f32::from_le_bytes(v[k * 4..k * 4 + 4].try_into().unwrap());
+        [f(6), f(7)]
+    }
+
+    #[test]
+    fn reflection_mapping_looks_from_the_camera() {
+        let mut data = vertex([0.0, 0.0, 0.0], [0.0, 1.0, 0.0]);
+        data.extend(vertex([0.0, 0.0, 0.0], [1.0, 0.0, 0.0]));
+        let mut scene = bb::Scene {
+            meshes: vec![bb::Mesh {
+                name: "rail".into(),
+                vertex_data: data,
+                index_data: Vec::new(),
+                submeshes: Vec::new(),
+                bounds_min: [0.0; 3],
+                bounds_max: [0.0; 3],
+                visible: true,
+            }],
+            materials: Vec::new(),
+            objects: vec![bb::SceneObject {
+                name: "Rail".into(),
+                kind: bb::ObjectKind::Entity,
+                // At (0, -10, 0): the camera at the origin is straight above.
+                transform: [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, -10.0, 0.0, 1.0],
+                ],
+                mesh: Some(0),
+                parent: None,
+                hidden: false,
+                sprite: None,
+            }],
+            groups: vec![bb::Group {
+                name: "Phys_FloorRails".into(),
+                members: vec![0],
+            }],
+        };
+        reflection_map(&mut scene, "Phys_FloorRails", [0.0; 3]);
+        // Facing the camera: reflected straight back up, the middle.
+        assert_eq!(uv(&scene, 0), [0.5, 0.5]);
+        // Facing +X with the camera above: reflected straight down
+        // (r = (0, −1, 0)): x and z in the middle too.
+        let [u, v] = uv(&scene, 1);
+        assert!((u - 0.5).abs() < 1e-5 && (v - 0.5).abs() < 1e-5);
+        // Moved to (−10, −10, 0): the camera is up and to +X, so the +X face
+        // reflects it down and out: r = (0.71, −0.71, 0).
+        scene.objects[0].transform[3] = [-10.0, -10.0, 0.0, 1.0];
+        reflection_map(&mut scene, "Phys_FloorRails", [0.0; 3]);
+        let [u, v] = uv(&scene, 1);
+        assert!(
+            (u - 0.8536).abs() < 1e-3 && (v - 0.5).abs() < 1e-5,
+            "{u} {v}"
+        );
     }
 }

@@ -62,7 +62,7 @@ pub fn extract(install: &Install) -> Result<Vec<bb::ParticleEmitter>> {
                 "SphericalParticleSystem" => bb::EmitterShape::Spherical,
                 _ => continue,
             };
-            let e = emitter(install, &g.file, &scene, n, shape)
+            let e = emitter(install, &g, &nodes, &scene, n, shape)
                 .with_context(|| format!("{key}: {}", n.name))?;
             out.push(e);
         }
@@ -119,7 +119,8 @@ fn blend(v: u32) -> Option<bb::BlendFactor> {
 
 fn emitter(
     install: &Install,
-    file: &ckfile::CkFile,
+    g: &crate::physics::Loaded,
+    nodes: &[NodeParams],
     scene: &str,
     n: &NodeParams,
     shape: bb::EmitterShape,
@@ -163,9 +164,15 @@ fn emitter(
         7 => bb::ParticleRender::FastSprite,
         other => bb::ParticleRender::Other(other),
     };
-    let texture = text(input(n, "Texture"))
-        .map(|name| crate::hud::texture_key(install, file, &name))
-        .transpose()?;
+    let file = &g.file;
+    // A texture object of the file, or one a script looks up by name (the
+    // start's flames: `Op` "Particle_Flames").
+    let texture = match text(input(n, "Texture")) {
+        Some(name) => Some(crate::hud::texture_key(install, file, &name)?),
+        None => crate::hud::looked_up(g, nodes, n.node, "Texture")
+            .map(|name| crate::hud::texture_named(install, &name))
+            .transpose()?,
+    };
     let src = setting(n, "Source Blend")
         .and_then(blend)
         .unwrap_or(bb::BlendFactor::SrcAlpha);
@@ -254,8 +261,17 @@ mod tests {
         assert!((big.end_size.unwrap().value - 0.1).abs() < 1e-6);
         assert_eq!(big.end_color, Some([0.0; 4]));
         assert!(big.real_time);
-        let start = all.iter().filter(|e| e.scene == "ph/ps_fourflames").count();
-        assert_eq!(start, 4);
+        let start: Vec<_> = all
+            .iter()
+            .filter(|e| e.scene == "ph/ps_fourflames")
+            .collect();
+        assert_eq!(start.len(), 4);
+        // Looked up by name at runtime (an `Op`), not a texture of the file.
+        assert!(
+            start
+                .iter()
+                .all(|e| e.texture.as_deref() == Some("particle_flames"))
+        );
         let fans = all.iter().filter(|e| e.scene == "ph/p_modul_18").count();
         assert_eq!(fans, 2);
     }

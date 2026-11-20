@@ -26,6 +26,8 @@ struct Material {
     params: vec4<f32>,
     // xy = texture coordinate offset
     uv: vec4<f32>,
+    // rgb = specular colour, w = power (0: none)
+    specular: vec4<f32>,
 };
 
 const FLAG_ENV_MAP: u32 = 1u;
@@ -99,6 +101,15 @@ fn fs_main(i: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
         case 4u: { c = vec4<f32>(t.rgb, lit.a); }                       // decal mask
         case 7u: { c = vec4<f32>(min(t.rgb + lit.rgb, vec3<f32>(1.0)), lit.a * t.a); } // add
         default: { c = t * lit; }                                       // modulate variants
+    }
+
+    // Specular highlights (Blinn-Phong), added after the texture as the
+    // fixed-function pipeline does; a power of 0 means none.
+    if material.specular.w > 0.0 {
+        let to_eye = normalize(globals.camera_pos.xyz - i.world_pos);
+        let h = normalize(globals.light_dir.xyz + to_eye);
+        let s = pow(max(dot(n, h), 0.0), material.specular.w) * f32(ndl > 0.0);
+        c = vec4<f32>(min(c.rgb + material.specular.rgb * globals.light_color.rgb * s, vec3<f32>(1.0)), c.a);
     }
 
     let func = u32(material.params.y);
