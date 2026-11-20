@@ -94,7 +94,10 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      `Music_Manager`'s random waits, sounds (their locals' names), fades and
      last-stage settings, the highscore and thunder sounds, each level's
      theme set (`AllLevel`), the wooden flaps' hit sound, and
-     `Gameplay_Blitz`'s storm → `data/physics.json`
+     `Gameplay_Blitz`'s storm. The options' screens: their rows (by the 2D
+     entities' names the scripts use) and texts, the fields' materials,
+     `Dummy_ScreenModes`, the default keys (`Keyboard`) and the volume's
+     step → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

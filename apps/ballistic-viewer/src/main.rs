@@ -10,12 +10,14 @@ mod follow;
 mod game;
 mod highscore_screens;
 mod hud;
+mod keys;
 #[cfg(test)]
 mod levels_check;
 mod life_look;
 mod menus;
 mod modules;
 mod music;
+mod options_screens;
 mod particles;
 mod pickups;
 mod pieces;
@@ -491,6 +493,8 @@ fn screenshot(
     }
     if let Some((g, save)) = menus.as_mut() {
         g.menus
+            .render(&gpu, &mut encoder, &target.color_view, (w, h));
+        g.options
             .render(&gpu, &mut encoder, &target.color_view, (w, h));
         let save = save.borrow();
         g.tables

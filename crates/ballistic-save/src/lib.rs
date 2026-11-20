@@ -8,7 +8,9 @@
 //!   "version": 1,
 //!   "player": "Tom",
 //!   "unlocked": [true, true, false, …],
-//!   "highscores": [[{ "name": "Tom", "score": 4210 }, …], …]
+//!   "highscores": [[{ "name": "Tom", "score": 4210 }, …], …],
+//!   "settings": { "volume": 0.8, "keys": ["ArrowUp", …], "invert_rotation": false,
+//!     "resolution": null, "vsync": true, "clouds": true }
 //! }
 //! ```
 //!
@@ -56,7 +58,7 @@ pub struct Highscore {
     pub score: i32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Save {
     pub format: String,
@@ -67,6 +69,38 @@ pub struct Save {
     pub unlocked: Vec<bool>,
     /// By level: best first.
     pub highscores: Vec<Vec<Highscore>>,
+    pub settings: Settings,
+}
+
+/// The options (`Menu_Opt_*`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Settings {
+    /// 0–1.
+    pub volume: f32,
+    /// Forward, backward, left, right, camera rotation, camera lift (the
+    /// window's key names, e.g. `ArrowUp`); empty: the game's defaults.
+    pub keys: Vec<String>,
+    /// Shift + Left turns the camera the other way.
+    pub invert_rotation: bool,
+    /// The window's size; `None`: as it opens.
+    pub resolution: Option<[u32; 2]>,
+    pub vsync: bool,
+    /// The cloud layer (level 12).
+    pub clouds: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            volume: 1.0,
+            keys: Vec::new(),
+            invert_rotation: false,
+            resolution: None,
+            vsync: true,
+            clouds: true,
+        }
+    }
 }
 
 impl Default for Save {
@@ -77,6 +111,7 @@ impl Default for Save {
             player: String::new(),
             unlocked: Vec::new(),
             highscores: Vec::new(),
+            settings: Settings::default(),
         }
     }
 }
@@ -294,6 +329,7 @@ mod tests {
         .unwrap();
         let s = Save::load(&path).unwrap().unwrap();
         assert_eq!(s.player, "A");
+        assert_eq!(s.settings, Settings::default());
         assert_eq!(s.highscores, Vec::<Vec<Highscore>>::new());
         std::fs::write(&path, r#"{"format":"something-else","version":1}"#).unwrap();
         assert!(matches!(Save::load(&path), Err(Error::Format { .. })));

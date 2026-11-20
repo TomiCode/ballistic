@@ -271,7 +271,8 @@ impl Cx<'_> {
             clippy::cast_sign_loss,
             reason = "flag bits"
         )]
-        let align = match float(input(n, "Alignment")).context("2D Text: Alignment")? as u32 {
+        let flags = float(input(n, "Alignment")).context("2D Text: Alignment")? as u32;
+        let align = match flags {
             a if a & 1 != 0 => bb::TextAlign::Left,
             a if a & 2 != 0 => bb::TextAlign::Right,
             _ => bb::TextAlign::Center,
@@ -299,6 +300,8 @@ impl Cx<'_> {
             margins,
             text: self.localised(n.node, "Text").unwrap_or_default(),
             wrap,
+            // Alignment bit 3: top.
+            top: flags & 4 != 0,
         })
     }
 

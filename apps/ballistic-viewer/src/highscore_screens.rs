@@ -366,6 +366,7 @@ impl HighscoreScreens {
             margins: t.margins,
             scale: font.scale,
             color: font.color,
+            top: t.top,
         };
         let size = (frame.fw, frame.fh);
         if !t.wrap {

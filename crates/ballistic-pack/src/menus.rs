@@ -60,6 +60,7 @@ pub fn extract(install: &Install) -> Result<bb::Menus> {
         dead: button_menu(&cx, "Menu_Dead", Buttons::Named(&dead_buttons))?,
         options: button_menu(&cx, "Menu_Options", Buttons::Table("Menu_Options_ShowHide"))?,
         yes_no: yes_no(&cx)?,
+        settings: crate::options::extract(&cx)?,
     })
 }
 
@@ -207,6 +208,7 @@ fn button(
             margins: [2.0; 4],
             text: cx.localised(graph, "Pin 1")?,
             wrap: false,
+            top: false,
         },
         sprite,
     })

@@ -321,6 +321,7 @@ impl Hud {
             margins: self.data.points.margins,
             scale: f.scale,
             color: f.color,
+            top: false,
         };
         text_quads(f, texture, s, rect, &style, (fw, fh))
     }
@@ -348,6 +349,8 @@ pub struct TextStyle {
     /// Glyph size: texture-coordinate size × frame size × this.
     pub scale: [f32; 2],
     pub color: [f32; 4],
+    /// At the box's top (within the margins) instead of centred.
+    pub top: bool,
 }
 
 /// How wide `s` is laid out in `font` (pixels), and its line height.
@@ -404,7 +407,11 @@ pub fn text_quads(
         bb::TextAlign::Right => right - width,
         bb::TextAlign::Center => (left + right - width) * 0.5,
     };
-    let y = (top + bottom - height) * 0.5;
+    let y = if style.top {
+        top
+    } else {
+        (top + bottom - height) * 0.5
+    };
     let mut quads = Vec::new();
     for g in s.chars().filter_map(glyph) {
         let x1 = x + g.before * xf;

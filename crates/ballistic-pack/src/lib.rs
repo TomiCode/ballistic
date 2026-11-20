@@ -13,6 +13,7 @@ mod ktx2;
 mod menus;
 mod modules;
 mod music;
+mod options;
 pub mod pack;
 pub mod particles;
 mod physics;

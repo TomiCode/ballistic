@@ -498,6 +498,7 @@ impl ScoreScreen {
             margins: self.data.margins,
             scale: f.scale,
             color: fade(f.color),
+            top: false,
         };
         let shadow_style = TextStyle {
             scale: sh.size,

@@ -94,6 +94,9 @@ struct State {
     dead_shown: bool,
     /// The mouse pointer (pixels).
     cursor: (f32, f32),
+    /// The game's default keys (`DirectInput` scan codes), where the
+    /// settings have none.
+    default_keys: Vec<u32>,
     scene_keys: Vec<String>,
     camera: ballistic_render::Camera,
     opts: RenderOptions,
@@ -192,6 +195,11 @@ impl App {
             game,
             dead_shown: false,
             cursor: (0.0, 0.0),
+            default_keys: self
+                .bundle
+                .physics()
+                .map(|p| p.menus.settings.default_keys)
+                .unwrap_or_default(),
             scene_keys,
             camera,
             opts: options(&self.args),
@@ -258,6 +266,22 @@ impl State {
             return false;
         };
         let pressed = ev.state == ElementState::Pressed;
+        // A key row of the options waits: this key is its new one.
+        if game.binding() {
+            if pressed {
+                match code {
+                    KeyCode::Escape => {
+                        game.key(1);
+                    }
+                    _ => {
+                        if let Some(name) = crate::keys::name(code) {
+                            game.bind(name);
+                        }
+                    }
+                }
+            }
+            return true;
+        }
         if game.paused() || self.play.is_none() {
             let scan = match code {
                 KeyCode::ArrowUp => Some(200),
@@ -319,9 +343,41 @@ impl State {
                     }
                 }
                 crate::game::Action::Quit => return Ok(true),
+                crate::game::Action::Settings => self.apply_settings(),
             }
         }
         Ok(false)
+    }
+
+    /// The game's menus and screens over the frame.
+    fn render_menus(&mut self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
+        let Some(game) = self.game.as_mut() else {
+            return;
+        };
+        let size = (self.config.width, self.config.height);
+        game.menus.render(&self.gpu, encoder, view, size);
+        game.options.render(&self.gpu, encoder, view, size);
+        let save = self.save.borrow();
+        game.tables
+            .render(&self.gpu, encoder, view, size, &save.data);
+    }
+
+    /// The options' settings that the window carries out: vsync and the
+    /// window's size (the volume is the audio's, the keys are read as they
+    /// come, the clouds with the next level).
+    fn apply_settings(&mut self) {
+        let s = self.save.borrow().data.settings.clone();
+        if s.vsync != self.vsync {
+            self.vsync = s.vsync;
+            let caps = self.surface.get_capabilities(&self.gpu.adapter);
+            self.config.present_mode = present_mode(&caps, self.vsync);
+            self.surface.configure(&self.gpu.device, &self.config);
+        }
+        if let Some([w, h]) = s.resolution {
+            let _ = self
+                .window
+                .request_inner_size(winit::dpi::PhysicalSize::new(w, h));
+        }
     }
 
     fn start_level(&mut self, bundle: &mut Bundle, key: &str) -> Result<()> {
@@ -475,15 +531,15 @@ impl State {
             if play.in_level_end() && level_end_key(play, code, ev) {
                 return Ok(());
             }
-            let k = match code {
-                KeyCode::ArrowUp => Some(K::Up),
-                KeyCode::ArrowDown => Some(K::Down),
-                KeyCode::ArrowLeft => Some(K::Left),
-                KeyCode::ArrowRight => Some(K::Right),
-                KeyCode::ShiftLeft | KeyCode::ShiftRight => Some(K::Rotate),
-                KeyCode::Space => Some(K::Lift),
-                _ => None,
-            };
+            // The options' keys (forward, backward, left, right, rotate,
+            // lift).
+            let bound =
+                crate::keys::bindings(&self.save.borrow().data.settings.keys, &self.default_keys);
+            let k = [K::Up, K::Down, K::Left, K::Right, K::Rotate, K::Lift]
+                .into_iter()
+                .zip(bound)
+                .find(|&(_, b)| b == code)
+                .map(|(k, _)| k);
             if let Some(k) = k {
                 play.input(k, pressed);
                 return Ok(());
@@ -655,13 +711,7 @@ impl State {
                 (self.config.width, self.config.height),
             );
         }
-        if let Some(game) = self.game.as_mut() {
-            let size = (self.config.width, self.config.height);
-            game.menus.render(&self.gpu, &mut encoder, &view, size);
-            let save = self.save.borrow();
-            game.tables
-                .render(&self.gpu, &mut encoder, &view, size, &save.data);
-        }
+        self.render_menus(&mut encoder, &view);
         self.gpu.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
         self.gpu.queue.present(frame);
@@ -710,6 +760,10 @@ impl App {
         let Some(state) = self.state.as_mut() else {
             return;
         };
+        // The options' music volume.
+        if let Some(audio) = self.audio.as_mut() {
+            audio.set_music_level(state.save.borrow().data.settings.volume);
+        }
         // A new level (or none): the last one's music fades out.
         let serial = state.play.as_ref().map(crate::play::Play::serial);
         if serial != self.music_of {
@@ -743,7 +797,13 @@ impl ApplicationHandler for App {
             return;
         }
         match self.init(event_loop) {
-            Ok(s) => self.state = Some(s),
+            Ok(mut s) => {
+                // The game starts with its saved settings.
+                if self.args.game {
+                    s.apply_settings();
+                }
+                self.state = Some(s);
+            }
             Err(e) => self.fail(event_loop, e),
         }
     }

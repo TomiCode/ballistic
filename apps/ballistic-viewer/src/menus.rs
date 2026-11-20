@@ -435,6 +435,7 @@ impl MenuScreens {
             margins: t.margins,
             scale: font.scale,
             color: font.color,
+            top: t.top,
         };
         text_quads(
             font,

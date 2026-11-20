@@ -21,6 +21,8 @@ pub struct Audio {
     music: HashMap<u32, StaticSoundHandle>,
     /// The music's volume (0–1).
     music_volume: f32,
+    /// The options' music volume (0–1), scaling the music.
+    music_level: f32,
 }
 
 impl Audio {
@@ -33,6 +35,7 @@ impl Audio {
                 loops: HashMap::new(),
                 music: HashMap::new(),
                 music_volume: 0.0,
+                music_level: 1.0,
             }),
             Err(e) => {
                 eprintln!("warning: no audio output: {e}");
@@ -100,7 +103,10 @@ impl Audio {
             } => {
                 if let Some(old) = self.music.get_mut(id) {
                     // Playing already (a fade out under way): fade back in.
-                    old.set_volume(decibels(self.music_volume), tween(*fade_in_ms));
+                    old.set_volume(
+                        decibels(self.music_volume * self.music_level),
+                        tween(*fade_in_ms),
+                    );
                     return;
                 }
                 let Some(mut data) = self.data(bundle, key) else {
@@ -109,15 +115,16 @@ impl Audio {
                 if *looped {
                     data = data.loop_region(..);
                 }
+                let full = decibels(self.music_volume * self.music_level);
                 let start = if *fade_in_ms > 0.0 {
                     Decibels::SILENCE
                 } else {
-                    decibels(self.music_volume)
+                    full
                 };
                 match self.manager.play(data.volume(start)) {
                     Ok(mut h) => {
                         if *fade_in_ms > 0.0 {
-                            h.set_volume(decibels(self.music_volume), tween(*fade_in_ms));
+                            h.set_volume(full, tween(*fade_in_ms));
                         }
                         self.music.insert(*id, h);
                     }
@@ -131,10 +138,23 @@ impl Audio {
             }
             Cmd::Volume { volume, ms } => {
                 self.music_volume = *volume;
+                let v = decibels(*volume * self.music_level);
                 for h in self.music.values_mut() {
-                    h.set_volume(decibels(*volume), tween(*ms));
+                    h.set_volume(v, tween(*ms));
                 }
             }
+        }
+    }
+
+    /// The options' *Music Volume* (0–1).
+    pub fn set_music_level(&mut self, level: f32) {
+        if (self.music_level - level).abs() < f32::EPSILON {
+            return;
+        }
+        self.music_level = level;
+        let v = decibels(self.music_volume * level);
+        for h in self.music.values_mut() {
+            h.set_volume(v, Tween::default());
         }
     }
 

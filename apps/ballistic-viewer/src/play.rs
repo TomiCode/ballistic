@@ -241,7 +241,9 @@ impl Play {
             u32::try_from(energy.lives).unwrap_or(0),
         )?;
         let (sky, lighting) = environment(gpu, bundle, &physics, key, format)?;
-        let clouds = Clouds::new(&physics.environment, key, level);
+        // The cloud layer, unless the options turned it off.
+        let clouds = Clouds::new(&physics.environment, key, level)
+            .filter(|_| save.borrow().data.settings.clouds);
         let flames = Flames::new(level, &physics.particles, |k| bundle.scene(k).ok());
         let effects = Effects::new(level, &physics.particles, |k| bundle.scene(k).ok());
         let life_looks = LifeLooks::new(gpu, bundle, level, &physics.energy.extra_life, format)?;
@@ -473,8 +475,11 @@ impl Play {
             }
             PlayKey::Left | PlayKey::Right if rotating => {
                 if pressed && self.turn.is_none() && self.snap_next_frame.is_none() {
-                    // Cam Left = +90° in the original's left-handed space = −90° here.
-                    let delta = if k == PlayKey::Left {
+                    // Cam Left = +90° in the original's left-handed space = −90° here
+                    // (the other way with the options' *InvertCamRot?*).
+                    let invert = self.save.borrow().data.settings.invert_rotation;
+                    let towards_left = (k == PlayKey::Left) ^ invert;
+                    let delta = if towards_left {
                         -std::f32::consts::FRAC_PI_2
                     } else {
                         std::f32::consts::FRAC_PI_2

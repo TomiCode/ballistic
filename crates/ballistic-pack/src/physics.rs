@@ -100,6 +100,22 @@ impl Row<'_> {
         }
     }
 
+    /// An integer cell (an int, or a typed one such as a keyboard key).
+    pub(crate) fn int(&self, col: &str) -> Result<i32> {
+        match self.cell(col)? {
+            Cell::Int(v) => Ok(*v),
+            Cell::Parameter(Some(p)) => match self.owner.scripts.objects.get(*p) {
+                Some(Some(ScriptObject::Out(o))) => buffer_i32(&o.value),
+                Some(Some(ScriptObject::Local(l) | ScriptObject::Parameter(l))) => {
+                    buffer_i32(&l.value)
+                }
+                _ => None,
+            }
+            .with_context(|| format!("column {col:?}: parameter cell not decodable")),
+            c => bail!("column {col:?}: expected an integer, got {c:?}"),
+        }
+    }
+
     pub(crate) fn string(&self, col: &str) -> Result<String> {
         match self.cell(col)? {
             Cell::String(s) => Ok(s.clone()),
@@ -352,6 +368,13 @@ fn buffer_floats(v: &ckscript::ParamValue) -> Option<Vec<f32>> {
                 .map(|c| f32::from_le_bytes(*c))
                 .collect(),
         ),
+        _ => None,
+    }
+}
+
+fn buffer_i32(v: &ckscript::ParamValue) -> Option<i32> {
+    match v {
+        ckscript::ParamValue::Buffer(b) => b.first_chunk::<4>().map(|c| i32::from_le_bytes(*c)),
         _ => None,
     }
 }

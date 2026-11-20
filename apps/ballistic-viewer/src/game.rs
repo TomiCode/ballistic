@@ -21,6 +21,7 @@ use ballistic_render::Camera;
 use crate::flow::EventSounds;
 use crate::highscore_screens::{self, HighscoreScreens};
 use crate::menus::{self, MenuId, MenuScreens};
+use crate::options_screens::{self, OptionsScreens, Which};
 use crate::play::AfterScore;
 use crate::save::SharedSave;
 
@@ -34,11 +35,14 @@ pub enum Action {
     /// Back to the main menu over the menu level.
     MainMenu,
     Quit,
+    /// The settings changed (in the save): apply them.
+    Settings,
 }
 
 pub struct Game {
     pub menus: MenuScreens,
     pub tables: HighscoreScreens,
+    pub options: OptionsScreens,
     sounds: EventSounds,
     save: SharedSave,
     levels: usize,
@@ -78,9 +82,11 @@ impl Game {
             format,
             "english",
         )?;
+        let options = OptionsScreens::new(gpu, bundle, &physics.menus, format, "english")?;
         let mut g = Self::new(
             menus,
             tables,
+            options,
             &physics.flow,
             physics.highscores.defaults.len(),
             save,
@@ -93,6 +99,7 @@ impl Game {
     pub fn new(
         menus: MenuScreens,
         tables: HighscoreScreens,
+        options: OptionsScreens,
         flow: &LevelFlow,
         levels: usize,
         save: SharedSave,
@@ -100,6 +107,7 @@ impl Game {
         Self {
             menus,
             tables,
+            options,
             sounds: EventSounds::new(flow),
             save,
             levels,
@@ -113,7 +121,18 @@ impl Game {
 
     /// A menu or table is up: the level waits.
     pub fn paused(&self) -> bool {
-        self.menus.active() || self.tables.active()
+        self.menus.active() || self.tables.active() || self.options.active()
+    }
+
+    /// An options key row waits for its key: every key is for it.
+    pub fn binding(&self) -> bool {
+        self.options.waiting()
+    }
+
+    /// The key for the waiting key row (a settings key name).
+    pub fn bind(&mut self, name: &str) {
+        self.options.bind(name);
+        self.handle();
     }
 
     /// At the main menu (no level).
@@ -150,7 +169,9 @@ impl Game {
     }
 
     pub fn key(&mut self, scan: u32) -> bool {
-        let taken = if self.tables.active() {
+        let taken = if self.options.active() {
+            self.options.key(scan)
+        } else if self.tables.active() {
             self.tables.key(scan)
         } else {
             self.menus.key(scan)
@@ -164,11 +185,19 @@ impl Game {
     }
 
     pub fn point(&mut self, pos: (f32, f32), size: (u32, u32)) {
-        self.menus.point(pos, size);
+        if self.options.active() {
+            self.options.point(pos, size);
+        } else {
+            self.menus.point(pos, size);
+        }
     }
 
     pub fn click(&mut self, pos: (f32, f32), size: (u32, u32)) -> bool {
-        let taken = self.menus.click(pos, size);
+        let taken = if self.options.active() {
+            self.options.click(pos, size)
+        } else {
+            self.menus.click(pos, size)
+        };
         self.handle();
         taken
     }
@@ -183,6 +212,19 @@ impl Game {
     }
 
     fn handle(&mut self) {
+        for e in self.options.take_events() {
+            match e {
+                options_screens::Event::Message(m) => self.sounds.emit(m),
+                options_screens::Event::Changed => {
+                    self.save.borrow_mut().data.settings = self.options.settings.clone();
+                    self.actions.push(Action::Settings);
+                }
+                options_screens::Event::Done => {
+                    self.save.borrow().write();
+                    self.menus.open(MenuId::Options, Vec::new());
+                }
+            }
+        }
         for e in self.tables.take_events() {
             match e {
                 highscore_screens::Event::Message(m) => self.sounds.emit(m),
@@ -265,9 +307,14 @@ impl Game {
             },
             (MenuId::Dead, _) => self.actions.push(Action::Restart),
             (MenuId::Options, 3) => self.back(),
-            (MenuId::Options, _) => {
-                eprintln!("options: not there yet");
-                self.menus.open(MenuId::Options, Vec::new());
+            (MenuId::Options, i) => {
+                let which = match i {
+                    0 => Which::Graphics,
+                    1 => Which::Controls,
+                    _ => Which::Sound,
+                };
+                let settings = self.save.borrow().data.settings.clone();
+                self.options.open(which, &settings);
             }
         }
     }
@@ -358,6 +405,7 @@ mod tests {
                 "english",
                 std::collections::HashMap::new(),
             ),
+            OptionsScreens::with_textures(&menus, "english", std::collections::HashMap::new()),
             &flow,
             3,
             save,

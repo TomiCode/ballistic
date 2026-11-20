@@ -115,6 +115,65 @@ pub struct Menus {
     /// `Menu_Options`: graphics, keys, sound, back.
     pub options: ButtonMenu,
     pub yes_no: YesNoMenu,
+    /// The options' screens (`Menu_Opt_Graphics`, `_Keys`, `_Sound`).
+    pub settings: OptionsScreens,
+}
+
+/// The options' screens. Up and Down move between the rows and the Ok
+/// button; Left and Right change a choice or a yes/no; Enter on a key row
+/// waits for the new key; Enter on Ok, or Escape, goes back.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct OptionsScreens {
+    pub graphics: OptionsScreen,
+    pub controls: OptionsScreen,
+    pub sound: OptionsScreen,
+    /// A yes/no row's field: active, inactive (texture key, colour).
+    pub field_active: (Option<String>, [f32; 4]),
+    pub field_inactive: (Option<String>, [f32; 4]),
+    /// A key row waiting for its key.
+    pub key_waiting: (Option<String>, [f32; 4]),
+    /// The screen sizes offered (`Dummy_ScreenModes`).
+    pub resolutions: Vec<[u32; 2]>,
+    /// The default keys (`Keyboard`): forward, backward, left, right,
+    /// rotation, lift (scan codes).
+    pub default_keys: Vec<u32>,
+    /// The volume's step (a fraction).
+    pub volume_step: f32,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct OptionsScreen {
+    pub title: MenuText,
+    pub rows: Vec<OptionRow>,
+    pub ok: MenuButton,
+}
+
+/// One setting's row: its field, label and controls. `setting` names what
+/// it sets: `resolution`, `vsync`, `clouds`, `key_forward` … `key_lift`,
+/// `invert_rotation`, `volume`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct OptionRow {
+    pub setting: String,
+    pub field: HudSprite,
+    pub label: MenuText,
+    pub kind: OptionKind,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OptionKind {
+    /// A value with arrows on each side.
+    Choice {
+        value: MenuText,
+        left: HudSprite,
+        right: HudSprite,
+    },
+    /// Yes and No: the chosen one lit.
+    YesNo { yes: MenuButton, no: MenuButton },
+    /// A key's name.
+    Key { key: MenuText },
+    #[default]
+    None,
 }
 
 /// A list of buttons (`Menu_*_ShowHide`): Up and Down move through them
@@ -189,6 +248,9 @@ pub struct MenuText {
     pub text: std::collections::BTreeMap<String, String>,
     /// Broken into lines at spaces to fit the box (`WordWrap`).
     pub wrap: bool,
+    /// At the box's top instead of centred vertically.
+    #[serde(default)]
+    pub top: bool,
 }
 
 /// `Menu_HighscoreEntry`: a new highscore's name.

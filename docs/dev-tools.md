@@ -10,7 +10,7 @@
 | `crates/ballistic-bundle` | Bundle format: manifest and scene types, zip reader/writer. The engine's only data dependency |
 | `crates/ballistic-pack` | The packer (library and CLI): install verification, scene/texture/audio conversion, physics parameter extraction |
 | `crates/ballistic-physics` | Deterministic fixed-step physics: sphere bodies, static level meshes, per-step pushes ([physics.md](physics.md)) |
-| `crates/ballistic-save` | The save file: open levels, highscore tables, the last name (JSON, written whole) |
+| `crates/ballistic-save` | The save file: open levels, highscore tables, the last name, the settings (JSON, written whole) |
 | `crates/ballistic-render` | wgpu renderer for bundle scenes (fixed-function-style shading in gamma space), camera, off-screen targets |
 | `apps/ballistic-viewer` | Level viewer (winit window or headless `--screenshot`) |
 | `tools/ckinspect` | CLI for looking inside those files while reverse-engineering |

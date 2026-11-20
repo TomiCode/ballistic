@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 22,
+  "format_version": 23,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -316,7 +316,21 @@ and useful to read). Since version 2.
     "pause": { "…": "…" }, "end": { "…": "…" }, "dead": { "…": "…" }, "options": { "…": "…" },
     "yes_no": { "sprites": [], "text": { "…": "…" }, "yes": { "…": "…" }, "no": { "…": "…" },
       "questions": { "Exit Game?": { "english": "Do you want to quit the game?", "…": "…" }, "…": "…" },
-      "keys": [1, 28, 203, 205] } }
+      "keys": [1, 28, 203, 205] },
+    "settings": {
+      "graphics": { "title": { "…": "…" }, "ok": { "…": "…" }, "rows": [
+        { "setting": "resolution", "field": { "name": "M_Opt_Gra_ResField", "…": "…" },
+          "label": { "text": { "english": "Screen Resolution", "…": "…" }, "top": true, "…": "…" },
+          "kind": { "choice": { "value": { "…": "…" }, "left": { "…": "…" }, "right": { "…": "…" } } } },
+        { "setting": "vsync", "kind": { "yes_no": { "yes": { "…": "…" }, "no": { "…": "…" } } }, "…": "…" },
+        "…" ] },
+      "controls": { "rows": [ { "setting": "key_forward", "kind": { "key": { "key": { "…": "…" } } },
+        "…": "…" }, "…" ], "…": "…" },
+      "sound": { "rows": [ { "setting": "volume", "…": "…" } ], "…": "…" },
+      "field_active": ["…", [1.0, 1.0, 1.0, 1.0]], "field_inactive": ["…", [1.0, 1.0, 1.0, 1.0]],
+      "key_waiting": ["…", [1.0, 1.0, 1.0, 1.0]],
+      "resolutions": [[640, 480], [800, 600], [1024, 768], [1152, 864], [1280, 960], [1600, 1200]],
+      "default_keys": [200, 208, 203, 205, 42, 57], "volume_step": 0.1 } }
 }
 ```
 
@@ -513,8 +527,8 @@ and useful to read). Since version 2.
     starts with then.
   - A `MenuText` is a box (`rect`, screen fractions of 4:3), a `font`, an
     `align`ment within `margins` (pixels at 480 lines), a fixed `text` by
-    language (empty when the screen fills it in), and `wrap` (broken at
-    spaces to fit).
+    language (empty when the screen fills it in), `wrap` (broken at spaces
+    to fit) and `top` (at the box's top instead of centred).
   - `entry`: `sprites` shown with it; `title`; `score` (the score, then its
     `text`); `name` (at most `max_len` characters, a caret `caret_size` × the
     line high wide); `ok`; `keys` that confirm.
@@ -537,6 +551,15 @@ and useful to read). Since version 2.
   - `yes_no`: the question's box (`text`), the `yes` and `no` buttons, and
     the `questions` the menus ask, by name (`Exit Game?`, `Restart
     Level?`, `Exit Level?`), each by language.
+  - `settings`: the options' screens (`graphics`, `controls`, `sound`), each
+    a `title`, its `rows` and `ok`. A row names its `setting` (`resolution`,
+    `vsync`, `clouds`, `key_forward` … `key_lift`, `invert_rotation`,
+    `volume`) and has a `field`, a `label` and a `kind`: a `choice` (a
+    `value` between `left` and `right` arrows), `yes_no`, or a `key` (its
+    name's box). Also the fields' looks (`field_active`, `field_inactive`,
+    `key_waiting`), the `resolutions` offered, the `default_keys` (scan
+    codes: forward, backward, left, right, rotation, lift) and the
+    `volume_step`.
 
 - `music`: `Sound.nmo`'s `Music_Manager` and the last level's storm. Times
   in milliseconds, sounds as bundle keys.
@@ -574,4 +597,4 @@ and useful to read). Since version 2.
   `particles`. **19** adds `level_end` and `score_screen`. **20** adds
   `highscores`. **21** adds `menus` (the fonts move there from
   `highscores`) and the table's `back_text`. **22** adds `music` and
-  `sounds.flaps`.
+  `sounds.flaps`. **23** adds `menus.settings` and text's `top`.

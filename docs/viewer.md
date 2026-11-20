@@ -177,8 +177,15 @@ original's menus:
   menu**: Restart, Highscore, Options, Home, Next level (Escape).
 - With the last life gone, the **game over** menu: Restart, Home.
 - A highscore table opened from a menu starts at the current level and
-  goes back to it. Options shows its buttons, but its screens and the
-  credits aren't there yet; the menu level doesn't fly or show its sky yet.
+  goes back to it. The credits aren't there yet; the menu level doesn't fly
+  or show its sky yet.
+- **Options** (research findings 27): *Graphics* (the window's size from
+  the original's list, or as it opened; vsync; the cloud layer), *Controls*
+  (the six keys: Enter on one, then press the new key; a key in use
+  elsewhere swaps; invert rotation) and *Sound* (the music's volume in
+  tens). Up and Down choose a row, Left and Right change it, OK or Escape
+  goes back. Changes apply at once (the clouds with the next level) and
+  are saved with the rest (`--save`).
 
 **Points and lives**, as the original counts them (research findings 16):
 - A level starts with 1000 points and 3 lives.
@@ -320,6 +327,6 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: the options' screens, the credits, the menu level's flight
+- In play mode: the credits, the menu level's flight
   and sky, clicking the highscore buttons, explosions, the screen fade, the
-  paper pieces' wind, the last level's UFO, volume settings
+  paper pieces' wind, the last level's UFO
