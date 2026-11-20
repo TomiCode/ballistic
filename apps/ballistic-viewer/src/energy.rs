@@ -158,6 +158,7 @@ mod tests {
                 activation_points: 100,
                 hit_points: 20,
                 hit_frames: String::new(),
+                look: ballistic_bundle::ExtraPointLook::default(),
             },
         }
     }

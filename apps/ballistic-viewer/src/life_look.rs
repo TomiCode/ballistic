@@ -68,7 +68,7 @@ pub struct LifeLooks {
 
 /// Möller-Trumbore: whether the segment from `o` along `d` (unit) up to
 /// `len` hits the triangle.
-fn hits(o: Vec3, d: Vec3, len: f32, [a, b, c]: [Vec3; 3]) -> bool {
+pub(crate) fn hits(o: Vec3, d: Vec3, len: f32, [a, b, c]: [Vec3; 3]) -> bool {
     let (e1, e2) = (b - a, c - a);
     let p = d.cross(e2);
     let det = e1.dot(p);
@@ -91,7 +91,7 @@ fn hits(o: Vec3, d: Vec3, len: f32, [a, b, c]: [Vec3; 3]) -> bool {
 }
 
 /// The world triangles of the level group `group`.
-fn group_triangles(level: &Scene, group: &str) -> Vec<[Vec3; 3]> {
+pub(crate) fn group_triangles(level: &Scene, group: &str) -> Vec<[Vec3; 3]> {
     let Some(g) = level.groups.iter().find(|g| g.name == group) else {
         return Vec::new();
     };

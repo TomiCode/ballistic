@@ -55,6 +55,10 @@ struct Point {
     sector: u32,
     at: Vec3,
     marker: usize,
+    /// The small balls' places around it while waiting (world offsets).
+    offsets: Vec<Vec3>,
+    /// Time circling (s).
+    orbit_s: f32,
     /// Activated: its small balls are flying (time since, in ms).
     flying: Option<f32>,
     balls: Vec<SmallBall>,
@@ -73,7 +77,11 @@ pub struct Pickups {
 }
 
 impl Pickups {
-    pub fn new(params: &EnergyParams, level: &Scene) -> Self {
+    /// `point_prefab`: the extra point's prefab scene, for where its small
+    /// balls start.
+    pub fn new(params: &EnergyParams, level: &Scene, point_prefab: Option<&Scene>) -> Self {
+        let local_offsets =
+            point_prefab.map_or_else(Vec::new, |s| ball_offsets(&params.extra_point, s));
         let r = &params.extra_life.reach;
         let lives = props::placeholders(level, &params.extra_life.group)
             .into_iter()
@@ -98,6 +106,11 @@ impl Pickups {
                 sector: s.sector,
                 at: s.transform.transform_point3(Vec3::ZERO),
                 marker: s.placeholder as usize,
+                offsets: local_offsets
+                    .iter()
+                    .map(|&o| s.transform.transform_vector3(o))
+                    .collect(),
+                orbit_s: 0.0,
                 flying: None,
                 balls: Vec::new(),
                 tick_acc: 0.0,
@@ -105,7 +118,7 @@ impl Pickups {
                 active: false,
             })
             .collect::<Vec<_>>();
-        // Placed at level init, hidden until their sector activates.
+        // Their markers stay hidden: their looks are drawn instead.
         let visibility = lives
             .iter()
             .map(|l| (l.marker, false))
@@ -140,7 +153,7 @@ impl Pickups {
             }
             p.active = on;
             p.flying = None;
-            self.visibility.push((p.marker, on));
+            p.orbit_s = 0.0;
         }
     }
 
@@ -158,12 +171,13 @@ impl Pickups {
         let tick = 1.0 / TICK_HZ;
         for p in self.points.iter_mut().filter(|p| p.active) {
             let Some(t) = p.flying.as_mut() else {
+                p.orbit_s += real_dt;
                 // TT Extra, idle: activated when the ball comes this near.
                 if !p.used && ball.distance_squared(p.at) <= xp.activation_distance.powi(2) {
                     p.used = true;
                     p.flying = Some(0.0);
-                    p.balls = small_balls(p.at, xp.small_balls, xp.force_width);
-                    self.visibility.push((p.marker, false));
+                    let start = orbit(p.at, &p.offsets, p.orbit_s, xp.look.rotation_speed);
+                    p.balls = small_balls(&start, xp.small_balls, xp.force_width);
                     out.push(Event::Activated(xp.activation_points));
                 }
                 continue;
@@ -226,17 +240,81 @@ impl Pickups {
             .collect()
     }
 
+    /// Each extra point, for its look.
+    pub fn points(&self) -> Vec<PointState> {
+        let speed = self.params.extra_point.look.rotation_speed;
+        self.points
+            .iter()
+            .map(|p| PointState {
+                marker: p.marker,
+                active: p.active,
+                activated: p.used,
+                balls: if p.used {
+                    p.balls.iter().map(|b| (b.pos, b.hit)).collect()
+                } else {
+                    orbit(p.at, &p.offsets, p.orbit_s, speed)
+                        .into_iter()
+                        .map(|b| (b, false))
+                        .collect()
+                },
+            })
+            .collect()
+    }
+
     pub fn take_visibility(&mut self) -> Vec<(usize, bool)> {
         std::mem::take(&mut self.visibility)
     }
 }
 
-/// The small balls around an extra point, each with its share of the force.
-fn small_balls(at: Vec3, n: u32, width: f32) -> Vec<SmallBall> {
-    (0..n)
-        .map(|i| {
-            let a = i as f32 / n as f32 * std::f32::consts::TAU;
-            let pos = at + Mat4::from_rotation_y(a).transform_vector3(Vec3::X * 2.0);
+/// One extra point's state, for drawing it.
+#[derive(Debug, Clone)]
+pub struct PointState {
+    pub marker: usize,
+    /// Its sector is active (and it isn't spent).
+    pub active: bool,
+    /// Taken: its small balls fly.
+    pub activated: bool,
+    /// Each small ball's position and whether it reached the ball.
+    pub balls: Vec<(Vec3, bool)>,
+}
+
+/// The small balls' places relative to the extra point's frame: the prefab's
+/// ball sprites (`TT Extra`'s `1` ... `6`), relative to its root.
+fn ball_offsets(xp: &ballistic_bundle::ExtraPoint, prefab: &Scene) -> Vec<Vec3> {
+    let find = |n: &str| prefab.objects.iter().find(|o| o.name == n);
+    let root = find(&format!("{}_MF", xp.group))
+        .map_or(Mat4::IDENTITY, |o| Mat4::from_cols_array_2d(&o.transform));
+    xp.look
+        .balls
+        .iter()
+        .filter_map(|n| find(n))
+        .map(|o| {
+            (root.inverse() * Mat4::from_cols_array_2d(&o.transform)).transform_point3(Vec3::ZERO)
+        })
+        .collect()
+}
+
+/// While waiting, the small balls circle at `speed` (radians per second),
+/// each about the axis across its offset and the vertical (`TT Extra`'s
+/// exact axes aren't read; research findings 22).
+fn orbit(at: Vec3, offsets: &[Vec3], t: f32, speed: f32) -> Vec<Vec3> {
+    offsets
+        .iter()
+        .map(|&o| {
+            let axis = o.cross(Vec3::Y).try_normalize().unwrap_or(Vec3::X);
+            at + ballistic_physics::Quat::from_axis_angle(axis, speed * t) * o
+        })
+        .collect()
+}
+
+/// The small balls flying from `start`, each with its share of the force.
+fn small_balls(start: &[Vec3], n: u32, width: f32) -> Vec<SmallBall> {
+    let n = n.max(1).min(start.len().max(1) as u32);
+    start
+        .iter()
+        .take(n as usize)
+        .enumerate()
+        .map(|(i, &pos)| {
             let spread = if n > 1 {
                 i as f32 / (n - 1) as f32 * 2.0 - 1.0
             } else {
@@ -272,6 +350,7 @@ mod tests {
             activation_points: 100,
             hit_points: 20,
             hit_frames: String::new(),
+            look: ballistic_bundle::ExtraPointLook::default(),
         };
         let mut p = Pickups {
             params: ballistic_bundle::EnergyParams {
@@ -299,6 +378,13 @@ mod tests {
                 sector: 1,
                 at: Vec3::ZERO,
                 marker: 0,
+                offsets: (0..6)
+                    .map(|i| {
+                        Mat4::from_rotation_y(i as f32 / 6.0 * std::f32::consts::TAU)
+                            .transform_vector3(Vec3::X * 2.0)
+                    })
+                    .collect(),
+                orbit_s: 0.0,
                 flying: None,
                 balls: Vec::new(),
                 tick_acc: 0.0,
@@ -322,5 +408,22 @@ mod tests {
         p.set_sector_active(1, false);
         p.set_sector_active(1, true);
         assert_eq!(p.frame(Vec3::ZERO, 1.0 / 60.0), Vec::new());
+    }
+
+    #[test]
+    fn small_balls_circle_at_their_distance() {
+        let offsets = [
+            Vec3::new(0.0, 0.0, 2.0),
+            Vec3::new(0.0, 2.0, 0.0),
+            Vec3::new(1.0, 1.0, -1.41),
+        ];
+        let at = Vec3::new(5.0, 1.0, -3.0);
+        let start = orbit(at, &offsets, 0.0, 5.0);
+        let later = orbit(at, &offsets, 0.3, 5.0);
+        for ((o, a), b) in offsets.iter().zip(&start).zip(&later) {
+            assert!((a.distance(at) - o.length()).abs() < 1e-4);
+            assert!((b.distance(at) - o.length()).abs() < 1e-4);
+            assert!(a.distance(*b) > 0.5, "it moves");
+        }
     }
 }

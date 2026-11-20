@@ -51,7 +51,11 @@ pub fn extract(install: &Install) -> Result<Vec<bb::ParticleEmitter>> {
         let nodes = Extractor::new(&g.file, &g.scripts).nodes(&|_| true);
         for n in &nodes {
             let shape = match n.building_block.as_str() {
-                "Point Particle System" => bb::EmitterShape::Point,
+                // The time-dependent one emits the same way (the extra
+                // point's trails).
+                "Point Particle System" | "TT_TimedependentPointParticlesystem" => {
+                    bb::EmitterShape::Point
+                }
                 "PlanarParticleSystem" => bb::EmitterShape::Planar,
                 "SphericalParticleSystem" => bb::EmitterShape::Spherical,
                 _ => continue,

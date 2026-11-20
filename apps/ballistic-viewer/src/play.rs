@@ -36,6 +36,7 @@ use crate::life_look::LifeLooks;
 use crate::modules::Modules;
 use crate::pickups::{self, Pickups};
 use crate::pieces::Pieces;
+use crate::point_look::PointLooks;
 use crate::progress::{self, Progress};
 use crate::props::Props;
 use crate::transformers::{self, Transformers};
@@ -109,6 +110,7 @@ pub struct Play {
     flames: Flames,
     effects: Effects,
     life_looks: LifeLooks,
+    point_looks: PointLooks,
     particles: ParticleRenderer,
     /// Texture key (`None`: white) → the particle renderer's texture.
     particle_textures: std::collections::HashMap<Option<String>, usize>,
@@ -197,7 +199,8 @@ impl Play {
             &physics.energy,
             crate::energy::level_index(key).unwrap_or(0),
         );
-        let pickups = Pickups::new(&physics.energy, level);
+        let point_prefab = bundle.scene("ph/p_extra_point").ok();
+        let pickups = Pickups::new(&physics.energy, level, point_prefab.as_ref());
         let hud = Hud::new(
             gpu,
             bundle,
@@ -210,13 +213,23 @@ impl Play {
         let flames = Flames::new(level, &physics.particles, |k| bundle.scene(k).ok());
         let effects = Effects::new(level, &physics.particles, |k| bundle.scene(k).ok());
         let life_looks = LifeLooks::new(gpu, bundle, level, &physics.energy.extra_life, format)?;
+        let point_looks = PointLooks::new(
+            gpu,
+            bundle,
+            level,
+            &physics.energy.extra_point,
+            &physics.particles,
+            format,
+        )?;
         let mut particles = ParticleRenderer::new(gpu, format);
         let mut particle_textures = std::collections::HashMap::new();
         let keys: Vec<Option<String>> = flames
             .emitters()
             .chain(effects.emitters())
+            .chain(point_looks.emitters())
             .map(|e| e.params.texture.clone())
             .chain(life_looks.sprite_textures())
+            .chain(point_looks.sprite_textures())
             .collect();
         for key in keys {
             if particle_textures.contains_key(&key) {
@@ -282,6 +295,7 @@ impl Play {
             flames,
             effects,
             life_looks,
+            point_looks,
             particles,
             particle_textures,
             score: None,
@@ -909,6 +923,8 @@ impl Play {
         self.flames.update(ball, reached, real_dt * 1000.0);
         let lives = self.pickups.lives();
         self.life_looks.update(ball, &lives, real_dt);
+        let points = self.pickups.points();
+        self.point_looks.update(&points, ball, real_dt);
         let fans = self.modules.fans();
         self.effects.update(ball, &fans, real_dt * 1000.0);
         if !self.camera_frozen {
@@ -928,6 +944,7 @@ impl Play {
             .chain(&self.transformers.placeholders)
             .copied()
             .chain(self.pickups.lives().into_iter().map(|(marker, _)| marker))
+            .chain(self.pickups.points().into_iter().map(|p| p.marker))
     }
 
     /// (modules placed, modules simulated).
@@ -1028,6 +1045,8 @@ impl Play {
             .render(gpu, encoder, color, depth, camera, aspect, &opts);
         self.life_looks
             .render(gpu, encoder, color, depth, camera, aspect, &opts);
+        self.point_looks
+            .render(gpu, encoder, color, depth, camera, aspect, &opts);
         self.render_particles(gpu, encoder, color, depth, camera, aspect);
     }
 
@@ -1044,6 +1063,11 @@ impl Play {
     /// Extra lives shown now (for headless runs).
     pub fn lives_shown(&self) -> usize {
         self.life_looks.shown()
+    }
+
+    /// Extra points shown now (for headless runs).
+    pub fn points_shown(&self) -> usize {
+        self.point_looks.shown()
     }
 
     /// The particle systems, last (blended, no depth writes).
@@ -1070,7 +1094,12 @@ impl Play {
         };
         // One batch of triangles and one of lines per texture and blend.
         let mut groups: Vec<Group> = Vec::new();
-        for e in self.flames.emitters().chain(self.effects.emitters()) {
+        for e in self
+            .flames
+            .emitters()
+            .chain(self.effects.emitters())
+            .chain(self.point_looks.emitters())
+        {
             let Some(&texture) = self.particle_textures.get(&e.params.texture) else {
                 continue;
             };
@@ -1085,11 +1114,16 @@ impl Play {
             let g = &mut groups[i];
             e.vertices(facing, &mut g.2, &mut g.3);
         }
-        // The extra lives' silver balls (sprites).
-        if let Some((key, blend, quads)) = self.life_looks.sprites(facing)
-            && let Some(&texture) = self.particle_textures.get(&key)
-        {
-            groups.push((texture, blend, quads, Vec::new()));
+        // The extra lives' and extra points' silver balls (sprites).
+        let sprites = self
+            .life_looks
+            .sprites(facing)
+            .into_iter()
+            .chain(self.point_looks.sprites(facing));
+        for (key, blend, quads) in sprites {
+            if let Some(&texture) = self.particle_textures.get(&key) {
+                groups.push((texture, blend, quads, Vec::new()));
+            }
         }
         let batches: Vec<ParticleBatch<'_>> = groups
             .iter()

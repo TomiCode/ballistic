@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 17,
+  "format_version": 18,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -209,7 +209,12 @@ and useful to read). Since version 2.
       "activation_distance": 3.0, "hit_distance": 4.0, "away_force": 1.0,
       "away_damping": 0.3, "away_ms": 1000.0, "force": 0.12, "damping": 0.95,
       "force_width": 0.08, "activation_points": 100, "hit_points": 20,
-      "hit_frames": "P_Extra_Point_Hitframes" } },
+      "hit_frames": "P_Extra_Point_Hitframes",
+      "look": { "show_distance": 80.0, "rotation_speed": 5.0,
+        "centre": "P_Extra_Point_Ball0",
+        "balls": ["P_Extra_Point_Ball1", "…", "P_Extra_Point_Ball6"],
+        "floor": "P_Extra_Point_Floor", "floor_ray_origin": [0.0, -2.0, 0.0],
+        "floor_ray_depth": 1.5, "floor_group": "Phys_Floors" } } },
   "flow": {
     "new_ball_ms": 3000.0, "lost_ms": 1000.0, "depth_cubes": "DepthTestCubes",
     "prop_depth_margin": 200.0,
@@ -364,7 +369,10 @@ and useful to read). Since version 2.
   - `extra_point`: `activation_points` when the ball comes within
     `activation_distance`, then `hit_points` per small ball (of
     `small_balls`) that reaches it. The rest are *TT Extra*'s flight
-    settings.
+    settings. `look`: its prefab objects (by name), shown within
+    `show_distance`; the small balls start at their sprites' places and
+    circle at `rotation_speed`; the floor glow shows over a floor (the ray)
+    until the activation.
 - `flow`: the level flow (the `BallManager`).
   - `new_ball_ms`: the ball comes this long after the level start or a loss.
   - `lost_ms`: a lost ball falls on this long before it's taken away.
@@ -438,3 +446,5 @@ and useful to read). Since version 2.
   `environment`. **15** adds `particles`. **16** adds the
   meshes' `visible` (scene encoding 2). **17** adds sprite objects (scene
   encoding 3) and the extra life's `look`; colour-keyed textures get alpha.
+  **18** adds the extra point's `look`, and its trail systems to
+  `particles`.

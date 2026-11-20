@@ -153,7 +153,11 @@ good, and the window title shows the time since the level started.
     Over a floor it bounces, with a glowing shadow below. It shows while the
     ball is within 60 on X and Y. Taking it bursts its particles (sparks and
     fizz lines).
-  - An **extra point** is still the level's placeholder marker.
+  - An **extra point** looks like the original's (research findings 22): a
+    silver centre ball with six small ones circling it, trailing sparkles,
+    and a glow on the floor below. It shows while the ball is within 80.
+    Taking it bursts sparks from the centre; the small balls fly off, then
+    home in on the ball, each bursting in sparks when it arrives.
   - An extra life comes back when its sector is entered again; an extra
     point doesn't.
 - At the finish the score is printed: the level's bonus (100 × its number) +
@@ -265,8 +269,7 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: the score screen, the pickups' looks (and the extra point's
-  particles), explosions, the other
+- In play mode: the score screen, explosions, the other
   sounds (the wooden flaps, the level finish, music),
   the screen fade, the paper pieces' wind, the end
   sequence (and the last level's UFO) and score

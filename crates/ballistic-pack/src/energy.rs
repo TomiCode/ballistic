@@ -184,6 +184,7 @@ fn extra_point(install: &Install) -> Result<bb::ExtraPoint> {
         })
         .context("P_Extra_Point: points selector not found")?;
     let hit_frames = text(input(extra, "Hitframegroup")).unwrap_or_default();
+    let look = extra_point_look(install, &nodes, f("Rotationspeed")?)?;
     Ok(bb::ExtraPoint {
         group: "P_Extra_Point".into(),
         small_balls: u32::try_from(f("Number of Smallballs")?.round() as i64)
@@ -199,6 +200,73 @@ fn extra_point(install: &Install) -> Result<bb::ExtraPoint> {
         activation_points: points[0],
         hit_points: points[1],
         hit_frames,
+        look,
+    })
+}
+
+/// *TT Extra* finds its parts among the prefab's objects by name: the floor
+/// (`Floor`), the centre ball (`Ball0`) and the small balls (`1` … `6`;
+/// `TT_Gravity_RT.dll` `0x10001ac0`). The show distance and floor ray are
+/// `P_Extra_Point_MF Script`'s.
+fn extra_point_look(
+    install: &Install,
+    nodes: &[NodeParams],
+    rotation_speed: f32,
+) -> Result<bb::ExtraPointLook> {
+    let file = ckfile::CkFile::open(
+        install
+            .get("3d entities/ph/p_extra_point.nmo")
+            .context("P_Extra_Point.nmo missing")?,
+    )?;
+    let named = |class: ckfile::ClassId| {
+        file.objects
+            .iter()
+            .filter(move |o| o.class_id == class)
+            .filter_map(|o| o.name.clone())
+    };
+    let mut sprites: Vec<String> = named(ckfile::ClassId::SPRITE_3D).collect();
+    sprites.sort();
+    let centre = sprites
+        .iter()
+        .find(|n| n.ends_with("Ball0"))
+        .cloned()
+        .context("P_Extra_Point: no Ball0 sprite")?;
+    let balls: Vec<String> = sprites.into_iter().filter(|n| *n != centre).collect();
+    let floor = named(ckfile::ClassId::OBJECT_3D)
+        .find(|n| n.contains("Floor"))
+        .context("P_Extra_Point: no floor object")?;
+    let main = |bb_name: &str| {
+        nodes
+            .iter()
+            .filter(|n| {
+                n.building_block == bb_name && n.path.iter().any(|p| p == "P_Extra_Point_MF Script")
+            })
+            .collect::<Vec<_>>()
+    };
+    let show_distance = main("TT Scaleable Proximity")
+        .into_iter()
+        .filter_map(|n| float(input(n, "Distance")))
+        .fold(0.0_f32, f32::max);
+    let ray = main("Ray Intersection")
+        .into_iter()
+        .next()
+        .context("P_Extra_Point_MF Script: Ray Intersection")?;
+    let origin = vector(input(ray, "Ray Origin"))
+        .and_then(|v| <[f32; 3]>::try_from(v).ok())
+        .context("Ray Intersection: Ray Origin")?;
+    let floor_group = main("Op")
+        .into_iter()
+        .find_map(|n| text(input(n, "p1")).filter(|t| t.starts_with("Phys_")))
+        .context("P_Extra_Point_MF Script: the floor group")?;
+    Ok(bb::ExtraPointLook {
+        show_distance,
+        rotation_speed,
+        centre,
+        balls,
+        floor,
+        floor_ray_origin: [origin[0], origin[1], -origin[2]],
+        floor_ray_depth: float(input(ray, "Depth")).context("Ray Intersection: Depth")?,
+        floor_group,
     })
 }
 

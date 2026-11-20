@@ -16,6 +16,7 @@ mod particles;
 mod pickups;
 mod pieces;
 mod play;
+mod point_look;
 mod progress;
 mod props;
 mod transformers;
@@ -363,10 +364,11 @@ fn screenshot(
         );
         eprintln!("{}", p.energy_summary());
         eprintln!(
-            "flames burning: {}, fans running: {}, extra lives shown: {}",
+            "flames burning: {}, fans running: {}, extra lives shown: {}, extra points shown: {}",
             p.flames_burning(),
             p.fans_running(),
-            p.lives_shown()
+            p.lives_shown(),
+            p.points_shown()
         );
         let fallen = p.fallen_modules();
         if !fallen.is_empty() {

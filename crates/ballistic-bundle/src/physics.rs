@@ -122,6 +122,30 @@ pub struct ExtraPoint {
     pub hit_points: i32,
     /// Where the hits show (a group of the prefab).
     pub hit_frames: String,
+    pub look: ExtraPointLook,
+}
+
+/// How an extra point looks (`P_Extra_Point_MF Script`, *TT Extra*), by
+/// prefab object name.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ExtraPointLook {
+    /// *TT Extra* is on (shown) while the ball is within this.
+    pub show_distance: f32,
+    /// The small balls circle at this rate (radians per second).
+    pub rotation_speed: f32,
+    /// The centre ball sprite (`Ball0`), hidden at the activation.
+    pub centre: String,
+    /// The small ball sprites, in *TT Extra*'s order; each has a child frame
+    /// with its trail.
+    pub balls: Vec<String>,
+    /// The floor glow, shown until the activation unless no floor is below.
+    pub floor: String,
+    /// The floor test (a *Flying Extra?* has none below): a ray from
+    /// `floor_ray_origin` (in the frame) down `floor_ray_depth`, against the
+    /// level group `floor_group`.
+    pub floor_ray_origin: [f32; 3],
+    pub floor_ray_depth: f32,
+    pub floor_group: String,
 }
 
 /// The ball's hit and roll sounds. Hit IDs: 1 stone, 2 wood, 3 metal, 4 dome;
