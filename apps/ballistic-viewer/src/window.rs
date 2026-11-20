@@ -79,6 +79,8 @@ struct State {
     play: Option<crate::play::Play>,
     /// `--play` given: rebuild play mode on every scene switch.
     play_mode: bool,
+    /// The save file, shared by each level's play mode.
+    save: crate::save::SharedSave,
     scene_keys: Vec<String>,
     camera: ballistic_render::Camera,
     opts: RenderOptions,
@@ -145,8 +147,22 @@ impl App {
             None => scene.home,
         };
         let depth = ballistic_render::gpu_depth_view(&gpu, config.width, config.height);
+        let save = if self.args.play {
+            let defaults = self.bundle.physics()?.highscores;
+            let path = self.args.save.clone().or_else(ballistic_save::default_path);
+            crate::save::SaveFile::open(path, &defaults)
+        } else {
+            crate::save::SaveFile::in_memory(&ballistic_bundle::Highscores::default())
+        }
+        .shared();
         let play = if self.args.play {
-            Some(new_play(&gpu, &mut self.bundle, &mut scene, view_format)?)
+            Some(new_play(
+                &gpu,
+                &mut self.bundle,
+                &mut scene,
+                view_format,
+                &save,
+            )?)
         } else {
             None
         };
@@ -159,6 +175,7 @@ impl App {
             scene,
             play,
             play_mode: self.args.play,
+            save,
             scene_keys,
             camera,
             opts: options(&self.args),
@@ -182,15 +199,47 @@ impl App {
     }
 }
 
+/// The level end and its screens take Space, Enter, Escape, Backspace and
+/// the arrows (by `DirectInput` scan code); the name entry takes every key.
+/// Whether the key was taken.
+fn level_end_key(play: &mut crate::play::Play, code: KeyCode, ev: &KeyEvent) -> bool {
+    let pressed = ev.state == ElementState::Pressed;
+    let scan = match code {
+        KeyCode::Space => Some(57),
+        KeyCode::Enter | KeyCode::NumpadEnter => Some(28),
+        KeyCode::Escape => Some(1),
+        KeyCode::Backspace => Some(crate::highscore_screens::BACKSPACE),
+        KeyCode::ArrowLeft => Some(203),
+        KeyCode::ArrowRight => Some(205),
+        _ => None,
+    };
+    let typing = play.typing();
+    if pressed
+        && typing
+        && let Some(text) = ev.text.as_deref()
+    {
+        play.menu_text(text);
+    }
+    if let Some(scan) = scan {
+        if pressed {
+            play.menu_key(scan);
+        } else {
+            play.menu_key_up(scan);
+        }
+    }
+    scan.is_some() || typing
+}
+
 /// Play mode on a loaded level; hides the placeholders that props replace.
 fn new_play(
     gpu: &Gpu,
     bundle: &mut Bundle,
     scene: &mut crate::LoadedScene,
     format: wgpu::TextureFormat,
+    save: &crate::save::SharedSave,
 ) -> Result<crate::play::Play> {
     let level = bundle.scene(&scene.key)?;
-    let play = crate::play::Play::new(gpu, bundle, &scene.key, &level, format)?;
+    let play = crate::play::Play::new(gpu, bundle, &scene.key, &level, format, save.clone())?;
     for i in play.placeholders() {
         scene.renderer.set_object_hidden(i, true);
     }
@@ -256,9 +305,15 @@ impl State {
         self.camera = self.scene.home;
         if self.play_mode {
             // Levels have a start marker; other scenes fall back to free-fly.
-            self.play = new_play(&self.gpu, bundle, &mut self.scene, self.view_format)
-                .inspect_err(|e| eprintln!("play mode off for {key}: {e:#}"))
-                .ok();
+            self.play = new_play(
+                &self.gpu,
+                bundle,
+                &mut self.scene,
+                self.view_format,
+                &self.save,
+            )
+            .inspect_err(|e| eprintln!("play mode off for {key}: {e:#}"))
+            .ok();
         }
         Ok(())
     }
@@ -277,21 +332,8 @@ impl State {
         {
             use crate::play::PlayKey as K;
             let pressed = ev.state == ElementState::Pressed;
-            // The level end and score screen take Space, Enter and Escape
-            // (by DirectInput scan code).
-            if play.in_level_end() {
-                let scan = match code {
-                    KeyCode::Space => Some(57),
-                    KeyCode::Enter | KeyCode::NumpadEnter => Some(28),
-                    KeyCode::Escape => Some(1),
-                    _ => None,
-                };
-                if let Some(scan) = scan {
-                    if pressed {
-                        play.menu_key(scan);
-                    }
-                    return Ok(());
-                }
+            if play.in_level_end() && level_end_key(play, code, ev) {
+                return Ok(());
             }
             let k = match code {
                 KeyCode::ArrowUp => Some(K::Up),

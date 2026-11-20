@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 19,
+  "format_version": 20,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -283,7 +283,25 @@ and useful to read). Since version 2.
     "count_speed": [[80, 1], [500, 5], [9999, 25]],
     "count_pitch": [[1.0, 1.0], [1.0, 1.1], [1.1, 1.2]], "pitch_ramp_ms": 100.0,
     "counter_sound": "menu_counter", "life_ms": 610.0, "fast_life_ms": 700.0,
-    "wait_ms": 4000.0, "keys": [57, 28, 1] }
+    "wait_ms": 4000.0, "keys": [1, 28, 57] },
+  "highscores": {
+    "defaults": [[{ "name": "Mr. Default", "score": 4000 }, "…"], "…"],
+    "unlocked": [true, false, "…"], "default_name": "name",
+    "fonts": { "GameFont_01": { "texture": "font_1", "glyphs": ["…"],
+      "scale": [0.45, 0.55], "space": [0.0, 0.0], "color": [1.0, 1.0, 1.0, 1.0] }, "…": "…" },
+    "entry": {
+      "sprites": [ { "name": "M_BlackScreen", "…": "…" }, "…" ],
+      "title": { "rect": [0.35, 0.3, 0.65, 0.4], "font": "GameFont_01", "align": "center",
+        "margins": [2.0, 2.0, 2.0, 2.0], "text": { "english": "New highscore entry!", "…": "…" },
+        "wrap": true },
+      "score": { "…": "…" }, "name": { "…": "…" }, "caret_size": 0.1, "max_len": 9,
+      "ok": { "…": "…" }, "keys": [28] },
+    "table": {
+      "sprites": [ "…" ], "title": { "…": "…" }, "back": { "…": "…" },
+      "names": [ { "…": "…" }, "…" ], "scores": [ { "…": "…" }, "…" ], "name_offset": 0.035,
+      "arrows": ["M_Highscore_But_1", "M_Highscore_But_2"],
+      "arrow_pressed": ["button01_select", [1.0, 1.0, 1.0, 1.0]],
+      "previous_keys": [203], "next_keys": [205], "leave_keys": [1, 28] } }
 }
 ```
 
@@ -471,6 +489,23 @@ and useful to read). Since version 2.
     parts; the total shows `wait_ms`.
   - `keys` (scan codes) score fast while counting (the lives then go one
     every `fast_life_ms`) and leave the total.
+- `highscores`: `base.cmo`'s tables and `Menu.nmo`'s highscore screens.
+  - `defaults`: each level's table on a new install, best first;
+    `unlocked`: the levels open then; `default_name`: the name the entry
+    starts with then.
+  - `fonts`: the menu fonts by name, like the HUD's.
+  - A `MenuText` is a box (`rect`, screen fractions of 4:3), a `font`, an
+    `align`ment within `margins` (pixels at 480 lines), a fixed `text` by
+    language (empty when the screen fills it in), and `wrap` (broken at
+    spaces to fit).
+  - `entry`: `sprites` shown with it; `title`; `score` (the score, then its
+    `text`); `name` (at most `max_len` characters, a caret `caret_size` × the
+    line high wide); `ok`; `keys` that confirm.
+  - `table`: `sprites`; `title` (its text, then the level's number); `back`
+    (the button after a level); each place's `names` (moved right by
+    `name_offset`, a screen fraction) and `scores`; the `arrows`, drawn in
+    `arrow_pressed` (texture, colour) while their keys (`previous_keys`,
+    `next_keys`) are down; `leave_keys`.
 
 ## Versioning rules
 
@@ -489,4 +524,5 @@ and useful to read). Since version 2.
   meshes' `visible` (scene encoding 2). **17** adds sprite objects (scene
   encoding 3) and the extra life's `look`; colour-keyed textures get alpha.
   **18** adds the extra point's `look`, and its trail systems to
-  `particles`. **19** adds `level_end` and `score_screen`.
+  `particles`. **19** adds `level_end` and `score_screen`. **20** adds
+  `highscores`.

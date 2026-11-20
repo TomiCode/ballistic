@@ -62,19 +62,22 @@ pub fn level_end(install: &Install) -> Result<bb::LevelEnd> {
     })
 }
 
-/// The keys of the *Key Event*s in `graph`.
-fn keys(nodes: &[&NodeParams], graph: &str) -> Vec<u32> {
-    #[expect(
-        clippy::cast_possible_truncation,
-        clippy::cast_sign_loss,
-        reason = "scan codes"
-    )]
-    nodes
+/// The keys of the *Key Event*s in `graph`, in order, once each.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "scan codes"
+)]
+pub(crate) fn keys(nodes: &[&NodeParams], graph: &str) -> Vec<u32> {
+    let mut k: Vec<u32> = nodes
         .iter()
         .filter(|n| n.building_block == "Key Event" && n.path.iter().any(|p| p == graph))
         .filter_map(|n| float(input(n, "Key Waited")))
         .map(|k| k as u32)
-        .collect()
+        .collect();
+    k.sort_unstable();
+    k.dedup();
+    k
 }
 
 #[allow(
@@ -200,7 +203,7 @@ pub fn score_screen(install: &Install) -> Result<bb::ScoreScreen> {
         };
         let label = by_target("M_Score_Text")?;
         let value = by_target("M_Score_Score")?;
-        let row = language_row(&menu, &all, label.node)?;
+        let row = language_row(&menu, &all, label.node, "Text")?;
         let cells = table
             .rows
             .get(row)
@@ -302,7 +305,7 @@ fn target_name(n: &NodeParams, pin: &str) -> Option<String> {
 }
 
 /// The name of the local feeding `node`'s input `pin`.
-fn source_name(g: &Loaded, node: ObjRef, pin: &str) -> Option<String> {
+pub(crate) fn source_name(g: &Loaded, node: ObjRef, pin: &str) -> Option<String> {
     let param = pin_param(&g.file, &g.scripts, node, pin)?;
     let Some(Some(ScriptObject::In(i))) = g.scripts.objects.get(param) else {
         return None;
@@ -312,8 +315,14 @@ fn source_name(g: &Loaded, node: ObjRef, pin: &str) -> Option<String> {
 
 /// The `Language.nmo` row a label's text comes from: `Menu_Init` reads it
 /// (*Get Cell* on the language table) into the local the *2D Text* shows.
-fn language_row(g: &Loaded, nodes: &[NodeParams], text_node: ObjRef) -> Result<usize> {
-    let param = pin_param(&g.file, &g.scripts, text_node, "Text").context("2D Text: Text")?;
+pub(crate) fn language_row(
+    g: &Loaded,
+    nodes: &[NodeParams],
+    text_node: ObjRef,
+    pin: &str,
+) -> Result<usize> {
+    let param = pin_param(&g.file, &g.scripts, text_node, pin)
+        .with_context(|| format!("no input {pin}"))?;
     let Some(Some(ScriptObject::In(i))) = g.scripts.objects.get(param) else {
         bail!("2D Text: Text isn't an input");
     };

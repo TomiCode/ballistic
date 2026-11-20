@@ -35,6 +35,89 @@ pub struct PhysicsData {
     pub level_end: LevelEnd,
     /// The score screen after a level.
     pub score_screen: ScoreScreen,
+    /// The highscore tables, the name entry and the table screen.
+    pub highscores: Highscores,
+}
+
+/// Highscores (`base.cmo`'s *Highscore*, `Menu.nmo`'s
+/// `Menu_HighscoreEntry` and `Menu_Highscore`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Highscores {
+    /// Each level's table on a new install (`DB_Highscore_LvNN`), best
+    /// first.
+    pub defaults: Vec<Vec<HighscoreRow>>,
+    /// Which levels are open on a new install (`DB_Levelfreischaltung`).
+    pub unlocked: Vec<bool>,
+    /// The name the entry starts with on a new install (`DB_Options`).
+    pub default_name: String,
+    /// The menus' fonts, by name (`GameFont_01`, …).
+    pub fonts: std::collections::BTreeMap<String, HudFont>,
+    pub entry: HighscoreEntryScreen,
+    pub table: HighscoreTableScreen,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct HighscoreRow {
+    pub name: String,
+    pub score: i32,
+}
+
+/// A menu's *2D Text*: in `rect` (screen fractions of 4:3), in font `font`,
+/// aligned within `margins` (pixels at 480 lines). `text`: a fixed text by
+/// language (`english`, `german`, …), or empty when the screen fills it in.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct MenuText {
+    pub rect: [f32; 4],
+    pub font: String,
+    pub align: TextAlign,
+    pub margins: [f32; 4],
+    pub text: std::collections::BTreeMap<String, String>,
+    /// Broken into lines at spaces to fit the box (`WordWrap`).
+    pub wrap: bool,
+}
+
+/// `Menu_HighscoreEntry`: a new highscore's name.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct HighscoreEntryScreen {
+    /// Shown while it's on (the black screen behind it stays until the
+    /// table is left).
+    pub sprites: Vec<HudSprite>,
+    /// *New Highscore!*
+    pub title: MenuText,
+    /// The score, then this text (*Points*).
+    pub score: MenuText,
+    /// The name being typed, with a caret `caret_size` × the text height
+    /// wide.
+    pub name: MenuText,
+    pub caret_size: f32,
+    /// At most this many characters.
+    pub max_len: u32,
+    /// The *Ok* button's text; the key that confirms (scan codes).
+    pub ok: MenuText,
+    pub keys: Vec<u32>,
+}
+
+/// `Menu_Highscore`: one level's table at a time.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct HighscoreTableScreen {
+    pub sprites: Vec<HudSprite>,
+    /// The headline text, then the level's number.
+    pub title: MenuText,
+    /// The button leaving the table after a level (*Next*).
+    pub back: MenuText,
+    /// Each place's name (left, moved right by `name_offset`, a screen
+    /// fraction) and score (right).
+    pub names: Vec<MenuText>,
+    pub scores: Vec<MenuText>,
+    pub name_offset: f32,
+    /// The previous / next level arrows (sprite names), shown in
+    /// `arrow_pressed` (texture key, colour) while their key is down.
+    pub arrows: [String; 2],
+    pub arrow_pressed: (Option<String>, [f32; 4]),
+    /// Scan codes: previous level, next level, leave.
+    pub previous_keys: Vec<u32>,
+    pub next_keys: Vec<u32>,
+    pub leave_keys: Vec<u32>,
 }
 
 /// The level's end (`Gameplay_Events` after `Level_Finish`).
@@ -534,7 +617,7 @@ pub struct HudFont {
 }
 
 /// One character of a texture font, in texture coordinates.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
 pub struct Glyph {
     pub u: f32,
     pub v: f32,

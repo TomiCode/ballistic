@@ -6,6 +6,7 @@ mod ballsounds;
 mod energy;
 mod environment;
 mod flow;
+mod highscores;
 mod hud;
 pub mod install;
 mod ktx2;

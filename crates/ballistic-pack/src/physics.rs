@@ -249,6 +249,7 @@ pub fn extract(install: &Install) -> Result<bb::PhysicsData> {
         particles: crate::particles::extract(install)?,
         level_end: crate::score::level_end(install)?,
         score_screen: crate::score::score_screen(install)?,
+        highscores: crate::highscores::extract(install)?,
         balls,
     })
 }

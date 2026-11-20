@@ -10,6 +10,7 @@
 | `crates/ballistic-bundle` | Bundle format: manifest and scene types, zip reader/writer. The engine's only data dependency |
 | `crates/ballistic-pack` | The packer (library and CLI): install verification, scene/texture/audio conversion, physics parameter extraction |
 | `crates/ballistic-physics` | Deterministic fixed-step physics: sphere bodies, static level meshes, per-step pushes ([physics.md](physics.md)) |
+| `crates/ballistic-save` | The save file: open levels, highscore tables, the last name (JSON, written whole) |
 | `crates/ballistic-render` | wgpu renderer for bundle scenes (fixed-function-style shading in gamma space), camera, off-screen targets |
 | `apps/ballistic-viewer` | Level viewer (winit window or headless `--screenshot`) |
 | `tools/ckinspect` | CLI for looking inside those files while reverse-engineering |
@@ -74,8 +75,11 @@ The viewer's bundle tests include **every level's flow**
 - it's warped to the level end, and the level finishes;
 - no moving element has fallen below the level's depth cubes;
 - Space cuts the level end's wait short, the score screen fades in, Space
-  scores fast and Enter leaves; once the lives are taken it's gone, with the
-  next level (or none after the last) to load.
+  scores fast and Enter leaves; once the lives are taken it's gone;
+- a score for the table goes through the name entry (typed, Enter) and the
+  table (Right, Escape) into the save, otherwise the save's table is
+  unchanged; the next level opens, and is the one to load (none after the
+  last). One in-memory save serves all twelve levels.
 
 It needs a GPU adapter too (play mode loads its renderers), and takes about
 100 s in a debug build:

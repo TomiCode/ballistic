@@ -80,7 +80,12 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      boxes and font (`GameFont_04`), the labels (followed from the *2D Text*
      to the `Language.nmo` row `Menu_Init` reads), the delays,
      `Menu_Score_CountSpeed`, the counter's pitches, and the counter sound's
-     file (`Sound.nmo`'s wave sound) → `data/physics.json`
+     file (`Sound.nmo`'s wave sound). The highscores: `base.cmo`'s default
+     tables, open levels and name; `Menu_Init`'s fonts (each *TT
+     CreateFontEx* and the *Set Font Properties* it feeds); the name entry's
+     and table's 2D entities, texts (followed to their `Language.nmo` rows),
+     the name's length and caret, and their keys (the arrows' through the
+     links into the level counter) → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

@@ -7,6 +7,7 @@ mod energy;
 mod flames;
 mod flow;
 mod follow;
+mod highscore_screens;
 mod hud;
 #[cfg(test)]
 mod levels_check;
@@ -19,6 +20,7 @@ mod play;
 mod point_look;
 mod progress;
 mod props;
+mod save;
 mod score_screen;
 mod transformers;
 mod window;
@@ -75,6 +77,11 @@ pub struct Args {
     /// (keys held for seconds; keys: up down left right rotate lift wait, next = warp to the next checkpoint first, wake = wake all moving elements first).
     #[arg(long)]
     play_script: Option<String>,
+    /// Save file for play mode (progress, highscores, the name). Default in
+    /// a window: the platform's data folder (`%APPDATA%\\Ballistic\\save.json`,
+    /// …); headless: none (kept in memory).
+    #[arg(long)]
+    save: Option<PathBuf>,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -223,6 +230,9 @@ pub struct Segment {
     /// Press Space first: cuts the level end's wait short, scores fast,
     /// leaves the score screen (`skip`).
     pub skip: bool,
+    /// Press Enter first: confirms the highscore name, leaves the table
+    /// (`enter`).
+    pub enter: bool,
 }
 
 /// Parses `up:2,rotate+left:0.4,wait:1,next:1` into segments.
@@ -247,6 +257,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
             let near = keys.split('+').any(|k| k.trim() == "near");
             let lose = keys.split('+').any(|k| k.trim() == "lose");
             let skip = keys.split('+').any(|k| k.trim() == "skip");
+            let enter = keys.split('+').any(|k| k.trim() == "enter");
             let keys = keys
                 .split('+')
                 .filter_map(|k| match k.trim() {
@@ -257,7 +268,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                     "rotate" => Some(Ok(K::Rotate)),
                     "lift" => Some(Ok(K::Lift)),
                     "wait" | "next" | "wake" | "trafo" | "pickup" | "fan" | "near" | "lose"
-                    | "skip" => None,
+                    | "skip" | "enter" => None,
                     other => Some(Err(anyhow::anyhow!("unknown key {other:?}"))),
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -272,6 +283,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                 near,
                 lose,
                 skip,
+                enter,
             })
         })
         .collect()
@@ -302,7 +314,9 @@ fn screenshot(
     };
     let mut play = if args.play {
         let level = bundle.scene(&args.scene)?;
-        let mut p = play::Play::new(&gpu, &mut bundle, &args.scene, &level, format)?;
+        let defaults = bundle.physics()?.highscores;
+        let save = save::SaveFile::open(args.save.clone(), &defaults).shared();
+        let mut p = play::Play::new(&gpu, &mut bundle, &args.scene, &level, format, save)?;
         for i in p.placeholders() {
             scene.renderer.set_object_hidden(i, true);
         }
@@ -332,6 +346,9 @@ fn screenshot(
             }
             if seg.skip {
                 p.menu_key(57);
+            }
+            if seg.enter {
+                p.menu_key(28);
             }
             for &k in &keys {
                 p.input(k, true);

@@ -266,6 +266,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ballistic-save"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "ballistic-viewer"
 version = "0.1.0"
 dependencies = [
@@ -273,6 +282,7 @@ dependencies = [
  "ballistic-bundle",
  "ballistic-physics",
  "ballistic-render",
+ "ballistic-save",
  "clap",
  "glam",
  "image",

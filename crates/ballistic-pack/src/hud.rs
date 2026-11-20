@@ -200,7 +200,7 @@ pub(crate) fn named_by(g: &Loaded, nodes: &[NodeParams], param: ObjRef) -> Optio
 
 /// The object `name` of `class` (names repeat across classes: a sprite and
 /// its material, say).
-fn object(file: &CkFile, name: &str, class: ClassId) -> Result<usize> {
+pub(crate) fn object(file: &CkFile, name: &str, class: ClassId) -> Result<usize> {
     file.objects
         .iter()
         .position(|o| o.name.as_deref() == Some(name) && o.class_id == class)
@@ -224,7 +224,7 @@ pub(crate) fn texture_key(install: &Install, file: &CkFile, name: &str) -> Resul
     texture_key_at(install, file, i)
 }
 
-fn texture_key_at(install: &Install, file: &CkFile, i: usize) -> Result<String> {
+pub(crate) fn texture_key_at(install: &Install, file: &CkFile, i: usize) -> Result<String> {
     let Some(Ok(Decoded::Texture(t))) = decode_object(&file.objects[i]) else {
         bail!("object #{i} isn't a texture");
     };

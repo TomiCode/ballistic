@@ -31,6 +31,7 @@ use crate::energy::{Energy, Score};
 use crate::flames::Flames;
 use crate::flow::{BallPhase, DepthCubes, EventSounds, LOST_CHECK_FRAMES};
 use crate::follow::Follow;
+use crate::highscore_screens::{self, HighscoreScreens};
 use crate::hud::Hud;
 use crate::life_look::LifeLooks;
 use crate::modules::Modules;
@@ -39,6 +40,7 @@ use crate::pieces::Pieces;
 use crate::point_look::PointLooks;
 use crate::progress::{self, Progress};
 use crate::props::Props;
+use crate::save::SharedSave;
 use crate::score_screen::{self, ScoreScreen};
 use crate::transformers::{self, Transformers};
 use crate::{LoadedScene, load_scene};
@@ -158,6 +160,10 @@ pub struct Play {
     score_screen: ScoreScreen,
     /// Once the score screen is gone: what comes next.
     next_level: Option<AfterScore>,
+    save: SharedSave,
+    highscores: HighscoreScreens,
+    /// While the highscore screens are on: the score, and what comes after.
+    pending: Option<(i32, AfterScore)>,
 }
 
 fn key_index(k: PlayKey) -> usize {
@@ -180,6 +186,7 @@ impl Play {
         key: &str,
         level: &ballistic_bundle::Scene,
         format: wgpu::TextureFormat,
+        save: SharedSave,
     ) -> Result<Self> {
         let physics = bundle
             .physics()
@@ -241,6 +248,8 @@ impl Play {
             format,
         )?;
         let score_screen = ScoreScreen::new(gpu, bundle, &physics.score_screen, format, "english")?;
+        let highscores =
+            HighscoreScreens::new(gpu, bundle, &physics.highscores, format, "english")?;
         let mut particles = ParticleRenderer::new(gpu, format);
         let mut particle_textures = std::collections::HashMap::new();
         let keys: Vec<Option<String>> = flames
@@ -338,6 +347,9 @@ impl Play {
             finish_eye: None,
             score_screen,
             next_level: None,
+            save,
+            highscores,
+            pending: None,
         };
         // Start Level, then the BallManager's New Ball.
         play.events.emit("Start Level");
@@ -908,18 +920,64 @@ impl Play {
                     self.hud.sub_life();
                 }
                 score_screen::Event::Points(n) => self.energy.points = n,
-                score_screen::Event::Done(total) => {
-                    eprintln!("score screen done: {total}");
-                    let next = crate::energy::level_index(&self.key)
-                        .map(|i| i + 2)
-                        .filter(|&n| n <= self.physics.energy.level_bonus.len())
-                        .map_or(AfterScore::LastLevel, |n| {
-                            AfterScore::Level(format!("level/level_{n:02}"))
-                        });
-                    self.next_level = Some(next);
+                score_screen::Event::Done(total) => self.score_done(total),
+            }
+        }
+        for e in self.highscores.take_events() {
+            match e {
+                highscore_screens::Event::Message(m) => self.events.emit(m),
+                highscore_screens::Event::Named(name) => self.named(&name),
+                highscore_screens::Event::Left => {
+                    self.next_level = self.pending.take().map(|(_, next)| next);
                 }
             }
         }
+    }
+
+    /// The score screen is gone (`base.cmo`'s *Highscore*): the next level
+    /// opens; a score for the table goes to the name entry, else on.
+    fn score_done(&mut self, total: i32) {
+        eprintln!("score screen done: {total}");
+        let levels = self.physics.highscores.defaults.len();
+        let level = crate::energy::level_index(&self.key);
+        let next = level
+            .map(|i| i + 2)
+            .filter(|&n| n <= levels)
+            .map_or(AfterScore::LastLevel, |n| {
+                AfterScore::Level(format!("level/level_{n:02}"))
+            });
+        let Some(i) = level else {
+            self.next_level = Some(next);
+            return;
+        };
+        let mut save = self.save.borrow_mut();
+        save.data.unlock(i + 1);
+        if save.data.place(i, total).is_some() {
+            self.highscores.start_entry(total, &save.data.player);
+            self.pending = Some((total, next));
+        } else {
+            save.write();
+            self.next_level = Some(next);
+        }
+    }
+
+    /// The name entry is done: the score goes in the table, and the table
+    /// shows.
+    fn named(&mut self, name: &str) {
+        let (Some(i), Some((total, _))) = (crate::energy::level_index(&self.key), &self.pending)
+        else {
+            return;
+        };
+        let mut save = self.save.borrow_mut();
+        name.clone_into(&mut save.data.player);
+        let place = save.data.insert(i, name, *total);
+        save.write();
+        eprintln!(
+            "highscore: {name} {total}, place {:?}",
+            place.map(|p| p + 1)
+        );
+        self.highscores
+            .start_table(i, self.physics.highscores.defaults.len());
     }
 
     /// `End Level`, then `Menu_Score`.
@@ -941,13 +999,31 @@ impl Play {
             self.start_score_screen();
             return true;
         }
+        if self.highscores.active() {
+            return self.highscores.key(scan);
+        }
         self.score_screen.active() && self.score_screen.key(scan)
     }
 
-    /// Whether the level end or score screen is on (it takes Space, Enter
-    /// and Escape).
+    /// A key went up on the level end's screens.
+    pub fn menu_key_up(&mut self, scan: u32) {
+        self.highscores.key_up(scan);
+    }
+
+    /// Typed text, for the highscore name.
+    pub fn menu_text(&mut self, s: &str) {
+        self.highscores.text(s);
+    }
+
+    /// The highscore name entry is on: every key is for it.
+    pub fn typing(&self) -> bool {
+        self.highscores.typing()
+    }
+
+    /// Whether the level end or its screens are on (they take Space, Enter,
+    /// Escape, Backspace and the arrows).
     pub fn in_level_end(&self) -> bool {
-        self.level_end.is_some() || self.score_screen.active()
+        self.level_end.is_some() || self.score_screen.active() || self.highscores.active()
     }
 
     /// Once, when the score screen is gone: what comes next.
@@ -1322,6 +1398,9 @@ impl Play {
         self.hud
             .render(gpu, encoder, color, size, self.energy.points);
         self.score_screen.render(gpu, encoder, color, size);
+        let save = self.save.borrow();
+        self.highscores
+            .render(gpu, encoder, color, size, &save.data);
     }
 
     pub fn status(&self) -> String {
@@ -1344,6 +1423,8 @@ impl Play {
             },
             match (self.score, self.energy.game_over) {
                 (Some(_), _) if self.level_end.is_some() => "[level end] ".to_owned(),
+                (Some(_), _) if self.highscores.typing() => "[highscore entry] ".to_owned(),
+                (Some(_), _) if self.highscores.active() => "[highscores] ".to_owned(),
                 (Some(_), _) if self.score_screen.active() => {
                     format!("[score screen {}] ", self.score_screen.total())
                 }

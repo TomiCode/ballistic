@@ -9,6 +9,7 @@ authors.workspace = true
 
 [dependencies]
 ballistic-bundle = { path = "../../crates/ballistic-bundle" }
+ballistic-save = { path = "../../crates/ballistic-save" }
 ballistic-render = { path = "../../crates/ballistic-render" }
 ballistic-physics = { path = "../../crates/ballistic-physics" }
 winit = "0.30"

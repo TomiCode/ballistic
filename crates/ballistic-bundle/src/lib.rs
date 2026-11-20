@@ -19,8 +19,9 @@ pub use manifest::{
 pub use physics::{
     BallJointParams, BallParams, BallPieces, BallShape, BallSoundSet, BallSounds, CloudLayer,
     CurvePoint, EmitterShape, EnergyParams, Environment, EventSound, ExtraLife, ExtraLifeLook,
-    ExtraPoint, ExtraPointLook, ForceParams, Glyph, HingeParams, HitTest, Hud, HudFont, HudGlow,
-    HudLives, HudSprite, HudText, LevelEnd, LevelEnvironment, LevelFlow, ModuleBody, ModuleSetup,
+    ExtraPoint, ExtraPointLook, ForceParams, Glyph, HighscoreEntryScreen, HighscoreRow,
+    HighscoreTableScreen, Highscores, HingeParams, HitTest, Hud, HudFont, HudGlow, HudLives,
+    HudSprite, HudText, LevelEnd, LevelEnvironment, LevelFlow, MenuText, ModuleBody, ModuleSetup,
     ObjectSoundIds, ParticleEmitter, ParticleRender, PhysicsData, PieceSounds, Progression,
     PropParams, RingPart, ScoreRow, ScoreScreen, SkyParams, SliderParams, SoundCue, SoundGroup,
     SpringAnchor, SpringParams, SurfaceParams, TextAlign, TextShadow, TransformerAnimation,
@@ -35,7 +36,7 @@ pub use scene::{
 pub const FORMAT_NAME: &str = "ballistic-bundle";
 /// Version of the bundle layout. Bump on any incompatible change.
 /// v2: adds `data/physics.json`.
-pub const FORMAT_VERSION: u32 = 19;
+pub const FORMAT_VERSION: u32 = 20;
 /// Version of the `.bscn` scene encoding.
 pub const SCENE_VERSION: u32 = 3;
 /// Magic at the start of every `.bscn` entry.

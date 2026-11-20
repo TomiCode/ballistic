@@ -350,6 +350,26 @@ pub struct TextStyle {
     pub color: [f32; 4],
 }
 
+/// How wide `s` is laid out in `font` (pixels), and its line height.
+pub fn text_size(font: &bb::HudFont, s: &str, scale: [f32; 2], frame: (f32, f32)) -> (f32, f32) {
+    let (fw, fh) = frame;
+    let glyph = |c: char| {
+        u32::from(c)
+            .try_into()
+            .ok()
+            .and_then(|i: usize| font.glyphs.get(i))
+    };
+    let (xf, yf) = (fw * scale[0], fh * scale[1]);
+    let advance = |g: &bb::Glyph| g.before + g.width + g.after;
+    let spacing = glyph(' ').map_or(0.0, |g| advance(g) * font.space[0] * xf * SPACING_FACTOR);
+    let width = s
+        .chars()
+        .filter_map(glyph)
+        .map(|g| advance(g) * xf + spacing)
+        .sum();
+    (width, font.glyphs.first().map_or(0.0, |g| g.height) * yf)
+}
+
 /// *2D Text* in `rect` (pixels) in `font` (on overlay texture `texture`),
 /// glyphs sized from the `frame` (width, height; *Screen Proportional*),
 /// centred vertically.
@@ -368,15 +388,10 @@ pub fn text_quads(
             .ok()
             .and_then(|i: usize| font.glyphs.get(i))
     };
-    let (xf, yf) = (fw * style.scale[0], fh * style.scale[1]);
+    let xf = fw * style.scale[0];
     let advance = |g: &bb::Glyph| g.before + g.width + g.after;
     let spacing = glyph(' ').map_or(0.0, |g| advance(g) * font.space[0] * xf * SPACING_FACTOR);
-    let height = font.glyphs.first().map_or(0.0, |g| g.height) * yf;
-    let width: f32 = s
-        .chars()
-        .filter_map(glyph)
-        .map(|g| advance(g) * xf + spacing)
-        .sum();
+    let (width, height) = text_size(font, s, style.scale, frame);
     let m = style.margins.map(|v| v * fh / REFERENCE_HEIGHT);
     let (left, top, right, bottom) = (
         rect[0] + m[0],
