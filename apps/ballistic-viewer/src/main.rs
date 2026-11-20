@@ -1,5 +1,6 @@
 //! `ballistic-viewer`: fly around the scenes of a Ballistic bundle.
 
+mod arrival;
 mod audio;
 mod ballsounds;
 mod credits_screen;

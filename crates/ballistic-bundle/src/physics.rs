@@ -775,6 +775,42 @@ pub struct LevelFlow {
     pub prop_depth_groups: Vec<String>,
     /// What the sound scripts play for each message (by name).
     pub event_sounds: Vec<EventSound>,
+    /// The ball's arrival: the lightning sphere and the smoke puff.
+    #[serde(default)]
+    pub arrival: BallArrival,
+    /// The screen's fade when a ball is lost (*Überblendung*).
+    #[serde(default)]
+    pub fade: ScreenFade,
+}
+
+/// The lightning a new ball comes in (`Balls.nmo`'s `Ball_LightningSphere`),
+/// on `Ball_Pos_Frame`, which goes with the ball.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct BallArrival {
+    /// The sphere's object in the `balls` scene, and the textures its
+    /// material shows in turn, one per frame (bundle keys).
+    pub sphere: String,
+    pub textures: Vec<String>,
+    /// It turns about its Y axis (radians per second) while shown.
+    pub spin: f32,
+    pub shown_ms: f32,
+    /// Its scale grows from 0 to 1 along this.
+    pub grow: Progression,
+    /// The smoke puff: the `balls` scene's particle system on `puff_object`,
+    /// switched on `puff_ms` after the start (and when a transformer bursts
+    /// the ball), off again `puff_frames` frames later.
+    pub puff_object: String,
+    pub puff_ms: f32,
+    pub puff_frames: u32,
+}
+
+/// *Planar Filter*: the screen covered with a colour going from `from` to
+/// `to` along `progression`, blended by its alpha.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ScreenFade {
+    pub from: [f32; 4],
+    pub to: [f32; 4],
+    pub progression: Progression,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

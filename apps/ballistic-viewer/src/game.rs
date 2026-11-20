@@ -437,6 +437,8 @@ mod tests {
             prop_depth_margin: 0.0,
             prop_depth_groups: Vec::new(),
             event_sounds: Vec::new(),
+            arrival: ballistic_bundle::BallArrival::default(),
+            fade: ballistic_bundle::ScreenFade::default(),
         };
         let save = SaveFile::in_memory(&highscores).shared();
         Game::new(

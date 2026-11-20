@@ -1,6 +1,7 @@
 //! Library side of `ballistic-pack`: converts a user's Ballance installation
 //! into a Ballistic bundle. The binary in `main.rs` is a thin CLI over [`pack`].
 
+mod arrival;
 pub mod audio;
 mod ballsounds;
 mod credits;

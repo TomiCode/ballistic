@@ -183,6 +183,8 @@ mod tests {
                     },
                 ],
             }],
+            arrival: ballistic_bundle::BallArrival::default(),
+            fade: ballistic_bundle::ScreenFade::default(),
         };
         let mut e = EventSounds::new(&flow);
         e.emit("Life_Up");

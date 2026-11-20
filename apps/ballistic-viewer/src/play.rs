@@ -23,6 +23,7 @@ use ballistic_physics::{
 use ballistic_render::{Camera, Gpu, ParticleRenderer, RenderOptions, SkyRenderer, upload_ktx2};
 use glam::Mat4;
 
+use crate::arrival::{Arrival, ScreenFade};
 use crate::ballsounds::BallSoundsPlayer;
 use crate::effects::Effects;
 use crate::energy::{Energy, Score};
@@ -177,6 +178,13 @@ pub struct Play {
     tutorial: Option<Tutorial>,
     /// The ball was lost this frame (for the tutorial).
     ball_off_now: bool,
+    /// The lightning a new ball comes in, and the smoke puffs.
+    arrival: Arrival,
+    /// The screen's fade when a lost ball is taken back.
+    fade: ScreenFade,
+    /// The reset points' and the level start's placeholders (the level's
+    /// init deletes them).
+    init_deleted: Vec<usize>,
 }
 
 fn key_index(k: PlayKey) -> usize {
@@ -322,8 +330,25 @@ impl Play {
             None
         };
 
-        let balls = load_scene(gpu, bundle, "balls", format)?;
+        let mut balls = load_scene(gpu, bundle, "balls", format)?;
         let ball_scene = bundle.scene("balls")?;
+        let arrival = Arrival::new(gpu, bundle, &mut balls.renderer, &ball_scene, &physics)?;
+        if let Some(key) = arrival.puff_params().map(|p| p.texture.clone())
+            && !particle_textures.contains_key(&key)
+        {
+            let index = match &key {
+                Some(k) => particles.add_texture(gpu, &upload_ktx2(gpu, k, &bundle.texture(k)?)?),
+                None => particles.add_white(gpu),
+            };
+            particle_textures.insert(key, index);
+        }
+        let fade = ScreenFade::new(gpu, &physics.flow.fade, format);
+        let init_deleted = level
+            .groups
+            .iter()
+            .filter(|g| g.name == "PR_Resetpoints" || g.name == "PS_Levelstart")
+            .flat_map(|g| g.members.iter().map(|&m| m as usize))
+            .collect();
         let pieces = Pieces::new(&physics, &ball_scene);
         let ball_objects = physics
             .balls
@@ -399,6 +424,9 @@ impl Play {
             music_cmds: Vec::new(),
             tutorial,
             ball_off_now: false,
+            arrival,
+            fade,
+            init_deleted,
             serial: {
                 static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
                 NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
@@ -647,6 +675,7 @@ impl Play {
     fn begin_new_ball(&mut self) {
         self.place_new_ball();
         self.events.emit("Ball_Lightning");
+        self.arrival.start();
         self.phase = BallPhase::Coming {
             ms: self.flow.new_ball_ms,
         };
@@ -705,6 +734,8 @@ impl Play {
                     // The lives check.
                     if self.energy.has_lives() {
                         self.pieces.reset_all();
+                        // *Überblendung*.
+                        self.fade.start();
                         self.phase = BallPhase::Lost {
                             frames: 0,
                             ms: Some(self.flow.lost_ms),
@@ -837,6 +868,8 @@ impl Play {
                 }
                 E::Burst(ball) => {
                     if let Some((p, _)) = self.held {
+                        // *start Explosion*: the smoke puff too.
+                        self.arrival.puff(p);
                         let s = self.pieces.burst(&mut self.world, ball, p);
                         self.queue_sounds(s);
                     }
@@ -1180,6 +1213,9 @@ impl Play {
 
         self.advance_phase(real_dt);
         self.tutorial_frame(real_dt);
+        let ball_at = self.ball_pose().map_or(self.start, |(p, _)| p);
+        self.arrival.update(real_dt, ball_at);
+        self.fade.update(real_dt);
         // The tutorial stops the physics (time factor 0) for its texts.
         if !self.tutorial.as_ref().is_some_and(Tutorial::frozen) {
             self.world.advance(real_dt);
@@ -1279,6 +1315,7 @@ impl Play {
                 tutorial::Event::Ready => {
                     if self.phase == BallPhase::Tutorial {
                         self.events.emit("Ball_Lightning");
+                        self.arrival.start();
                         self.phase = BallPhase::Coming {
                             ms: self.flow.new_ball_ms,
                         };
@@ -1315,6 +1352,7 @@ impl Play {
             .copied()
             .chain(self.pickups.lives().into_iter().map(|(marker, _)| marker))
             .chain(self.pickups.points().into_iter().map(|p| p.marker))
+            .chain(self.init_deleted.iter().copied())
     }
 
     /// (modules placed, modules simulated).
@@ -1366,6 +1404,8 @@ impl Play {
 
     pub fn sync_render(&mut self, gpu: &Gpu) {
         self.pieces.sync(gpu, &mut self.balls.renderer, &self.world);
+        let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
+        self.arrival.sync(gpu, &mut self.balls.renderer, ball);
         let Some((p, q)) = self.ball_pose() else {
             return;
         };
@@ -1471,6 +1511,7 @@ impl Play {
             .emitters()
             .chain(self.effects.emitters())
             .chain(self.point_looks.emitters())
+            .chain(self.arrival.emitters())
             .collect();
         crate::particles::draw(
             &mut self.particles,
@@ -1545,6 +1586,8 @@ impl Play {
         color: &wgpu::TextureView,
         size: (u32, u32),
     ) {
+        // The fade over the scene, under the HUD.
+        self.fade.render(gpu, encoder, color, size);
         self.hud
             .render(gpu, encoder, color, size, self.energy.points);
         if let Some(t) = self.tutorial.as_mut() {
@@ -1565,6 +1608,16 @@ impl Play {
             _ => "",
         }
         .to_owned();
+        if self.arrival.shown() {
+            phase.push_str("[lightning] ");
+        }
+        match self.arrival.puff_count() {
+            None => phase.push_str("[no puff system] "),
+            Some(0) => {}
+            Some(n) => {
+                let _ = write!(phase, "[puff {n}] ");
+            }
+        }
         if let Some(c) = self.tutorial_chapter() {
             let _ = write!(phase, "[tutorial {c}] ");
         }

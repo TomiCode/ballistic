@@ -96,6 +96,11 @@ struct PipelineKey {
 
 struct GpuMaterial {
     bind_group: wgpu::BindGroup,
+    /// The same material on other textures (a script's *Set Texture*), and
+    /// the one drawn (`None`: its own).
+    variants: Vec<wgpu::BindGroup>,
+    variant: Option<usize>,
+    sampler: wgpu::Sampler,
     buffer: wgpu::Buffer,
     uniform: MaterialUniform,
     blend: Option<(bb::BlendFactor, bb::BlendFactor)>,
@@ -133,6 +138,7 @@ pub struct SceneRenderer {
     object_group: wgpu::BindGroup,
     object_buffer: wgpu::Buffer,
     materials: Vec<GpuMaterial>,
+    material_layout: wgpu::BindGroupLayout,
     default_material: GpuMaterial,
     meshes: Vec<GpuMesh>,
     objects: Vec<DrawObject>,
@@ -291,6 +297,9 @@ impl SceneRenderer {
             });
             GpuMaterial {
                 bind_group,
+                variants: Vec::new(),
+                variant: None,
+                sampler: sampler.clone(),
                 buffer,
                 uniform,
                 blend: m.blend.then_some((m.src_blend, m.dest_blend)),
@@ -424,6 +433,7 @@ impl SceneRenderer {
                 object_buffer,
                 materials,
                 default_material,
+                material_layout,
                 meshes,
                 objects,
                 bounds: (bmin, bmax),
@@ -526,6 +536,46 @@ impl SceneRenderer {
         f(&mut m.uniform);
         gpu.queue
             .write_buffer(&m.buffer, 0, bytemuck::bytes_of(&m.uniform));
+    }
+
+    /// Adds `texture` as another look of material `index` (by its index in
+    /// `Scene::materials`); returns the variant's number for
+    /// [`Self::set_material_texture`].
+    pub fn add_material_texture(
+        &mut self,
+        gpu: &Gpu,
+        index: usize,
+        texture: &GpuTexture,
+    ) -> Option<usize> {
+        let m = self.materials.get_mut(index)?;
+        let group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("material variant"),
+            layout: &self.material_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: m.buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&texture.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(&m.sampler),
+                },
+            ],
+        });
+        m.variants.push(group);
+        Some(m.variants.len() - 1)
+    }
+
+    /// Draws material `index` with one of its added textures (`None`: its
+    /// own).
+    pub fn set_material_texture(&mut self, index: usize, variant: Option<usize>) {
+        if let Some(m) = self.materials.get_mut(index) {
+            m.variant = variant.filter(|&v| v < m.variants.len());
+        }
     }
 
     fn material(&self, idx: Option<u32>) -> &GpuMaterial {
@@ -711,7 +761,9 @@ impl SceneRenderer {
             let mesh = &self.meshes[o.mesh as usize];
             let (range, mat) = &mesh.submeshes[si];
             pass.set_bind_group(1, &self.object_group, &[o.uniform_offset]);
-            pass.set_bind_group(2, &self.material(*mat).bind_group, &[]);
+            let m = self.material(*mat);
+            let group = m.variant.map_or(&m.bind_group, |v| &m.variants[v]);
+            pass.set_bind_group(2, group, &[]);
             pass.set_vertex_buffer(0, mesh.vertices.slice(..));
             pass.set_index_buffer(mesh.indices.slice(..), wgpu::IndexFormat::Uint16);
             pass.draw_indexed(range.clone(), 0, 0..1);

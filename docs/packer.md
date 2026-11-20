@@ -62,7 +62,10 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      hit and roll IDs from their attributes. Points, lives and score from the
      `Energy` and `AllLevel` tables, and the extra lives' and extra points'
      settings from their prefab scripts. The level flow from the
-     `BallManager`'s Delayers and depth tests and `DepthTestGroups`, and the
+     `BallManager`'s Delayers and depth tests and `DepthTestGroups`, the new
+     ball's lightning (`Balls.nmo`'s `Ball_LightningSphere`: the sphere, its
+     textures, turn, growth curve and the smoke puff's system and timing) and
+     the lost ball's fade (*Überblendung*'s colours and curve), and the
      event sounds from `Sound.nmo`'s *Switch On Message* blocks, followed
      through links, Delayers and sub-graphs to their Wave Players. The HUD:
      `Camera.nmo`'s 2D entities and `HUD_sprites`, `Menu.nmo`'s font texture

@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 25,
+  "format_version": 26,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -223,7 +223,13 @@ and useful to read). Since version 2.
       { "message": "Life_Up", "cues": [
         { "sound": "extra_life_blob", "delay_frames": 1, "delay_ms": 0.0 },
         { "sound": "misc_extraball", "delay_frames": 0, "delay_ms": 317.0 } ] },
-      "…" ] },
+      "…" ],
+    "arrival": { "sphere": "Ball_LightningSphere",
+      "textures": ["ball_lightningsphere1", "ball_lightningsphere2", "ball_lightningsphere3"],
+      "spin": 6.2832, "shown_ms": 3000.0, "grow": { "duration_ms": 1500.0, "curve": ["…"] },
+      "puff_object": "Ball_Particle_Frame", "puff_ms": 2500.0, "puff_frames": 6 },
+    "fade": { "from": [0.0, 0.0, 0.0, 0.0039], "to": [1.0, 1.0, 1.0, 1.0],
+      "progression": { "duration_ms": 2000.0, "curve": ["…"] } } },
   "hud": {
     "sprites": [
       { "name": "Interface_Life_Kugel", "texture": "button01_special",
@@ -480,6 +486,14 @@ and useful to read). Since version 2.
     away below the lowest depth cube's bottom minus the margin.
   - `event_sounds`: per message to the sound scripts (by name), the sounds it
     plays, with their delays.
+  - `arrival`: the lightning a new ball comes in. The `balls` scene's
+    `sphere`, at the ball, shown for `shown_ms`: its scale grows from 0 to 1
+    along `grow`, it turns `spin` radians a second about its Y axis, and its
+    material shows `textures` in turn, one per frame. `puff_ms` in (and at a
+    transformer's burst) the `balls` scene's particle system on
+    `puff_object` emits for `puff_frames` frames at the ball.
+  - `fade`: when a lost ball is taken back, the screen is covered by a colour
+    going from `from` to `to` along `progression` (alpha-blended).
 - `hud`: the in-game HUD (`Gameplay_Energy`). Rectangles are fractions of the
   screen: left, top, right, bottom.
   - `sprites`: 2D entities in drawing order (`z_order`), each a `source` part
@@ -657,4 +671,4 @@ and useful to read). Since version 2.
   `highscores`) and the table's `back_text`. **22** adds `music` and
   `sounds.flaps`. **23** adds `menus.settings` and text's `top`. **24** adds
   `menu_level`, `menus.credits` and the menu level's particle systems.
-  **25** adds `tutorial`.
+  **25** adds `tutorial`. **26** adds `flow.arrival` and `flow.fade`.

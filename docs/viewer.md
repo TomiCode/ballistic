@@ -72,13 +72,19 @@ Details carried over from the original's scripts:
 - Holding **Shift** switches ball control off. You can't push while turning.
 - A push's direction is fixed when you press the key. After a camera turn,
   directions you're holding are re-aimed one frame after the turn finishes.
-- The ball comes 3 s after the level start or a loss, with the lightning
-  sound. Until then you can turn the camera but not push.
+- The ball comes 3 s after the level start or a loss, in a lightning
+  (research findings 30): a sphere at its place grows over 1.5 s, turning
+  and flickering, with the lightning sound; a smoke puff just before the
+  ball appears (also when a transformer bursts the ball). Until then you can
+  turn the camera but not push.
 - The ball is lost when it falls into one of the level's depth cubes
   (`DepthTestCubes`, one tested per frame). Control, the camera and the points
   countdown stop at once; 1 s later the ball is taken away, a life is used,
-  the sector is reset, and a new ball comes. (A level without depth cubes
-  loses it 50 units below its lowest geometry.)
+  the sector is reset, and a new ball comes. Meanwhile the screen goes white
+  and clears again over 2 s. (A level without depth cubes loses it 50 units
+  below its lowest geometry.)
+- The reset points' and the level start's placeholders aren't drawn (the
+  level's init deletes them).
 
 Level 1 starts facing away from the path, as in the original (its tutorial
 teaches turning first): press Shift + Left twice.
@@ -227,7 +233,9 @@ original's menus:
 - At the finish the score is printed: the level's bonus (100 × its number) +
   the points left + 200 per life left.
 - The status line shows the points and lives, `[new ball]` or `[ball lost]`
-  while one is coming or going, then `[level end]` and `[score screen N]`.
+  while one is coming or going (`[lightning]`, `[puff N]` with the smoke's
+  particles), `[tutorial N]` in level 1's tutorial, then `[level end]` and
+  `[score screen N]`.
 
 **The HUD** is the original's (research findings 18), from its own sprites
 and font:

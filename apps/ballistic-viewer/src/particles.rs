@@ -167,7 +167,6 @@ impl Emitter {
         self.on
     }
 
-    #[cfg(test)]
     pub fn count(&self) -> usize {
         self.particles.len()
     }
