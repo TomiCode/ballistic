@@ -153,7 +153,9 @@ pub enum ObjectKind {
 /// camera.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Sprite {
-    /// The quad's pivot within it (0.5, 0.5: centred).
+    /// The quad's width and height, before the object's scale.
+    pub size: [f32; 2],
+    /// The quad's shift from the object, in its own units (0, 0: centred).
     pub offset: [f32; 2],
     /// Left, top, right, bottom in texture coordinates.
     pub uv: [f32; 4],

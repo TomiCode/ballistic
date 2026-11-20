@@ -70,7 +70,10 @@ fn sprite_look(prefab: &Scene, name: &str) -> Option<SpriteLook> {
     let m = Mat4::from_cols_array_2d(&o.transform);
     let mat = s.material.and_then(|i| prefab.materials.get(i as usize));
     Some(SpriteLook {
-        size: [m.x_axis.truncate().length(), m.y_axis.truncate().length()],
+        size: [
+            m.x_axis.truncate().length() * s.size[0],
+            m.y_axis.truncate().length() * s.size[1],
+        ],
         offset: s.offset,
         uv: s.uv,
         texture: mat.and_then(|m| m.texture.clone()),
@@ -85,7 +88,8 @@ fn sprite_look(prefab: &Scene, name: &str) -> Option<SpriteLook> {
 /// A camera-facing quad of `s` at `centre`.
 fn quad(s: &SpriteLook, centre: Vec3, f: Facing, out: &mut Vec<ParticleVertex>) {
     let (r, u) = (f.right * s.size[0], f.up * s.size[1]);
-    let corner = |x: f32, y: f32| centre + r * (x - s.offset[0]) + u * (s.offset[1] - y);
+    let corner =
+        |x: f32, y: f32| centre + r * (x - 0.5 + s.offset[0]) + u * (0.5 - y + s.offset[1]);
     let [u0, v0, u1, v1] = s.uv;
     let v = |x: f32, y: f32, uv: [f32; 2]| ParticleVertex {
         position: corner(x, y).to_array(),

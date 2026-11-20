@@ -603,12 +603,13 @@ impl SceneRenderer {
     }
 
     /// Unlit: the material shows `rgba` (× its texture), like a prelit mesh
-    /// (*Set Prelit Color*).
+    /// (*Set Prelit Color*). Unlit means no specular highlights either.
     pub fn set_material_prelit(&mut self, gpu: &Gpu, index: usize, rgba: [f32; 4]) {
         self.update_material(gpu, index, |u| {
             u.emissive = rgba;
             u.ambient = [0.0, 0.0, 0.0, 0.0];
             u.diffuse = [0.0, 0.0, 0.0, rgba[3]];
+            u.specular = [0.0; 4];
         });
     }
 

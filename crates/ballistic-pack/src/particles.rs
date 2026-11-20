@@ -117,6 +117,7 @@ fn blend(v: u32) -> Option<bb::BlendFactor> {
     })
 }
 
+#[expect(clippy::too_many_lines, reason = "each input in turn")]
 fn emitter(
     install: &Install,
     g: &crate::physics::Loaded,
@@ -197,6 +198,7 @@ fn emitter(
         scene: scene.to_owned(),
         object: n.owner.clone().context("no owner object")?,
         shape,
+        time_dependent: n.building_block == "TT_TimedependentPointParticlesystem",
         render,
         texture,
         blend: (src, dst),
@@ -272,6 +274,10 @@ mod tests {
                 .iter()
                 .all(|e| e.texture.as_deref() == Some("particle_flames"))
         );
+        // The extra point's trails: a rate of 90 a second.
+        let trails: Vec<_> = all.iter().filter(|e| e.time_dependent).collect();
+        assert_eq!(trails.len(), 6);
+        assert!(trails.iter().all(|e| (e.delay_ms - 90.0).abs() < 1e-3));
         let fans = all.iter().filter(|e| e.scene == "ph/p_modul_18").count();
         assert_eq!(fans, 2);
     }

@@ -145,6 +145,7 @@ pub fn convert(
             (bb::ObjectKind::Sprite, Some(chunk)) => {
                 let s = ckscene::Sprite3d::decode(chunk)?;
                 Some(bb::Sprite {
+                    size: s.size,
                     offset: s.offset,
                     uv: s.uv,
                     material: s.material.and_then(|m| cx.material(m)),

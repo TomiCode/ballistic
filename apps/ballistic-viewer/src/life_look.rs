@@ -52,6 +52,7 @@ struct BallSprite {
     texture: Option<String>,
     blend: (BlendFactor, BlendFactor),
     uv: [f32; 4],
+    size: [f32; 2],
     offset: [f32; 2],
     color: [f32; 4],
 }
@@ -180,6 +181,7 @@ impl LifeLooks {
                     sprite_blend,
                 ),
                 uv: s.uv,
+                size: s.size,
                 offset: s.offset,
                 color: mat.map_or([1.0; 4], |m| m.diffuse),
             })
@@ -363,10 +365,14 @@ impl LifeLooks {
         for l in self.lives.iter().filter(|l| l.shown) {
             let m = self.sphere_world(l) * b.local;
             let centre = m.transform_point3(Vec3::ZERO);
-            let (w, h) = (m.x_axis.truncate().length(), m.y_axis.truncate().length());
+            let (w, h) = (
+                m.x_axis.truncate().length() * b.size[0],
+                m.y_axis.truncate().length() * b.size[1],
+            );
             let r = f.right * w;
             let u = f.up * h;
-            let corner = |x: f32, y: f32| centre + r * (x - b.offset[0]) + u * (b.offset[1] - y);
+            let corner =
+                |x: f32, y: f32| centre + r * (x - 0.5 + b.offset[0]) + u * (0.5 - y + b.offset[1]);
             let [u0, v0, u1, v1] = b.uv;
             let v = |x: f32, y: f32, uv: [f32; 2]| ParticleVertex {
                 position: corner(x, y).to_array(),

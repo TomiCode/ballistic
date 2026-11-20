@@ -90,7 +90,9 @@ Details carried over from the original's scripts:
 - The ball casts its shadow straight down onto the level's floors (the
   `Shadow` group; research findings 32), within 20 below it.
 - An extra point's small balls fly off and then trail the ball like a soft
-  spring (research findings 22): they catch it when it slows down.
+  spring (research findings 22): they catch it when it slows down. They're
+  their real size (a quarter unit), with dotted trails along their paths
+  (research findings 20).
 
 Level 1 starts facing away from the path, as in the original (its tutorial
 teaches turning first): press Shift + Left twice.

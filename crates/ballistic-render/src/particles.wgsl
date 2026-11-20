@@ -29,5 +29,12 @@ fn vs_main(
 
 @fragment
 fn fs_main(v: VsOut) -> @location(0) vec4<f32> {
-    return textureSample(tex, samp, v.uv) * v.color;
+    let t = textureSample(tex, samp, v.uv);
+    // A colour-keyed texture's key is cut out (Virtools' alpha test), whatever
+    // the blend: the extra point's sparks blend One / Src Color, where the
+    // key's black would otherwise darken what's behind.
+    if t.a < 0.5 {
+        discard;
+    }
+    return t * v.color;
 }

@@ -848,8 +848,14 @@ pub struct ParticleEmitter {
     /// Texture key; `None`: untextured.
     pub texture: Option<String>,
     pub blend: (crate::BlendFactor, crate::BlendFactor),
-    /// Time between emissions.
+    /// Time between emissions; for a `time_dependent` system, its rate in
+    /// particles per second.
     pub delay_ms: f32,
+    /// `TT_TimedependentPointParticlesystem`: each frame it emits rate ×
+    /// the frame time particles (once that reaches 0.9), spread along the
+    /// line from where the entity was to where it is.
+    #[serde(default)]
+    pub time_dependent: bool,
     /// Spread around the emission direction (radians).
     pub yaw_variance: f32,
     pub pitch_variance: f32,

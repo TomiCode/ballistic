@@ -149,6 +149,8 @@ pub struct Emitter {
     particles: Vec<Particle>,
     clock_ms: f32,
     rng: u32,
+    /// A time-dependent system's place at its last emission.
+    last_at: Option<Vec3>,
 }
 
 impl Emitter {
@@ -160,6 +162,7 @@ impl Emitter {
             particles: Vec::new(),
             clock_ms: 0.0,
             rng: seed.max(1),
+            last_at: None,
         }
     }
 
@@ -234,6 +237,11 @@ impl Emitter {
             true
         });
         if !self.on {
+            self.last_at = None;
+            return;
+        }
+        if self.params.time_dependent {
+            self.emit_along(dt);
             return;
         }
         if self.params.delay_ms <= 0.0 {
@@ -247,6 +255,45 @@ impl Emitter {
             self.emit();
             n += 1;
         }
+    }
+
+    /// `TT_TimedependentPointParticlesystem` (`TT_ParticleSystems_RT.dll`
+    /// `0x25083540`): the frame times add up; once they × the rate (per
+    /// second) reach 0.9, that many particles come at once, spaced from
+    /// where the entity is back to where it was at the last emission.
+    fn emit_along(&mut self, dt: f32) {
+        let at = self.transform.transform_point3(Vec3::ZERO);
+        let Some(last) = self.last_at else {
+            // The first frame only notes the place.
+            self.last_at = Some(at);
+            return;
+        };
+        let count = (self.clock_ms + dt) * 0.001 * self.params.delay_ms;
+        if count <= 0.9 {
+            self.clock_ms += dt;
+            return;
+        }
+        self.clock_ms = 0.0;
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "a few particles"
+        )]
+        let n = (count as usize).max(1);
+        #[expect(clippy::cast_precision_loss, reason = "a few particles")]
+        let step = (last - at) / n as f32;
+        for k in 0..n {
+            if self.particles.len() >= self.params.max as usize {
+                break;
+            }
+            self.spawn();
+            if let Some(p) = self.particles.last_mut() {
+                #[expect(clippy::cast_precision_loss, reason = "a few particles")]
+                let offset = step * k as f32;
+                p.position += offset;
+            }
+        }
+        self.last_at = Some(at);
     }
 
     fn emit(&mut self) {
@@ -473,6 +520,7 @@ mod tests {
             frames: 1,
             real_time: true,
             delta_ms: 20.0,
+            time_dependent: false,
         }
     }
 
@@ -480,6 +528,41 @@ mod tests {
     /// rotation taking −Z (Virtools +Z) to +Y.
     fn upright() -> Mat4 {
         Mat4::from_rotation_x(std::f32::consts::FRAC_PI_2)
+    }
+
+    #[test]
+    fn a_time_dependent_system_leaves_a_trail_along_its_path() {
+        // The extra point's trail: a rate of 90 a second, 1 s each, spread
+        // between frames. The count is truncated and the rest dropped, so
+        // at 60 frames a second that's one a frame.
+        let mut params = flame();
+        params.time_dependent = true;
+        params.delay_ms = 90.0;
+        params.max = 100;
+        params.lifespan_ms = bb::Varied {
+            value: 1000.0,
+            variance: 0.0,
+        };
+        params.speed = bb::Varied {
+            value: 0.0,
+            variance: 0.0,
+        };
+        let mut e = Emitter::new(params, Mat4::IDENTITY, 1);
+        e.set_on(true);
+        // Moving 12 a second along +X for 1 s.
+        for frame in 0..=60 {
+            #[expect(clippy::cast_precision_loss, reason = "a few frames")]
+            let x = frame as f32 * 0.2;
+            e.transform = Mat4::from_translation(Vec3::new(x, 0.0, 0.0));
+            e.update(1000.0 / 60.0);
+        }
+        let n = e.count();
+        assert!((55..=70).contains(&n), "{n} particles");
+        // Spread along the path, not bunched at the frames' places.
+        let mut xs: Vec<f32> = e.particles.iter().map(|p| p.position.x).collect();
+        xs.sort_by(f32::total_cmp);
+        let widest = xs.windows(2).map(|w| w[1] - w[0]).fold(0.0, f32::max);
+        assert!(widest < 0.25, "a gap of {widest}");
     }
 
     #[test]
