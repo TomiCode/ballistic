@@ -5,6 +5,7 @@ mod ballsounds;
 mod energy;
 mod flow;
 mod follow;
+mod hud;
 #[cfg(test)]
 mod levels_check;
 mod modules;
@@ -381,6 +382,7 @@ fn screenshot(
             w as f32 / h as f32,
             &options(args),
         );
+        p.render_hud(&gpu, &mut encoder, &target.color_view, (w, h));
     }
     gpu.queue.submit([encoder.finish()]);
     let rgba = target.read_rgba(&gpu)?;

@@ -25,6 +25,8 @@ pub struct PhysicsData {
     pub energy: EnergyParams,
     /// The level flow and the event sounds.
     pub flow: LevelFlow,
+    /// The in-game HUD: points and lives.
+    pub hud: Hud,
 }
 
 /// Points, lives and score.
@@ -200,6 +202,103 @@ pub struct EventSound {
     /// The message's name, e.g. `Checkpoint reached`.
     pub message: String,
     pub cues: Vec<SoundCue>,
+}
+
+/// The in-game HUD (`Camera.nmo`'s 2D entities, driven by `Gameplay_Energy`).
+/// Rectangles are fractions of the screen (left, top, right, bottom).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Hud {
+    pub sprites: Vec<HudSprite>,
+    pub font: HudFont,
+    /// The points counter: text in this sprite's rectangle.
+    pub points: HudText,
+    pub lives: HudLives,
+    /// The points' glow on an extra point: shown, faded in, hidden.
+    pub glow: HudGlow,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HudSprite {
+    pub name: String,
+    /// Texture key, `None` for an untextured rectangle (the text's frame).
+    pub texture: Option<String>,
+    pub rect: [f32; 4],
+    /// The part of the texture shown: left, top, right, bottom in UV.
+    pub source: [f32; 4],
+    /// Drawing order: higher on top.
+    pub z_order: i32,
+    /// The material's diffuse colour (RGBA), multiplied with the texture.
+    pub color: [f32; 4],
+    /// Shown with the HUD (`HUD_sprites`); the others are templates or
+    /// shown by events.
+    pub shown: bool,
+}
+
+/// A texture font (`TT CreateFontEx`, *Set Font Properties*).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HudFont {
+    pub texture: String,
+    /// By character code.
+    pub glyphs: Vec<Glyph>,
+    /// Glyph size: texture-coordinate size × screen size × this.
+    pub scale: [f32; 2],
+    /// `space[0]`: the gap between characters, in tenths of a space's
+    /// advance. `space[1]`: extra line spacing.
+    pub space: [f32; 2],
+    pub color: [f32; 4],
+}
+
+/// One character of a texture font, in texture coordinates.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Glyph {
+    pub u: f32,
+    pub v: f32,
+    pub width: f32,
+    /// Space before and after the glyph.
+    pub before: f32,
+    pub after: f32,
+    pub height: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TextAlign {
+    Left,
+    Center,
+    Right,
+}
+
+/// A *2D Text* on a sprite.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HudText {
+    pub sprite: String,
+    pub align: TextAlign,
+    /// Left, top, right, bottom, in pixels.
+    pub margins: [f32; 4],
+}
+
+/// The life balls: copies of `ball`, one per life, left of the sprite's own
+/// place, with `end` left of the last.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HudLives {
+    pub ball: String,
+    pub end: String,
+    /// The distance between balls (screen fraction).
+    pub step: f32,
+    /// A new ball's fade-in, after `end` has slid.
+    pub fade_in: Progression,
+    /// A lost ball's fade-out, before `end` slides back.
+    pub fade_out: Progression,
+    /// How `end` slides by one step.
+    pub slide: Progression,
+    /// From *Ball Off* to the ball's fade-out.
+    pub lost_delay_ms: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct HudGlow {
+    pub sprite: String,
+    pub fade: Progression,
 }
 
 /// The sounds of a ball type's pieces (`Ball_CollSound_Pieces`).

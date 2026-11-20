@@ -32,7 +32,7 @@ play mode (--play):
   arrows                     roll the ball (relative to the camera)
   Shift + Left / Right       turn the camera 90°
   Space                      lift the camera (hold)
-  R  respawn                 1  next ball type
+  R  lose the ball           1  next ball type
   N  warp to the next checkpoint or the level end (development aid)";
 
 pub fn run(args: Args, bundle: Bundle) -> Result<()> {
@@ -427,6 +427,12 @@ impl State {
                 &self.camera,
                 aspect,
                 &self.opts,
+            );
+            play.render_hud(
+                &self.gpu,
+                &mut encoder,
+                &view,
+                (self.config.width, self.config.height),
             );
         }
         self.gpu.queue.submit([encoder.finish()]);

@@ -27,6 +27,7 @@ use crate::ballsounds::BallSoundsPlayer;
 use crate::energy::{Energy, Score};
 use crate::flow::{BallPhase, DepthCubes, EventSounds, LOST_CHECK_FRAMES};
 use crate::follow::Follow;
+use crate::hud::Hud;
 use crate::modules::Modules;
 use crate::pickups::{self, Pickups};
 use crate::pieces::Pieces;
@@ -94,6 +95,7 @@ pub struct Play {
     pieces: Pieces,
     ball_sounds: BallSoundsPlayer,
     energy: Energy,
+    hud: Hud,
     pickups: Pickups,
     flow: ballistic_bundle::LevelFlow,
     phase: BallPhase,
@@ -134,6 +136,7 @@ fn key_index(k: PlayKey) -> usize {
 
 impl Play {
     /// `key` is the level's scene key (its number gives the level bonus).
+    #[allow(clippy::too_many_lines, reason = "sets up every play module in turn")]
     pub fn new(
         gpu: &Gpu,
         bundle: &mut Bundle,
@@ -179,6 +182,13 @@ impl Play {
             crate::energy::level_index(key).unwrap_or(0),
         );
         let pickups = Pickups::new(&physics.energy, level);
+        let hud = Hud::new(
+            gpu,
+            bundle,
+            &physics.hud,
+            format,
+            u32::try_from(energy.lives).unwrap_or(0),
+        )?;
         let depth = DepthCubes::new(level, &physics.flow.depth_cubes);
         let events = EventSounds::new(&physics.flow);
         let flow = physics.flow.clone();
@@ -223,6 +233,7 @@ impl Play {
             ball_sounds,
             energy,
             pickups,
+            hud,
             score: None,
             flow,
             phase: BallPhase::Alive,
@@ -542,6 +553,7 @@ impl Play {
         self.energy.set_counting(false);
         self.camera_frozen = true;
         self.events.emit("Ball Off");
+        self.hud.ball_off();
         self.phase = BallPhase::Lost {
             frames: LOST_CHECK_FRAMES,
             ms: None,
@@ -679,10 +691,12 @@ impl Play {
                 pickups::Event::LifeUp => {
                     self.energy.add_life();
                     self.events.emit("Life_Up");
+                    self.hud.life_up();
                 }
                 pickups::Event::Activated(n) => {
                     self.energy.add_points(n);
                     self.events.emit("Extrapoint_Hit");
+                    self.hud.glow();
                 }
                 pickups::Event::Hits(n) => {
                     self.energy.add_points(n);
@@ -709,6 +723,7 @@ impl Play {
 
     /// One frame: camera script, then physics.
     pub fn update(&mut self, real_dt: f32) {
+        self.hud.frame(real_dt);
         // Deferred steps from earlier frames (the scripts' one-frame link delays).
         if let Some(h) = self.snap_next_frame.take() {
             self.heading_ref = h;
@@ -912,6 +927,18 @@ impl Play {
         );
         self.transformers
             .render(gpu, encoder, color, depth, camera, aspect, &opts);
+    }
+
+    /// The HUD over a `size` (pixels) frame.
+    pub fn render_hud(
+        &mut self,
+        gpu: &Gpu,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        size: (u32, u32),
+    ) {
+        self.hud
+            .render(gpu, encoder, color, size, self.energy.points);
     }
 
     pub fn status(&self) -> String {

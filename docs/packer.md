@@ -62,8 +62,11 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      settings from their prefab scripts. The level flow from the
      `BallManager`'s Delayers and depth tests and `DepthTestGroups`, and the
      event sounds from `Sound.nmo`'s *Switch On Message* blocks, followed
-     through links, Delayers and sub-graphs to their Wave Players
-     → `data/physics.json`
+     through links, Delayers and sub-graphs to their Wave Players. The HUD:
+     `Camera.nmo`'s 2D entities and `HUD_sprites`, `Menu.nmo`'s font texture
+     and glyph table, and `Gameplay_Energy`'s font settings, life-ball step,
+     fades and glow (its objects are looked up by name, so the names are
+     followed through the scripts) → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

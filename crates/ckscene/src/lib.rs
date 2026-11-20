@@ -1,5 +1,6 @@
 //! Decoders for the scene classes stored in Virtools files: [`Mesh`],
-//! [`Material`], [`Texture`], [`Entity3d`] (3D objects/entities) and [`Group`].
+//! [`Material`], [`Texture`], [`Entity3d`] (3D objects/entities), [`Entity2d`]
+//! (screen rectangles) and [`Group`].
 //!
 //! Every decoder takes a [`ckfile::StateChunk`] and returns plain data.
 //! Object references stay as **file indices** (`ObjRef`), and resolving them is
@@ -13,6 +14,7 @@
 
 mod decoded;
 mod entity;
+mod entity2d;
 mod group;
 mod material;
 mod mesh;
@@ -20,6 +22,7 @@ mod texture;
 
 pub use decoded::{Decoded, decode_object};
 pub use entity::Entity3d;
+pub use entity2d::Entity2d;
 pub use group::Group;
 pub use material::{
     AddressMode, BlendFactor, CompareFunc, FillMode, FilterMode, Material, ShadeMode, TextureBlend,

@@ -493,7 +493,7 @@ fn piece_sounds(install: &Install, nodes: &[NodeParams], kind: &str) -> Result<b
     })
 }
 
-fn progression(n: &NodeParams) -> Result<bb::Progression> {
+pub(crate) fn progression(n: &NodeParams) -> Result<bb::Progression> {
     let duration_ms = float(input(n, "Duration")).context("Bezier Progression: Duration")?;
     let curve = match input(n, "Progression Curve").map(|i| &i.value) {
         Some(Resolved::Constant {
@@ -543,7 +543,7 @@ pub(crate) fn text(v: Option<&NamedValue>) -> Option<String> {
     }
 }
 
-fn vector(v: Option<&NamedValue>) -> Option<Vec<f32>> {
+pub(crate) fn vector(v: Option<&NamedValue>) -> Option<Vec<f32>> {
     match &v?.value {
         Resolved::Constant {
             value: Value::Vector(v),

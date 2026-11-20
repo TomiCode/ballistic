@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 12,
+  "format_version": 13,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -204,7 +204,24 @@ and useful to read). Since version 2.
       { "message": "Life_Up", "cues": [
         { "sound": "extra_life_blob", "delay_frames": 1, "delay_ms": 0.0 },
         { "sound": "misc_extraball", "delay_frames": 0, "delay_ms": 317.0 } ] },
-      "…" ] }
+      "…" ] },
+  "hud": {
+    "sprites": [
+      { "name": "Interface_Life_Kugel", "texture": "button01_special",
+        "rect": [0.9496, 0.8854, 0.9934, 0.9438], "source": [0.0667, 0.5294, 0.1765, 0.6392],
+        "z_order": 9, "color": [1.0, 1.0, 1.0, 1.0], "shown": false },
+      "…" ],
+    "font": { "texture": "font_1", "scale": [0.8, 0.9], "space": [1.5, 1.0],
+      "color": [1.0, 1.0, 1.0, 1.0],
+      "glyphs": [ { "u": 0.002, "v": 0.0, "width": 0.0254, "before": 0.002, "after": 0.002,
+        "height": 0.0625 }, "…" ] },
+    "points": { "sprite": "Interface_Points_digits", "align": "right",
+      "margins": [2.0, 2.0, 2.0, 2.0] },
+    "lives": { "ball": "Interface_Life_Kugel", "end": "Interface_Life_End", "step": 0.0387,
+      "fade_in": { "duration_ms": 300.0, "curve": ["…"] }, "fade_out": "…", "slide": "…",
+      "lost_delay_ms": 2000.0 },
+    "glow": { "sprite": "Interface_Points_glow",
+      "fade": { "duration_ms": 500.0, "curve": ["…"] } } }
 }
 ```
 
@@ -317,6 +334,23 @@ and useful to read). Since version 2.
     away below the lowest depth cube's bottom minus the margin.
   - `event_sounds`: per message to the sound scripts (by name), the sounds it
     plays, with their delays.
+- `hud`: the in-game HUD (`Gameplay_Energy`). Rectangles are fractions of the
+  screen: left, top, right, bottom.
+  - `sprites`: 2D entities in drawing order (`z_order`), each a `source` part
+    of `texture` (none: not drawn) times `color`. `shown` ones are always
+    there; the others are drawn by `lives` and `glow`.
+  - `font`: a texture font. `glyphs` by character code, in texture
+    coordinates. A glyph's size is its texture size × the screen size ×
+    `scale`. Characters are `space[0]` × a tenth of a space's advance apart.
+  - `points`: the points as text in that sprite's rectangle, aligned, inside
+    `margins` (pixels).
+  - `lives`: a copy of `ball` per life, `step` apart leftwards from its own
+    place, with `end` left of them. An extra life slides `end` a step
+    (`slide`), then fades the new ball in (`fade_in`). `lost_delay_ms` after
+    a ball is lost, the last one fades out (`fade_out`), then `end` slides
+    back.
+  - `glow`: on an extra point, that sprite's opacity follows `fade`, then it
+    hides.
 
 ## Versioning rules
 
@@ -330,4 +364,4 @@ and useful to read). Since version 2.
   **7** adds `transformers`. **8** adds the transformer `animation`, the
   ball `pieces` and `pieces_fade_after_ms`. **9** adds the transformer
   `sound` and the pieces' `sounds`. **10** adds the ball's `sounds`. **11**
-  adds `energy`. **12** adds `flow`, and `delay_ms` to sound cues.
+  adds `energy`. **12** adds `flow`, and `delay_ms` to sound cues. **13** adds `hud`.

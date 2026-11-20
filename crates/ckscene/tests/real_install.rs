@@ -45,10 +45,45 @@ fn all_levels_decode_and_reference_valid_objects() {
                 Decoded::Texture(t) => {
                     assert!(t.file().is_some(), "level texture without file");
                 }
+                Decoded::Entity2d(e) => {
+                    if let Some(m) = e.material {
+                        assert_eq!(class_of(m), ClassId::MATERIAL);
+                    }
+                }
                 Decoded::Group(_) => {}
             }
         }
     }
+}
+
+#[test]
+fn hud_entities_decode() {
+    let Some(dir) = install_dir() else {
+        eprintln!("skipping: BALLANCE_DIR not set");
+        return;
+    };
+    let f = ckfile::CkFile::open(dir.join("3D Entities").join("Camera.nmo")).unwrap();
+    let find = |name: &str| {
+        let i = f
+            .objects
+            .iter()
+            .position(|o| o.name.as_deref() == Some(name))
+            .unwrap();
+        match decode_object(&f.objects[i]).unwrap().unwrap() {
+            Decoded::Entity2d(e) => e,
+            other => panic!("{name}: {other:?}"),
+        }
+    };
+    let ball = find("Interface_Life_Kugel");
+    assert!((ball.rect[0] - 0.9496).abs() < 1e-4, "{ball:?}");
+    assert_eq!(ball.z_order, 9);
+    assert!(ball.hidden);
+    let m = ball.material.unwrap();
+    assert_eq!(f.objects[m].name.as_deref(), Some("Interface_Life"));
+    let digits = find("Interface_Points_digits");
+    assert_eq!(digits.material, None);
+    assert_eq!(digits.source, [0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(digits.z_order, 15);
 }
 
 #[test]

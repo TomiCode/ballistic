@@ -141,7 +141,19 @@ good, and the window title shows the time since the level started.
 - At the finish the score is printed: the level's bonus (100 × its number) +
   the points left + 200 per life left.
 - The status line shows the points and lives, and `[new ball]` or `[ball
-  lost]` while one is coming or going. There's no HUD or score screen yet.
+  lost]` while one is coming or going. There's no score screen yet.
+
+**The HUD** is the original's (research findings 18), from its own sprites
+and font:
+- bottom left, the points in their frame;
+- bottom right, a ball per life. An extra life slides the end cap left and
+  fades a ball in. A lost life fades the last ball out 2 s after the loss,
+  then the cap slides back;
+- an extra point makes the points' frame glow and fade.
+
+The original stretched the HUD with the window. Here it keeps its 4:3
+proportions: on a wide window the left part stays at the left edge and the
+lives at the right. Screenshots (`--screenshot`) include it in play mode.
 
 **Transformers** (`P_Trafo_Paper`, `_Stone`, `_Wood`) stand at their
 placeholders, shown while their sector is active. They work like the
@@ -228,7 +240,7 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: the HUD and score screen, the pickups' looks and sounds,
+- In play mode: the score screen, the pickups' looks,
   checkpoint flames and fan particles, the other
   sounds (the wooden flaps, the level finish, music), the start flames,
   the screen fade, the paper pieces' wind, the end
