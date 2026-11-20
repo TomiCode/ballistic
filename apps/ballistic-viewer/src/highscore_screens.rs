@@ -12,7 +12,7 @@
 //! Keys only for now: the buttons can't be clicked yet (that comes with the
 //! menus). The 4:3 layout is centred in the window.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use anyhow::Result;
 use ballistic_bundle as bb;
@@ -47,11 +47,16 @@ enum Screen {
         levels: usize,
         /// Arrow keys held: previous, next.
         pressed: [bool; 2],
+        /// Opened after a level (the button says *Next*), else from a menu
+        /// (*Back*).
+        after_level: bool,
     },
 }
 
 pub struct HighscoreScreens {
     data: bb::Highscores,
+    /// The menu fonts, by name.
+    fonts: BTreeMap<String, bb::HudFont>,
     language: String,
     /// `None` in tests.
     overlay: Option<Overlay>,
@@ -66,6 +71,7 @@ impl HighscoreScreens {
         gpu: &Gpu,
         bundle: &mut Bundle,
         data: &bb::Highscores,
+        fonts: &BTreeMap<String, bb::HudFont>,
         format: wgpu::TextureFormat,
         language: &str,
     ) -> Result<Self> {
@@ -78,7 +84,7 @@ impl HighscoreScreens {
             .chain(&data.table.sprites)
             .map(|s| s.texture.clone())
             .chain([data.table.arrow_pressed.0.clone(), None])
-            .chain(data.fonts.values().map(|f| Some(f.texture.clone())));
+            .chain(fonts.values().map(|f| Some(f.texture.clone())));
         for key in keys {
             if textures.contains_key(&key) {
                 continue;
@@ -89,18 +95,20 @@ impl HighscoreScreens {
             };
             textures.insert(key, overlay.add_texture(gpu, &tex));
         }
-        let mut s = Self::with_textures(data, language, textures);
+        let mut s = Self::with_textures(data, fonts, language, textures);
         s.overlay = Some(overlay);
         Ok(s)
     }
 
-    fn with_textures(
+    pub(crate) fn with_textures(
         data: &bb::Highscores,
+        fonts: &BTreeMap<String, bb::HudFont>,
         language: &str,
         textures: HashMap<Option<String>, usize>,
     ) -> Self {
         Self {
             data: data.clone(),
+            fonts: fonts.clone(),
             language: language.to_owned(),
             overlay: None,
             textures,
@@ -119,12 +127,14 @@ impl HighscoreScreens {
         self.events.push(Event::Message("Menu_Highscore"));
     }
 
-    /// The table, at `level` (0-based) of `levels`.
-    pub fn start_table(&mut self, level: usize, levels: usize) {
+    /// The table, at `level` (0-based) of `levels`, after a level or from a
+    /// menu.
+    pub fn start_table(&mut self, level: usize, levels: usize, after_level: bool) {
         self.screen = Some(Screen::Table {
             level,
             levels: levels.max(1),
             pressed: [false; 2],
+            after_level,
         });
     }
 
@@ -144,7 +154,7 @@ impl HighscoreScreens {
     /// Typed text, for the name.
     pub fn text(&mut self, s: &str) {
         let max = self.data.entry.max_len as usize;
-        let font = self.data.fonts.get(&self.data.entry.name.font);
+        let font = self.fonts.get(&self.data.entry.name.font);
         let Some(Screen::Entry { name, .. }) = self.screen.as_mut() else {
             return;
         };
@@ -179,6 +189,7 @@ impl HighscoreScreens {
                 level,
                 levels,
                 pressed,
+                ..
             }) => {
                 // Through the levels, round (`TT_Counter`, 1 to the last).
                 if t.previous_keys.contains(&scan) {
@@ -216,9 +227,12 @@ impl HighscoreScreens {
     }
 
     fn localised(&self, text: &bb::MenuText) -> String {
-        text.text
-            .get(&self.language)
-            .or_else(|| text.text.get("english"))
+        self.localised_map(&text.text)
+    }
+
+    fn localised_map(&self, text: &BTreeMap<String, String>) -> String {
+        text.get(&self.language)
+            .or_else(|| text.get("english"))
             .cloned()
             .unwrap_or_default()
     }
@@ -275,7 +289,12 @@ impl HighscoreScreens {
                 }
                 quads.extend(name_quads);
             }
-            Screen::Table { level, pressed, .. } => {
+            Screen::Table {
+                level,
+                pressed,
+                after_level,
+                ..
+            } => {
                 let t = &self.data.table;
                 for s in &t.sprites {
                     let alt = t
@@ -291,7 +310,12 @@ impl HighscoreScreens {
                     format!("{}{}", self.localised(&t.title), level + 1),
                     0.0,
                 ));
-                texts.push((&t.back, self.localised(&t.back), 0.0));
+                let back = if *after_level {
+                    self.localised(&t.back)
+                } else {
+                    self.localised_map(&t.back_text)
+                };
+                texts.push((&t.back, back, 0.0));
                 let table = save.highscores.get(*level).map_or(&[][..], Vec::as_slice);
                 for (i, (n, s)) in t.names.iter().zip(&t.scores).enumerate() {
                     let Some(row) = table.get(i) else {
@@ -329,7 +353,7 @@ impl HighscoreScreens {
 
     /// `s` in `t`'s box, moved right by `dx` pixels.
     fn text_in(&self, frame: &Frame, t: &bb::MenuText, s: &str, dx: f32) -> Vec<Quad> {
-        let Some(font) = self.data.fonts.get(&t.font) else {
+        let Some(font) = self.fonts.get(&t.font) else {
             return Vec::new();
         };
         let Some(&texture) = self.textures.get(&Some(font.texture.clone())) else {
@@ -433,20 +457,23 @@ mod tests {
         d.table.previous_keys = vec![203];
         d.table.next_keys = vec![205];
         d.table.leave_keys = vec![1, 28];
-        d.fonts.insert(
+        d.entry.name.font = "f".into();
+        d
+    }
+
+    fn fonts() -> BTreeMap<String, bb::HudFont> {
+        BTreeMap::from([(
             "f".into(),
             bb::HudFont {
                 glyphs: vec![bb::Glyph::default(); 255],
                 ..bb::HudFont::default()
             },
-        );
-        d.entry.name.font = "f".into();
-        d
+        )])
     }
 
     #[test]
     fn the_name_is_typed_edited_and_confirmed() {
-        let mut s = HighscoreScreens::with_textures(&data(), "english", HashMap::new());
+        let mut s = HighscoreScreens::with_textures(&data(), &fonts(), "english", HashMap::new());
         s.start_entry(1234, "name");
         assert!(s.typing());
         assert_eq!(s.take_events(), [Event::Message("Menu_Highscore")]);
@@ -484,15 +511,16 @@ mod tests {
 
     #[test]
     fn the_table_goes_round_the_levels_and_leaves() {
-        let mut s = HighscoreScreens::with_textures(&data(), "english", HashMap::new());
-        s.start_table(0, 12);
+        let mut s = HighscoreScreens::with_textures(&data(), &fonts(), "english", HashMap::new());
+        s.start_table(0, 12, true);
         assert!(s.key(203));
         assert_eq!(
             s.screen,
             Some(Screen::Table {
                 level: 11,
                 levels: 12,
-                pressed: [true, false]
+                pressed: [true, false],
+                after_level: true,
             })
         );
         s.key_up(203);

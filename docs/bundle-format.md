@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 20,
+  "format_version": 21,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -287,8 +287,6 @@ and useful to read). Since version 2.
   "highscores": {
     "defaults": [[{ "name": "Mr. Default", "score": 4000 }, "…"], "…"],
     "unlocked": [true, false, "…"], "default_name": "name",
-    "fonts": { "GameFont_01": { "texture": "font_1", "glyphs": ["…"],
-      "scale": [0.45, 0.55], "space": [0.0, 0.0], "color": [1.0, 1.0, 1.0, 1.0] }, "…": "…" },
     "entry": {
       "sprites": [ { "name": "M_BlackScreen", "…": "…" }, "…" ],
       "title": { "rect": [0.35, 0.3, 0.65, 0.4], "font": "GameFont_01", "align": "center",
@@ -298,10 +296,27 @@ and useful to read). Since version 2.
       "ok": { "…": "…" }, "keys": [28] },
     "table": {
       "sprites": [ "…" ], "title": { "…": "…" }, "back": { "…": "…" },
+      "back_text": { "english": "  Back", "…": "…" },
       "names": [ { "…": "…" }, "…" ], "scores": [ { "…": "…" }, "…" ], "name_offset": 0.035,
       "arrows": ["M_Highscore_But_1", "M_Highscore_But_2"],
       "arrow_pressed": ["button01_select", [1.0, 1.0, 1.0, 1.0]],
-      "previous_keys": [203], "next_keys": [205], "leave_keys": [1, 28] } }
+      "previous_keys": [203], "next_keys": [205], "leave_keys": [1, 28] } },
+  "menus": {
+    "fonts": { "GameFont_01": { "texture": "font_1", "glyphs": ["…"],
+      "scale": [0.45, 0.55], "space": [0.0, 0.0], "color": [1.0, 1.0, 1.0, 1.0] }, "…": "…" },
+    "button_up": ["button01_deselect", [1.0, 1.0, 1.0, 1.0]],
+    "button_over": ["button01_select", [1.0, 1.0, 1.0, 1.0]],
+    "button_inactive": ["…", [1.0, 1.0, 1.0, 1.0]],
+    "main": { "sprites": [ { "name": "M_BlackScreen", "…": "…" } ], "title": null,
+      "buttons": [ { "sprite": { "name": "M_Main_But_1", "…": "…" },
+        "text": { "font": "GameFont_01", "text": { "english": "Start", "…": "…" }, "…": "…" } },
+        "…" ],
+      "first": 0, "escape": 4, "locked_font": null, "keys": [1, 28, 200, 208] },
+    "start": { "…": "…", "locked_font": "GameFont_03a" },
+    "pause": { "…": "…" }, "end": { "…": "…" }, "dead": { "…": "…" }, "options": { "…": "…" },
+    "yes_no": { "sprites": [], "text": { "…": "…" }, "yes": { "…": "…" }, "no": { "…": "…" },
+      "questions": { "Exit Game?": { "english": "Do you want to quit the game?", "…": "…" }, "…": "…" },
+      "keys": [1, 28, 203, 205] } }
 }
 ```
 
@@ -493,7 +508,6 @@ and useful to read). Since version 2.
   - `defaults`: each level's table on a new install, best first;
     `unlocked`: the levels open then; `default_name`: the name the entry
     starts with then.
-  - `fonts`: the menu fonts by name, like the HUD's.
   - A `MenuText` is a box (`rect`, screen fractions of 4:3), a `font`, an
     `align`ment within `margins` (pixels at 480 lines), a fixed `text` by
     language (empty when the screen fills it in), and `wrap` (broken at
@@ -503,9 +517,23 @@ and useful to read). Since version 2.
     line high wide); `ok`; `keys` that confirm.
   - `table`: `sprites`; `title` (its text, then the level's number); `back`
     (the button after a level); each place's `names` (moved right by
-    `name_offset`, a screen fraction) and `scores`; the `arrows`, drawn in
+    `name_offset`, a screen fraction) and `scores`; `back_text`, the
+    button's text when the table comes from a menu; the `arrows`, drawn in
     `arrow_pressed` (texture, colour) while their keys (`previous_keys`,
     `next_keys`) are down; `leave_keys`.
+
+- `menus`: `Menu.nmo`'s menus. Keys are `DirectInput` scan codes (200 Up,
+  208 Down, 203 Left, 205 Right, 28 Enter, 1 Escape).
+  - `fonts`: the menu fonts by name, like the HUD's.
+  - `button_up`, `button_over`, `button_inactive`: a button's look (texture
+    key, colour): normal, active, locked.
+  - Each button menu (`main`, `start`, `pause`, `end`, `dead`, `options`):
+    `sprites` shown with it, an optional `title`, its `buttons` (sprite and
+    text), the one active at `first`, the one Escape picks (`escape`), the
+    font of a locked button's text (`locked_font`), and its `keys`.
+  - `yes_no`: the question's box (`text`), the `yes` and `no` buttons, and
+    the `questions` the menus ask, by name (`Exit Game?`, `Restart
+    Level?`, `Exit Level?`), each by language.
 
 ## Versioning rules
 
@@ -525,4 +553,5 @@ and useful to read). Since version 2.
   encoding 3) and the extra life's `look`; colour-keyed textures get alpha.
   **18** adds the extra point's `look`, and its trail systems to
   `particles`. **19** adds `level_end` and `score_screen`. **20** adds
-  `highscores`.
+  `highscores`. **21** adds `menus` (the fonts move there from
+  `highscores`) and the table's `back_text`.

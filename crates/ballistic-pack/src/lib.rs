@@ -10,6 +10,7 @@ mod highscores;
 mod hud;
 pub mod install;
 mod ktx2;
+mod menus;
 mod modules;
 pub mod pack;
 pub mod particles;

@@ -67,6 +67,10 @@ struct App {
     audio: Option<crate::audio::Audio>,
 }
 
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "independent window and play-mode flags"
+)]
 struct State {
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -81,6 +85,12 @@ struct State {
     play_mode: bool,
     /// The save file, shared by each level's play mode.
     save: crate::save::SharedSave,
+    /// `--game`: the menus around the levels.
+    game: Option<crate::game::Game>,
+    /// The game over menu was opened for this level.
+    dead_shown: bool,
+    /// The mouse pointer (pixels).
+    cursor: (f32, f32),
     scene_keys: Vec<String>,
     camera: ballistic_render::Camera,
     opts: RenderOptions,
@@ -141,27 +151,27 @@ impl App {
             .iter()
             .map(|s| s.key.clone())
             .collect();
-        let mut scene = load_scene(&gpu, &mut self.bundle, &self.args.scene, view_format)?;
-        let camera = match &self.args.camera {
-            Some(s) => parse_camera(s, scene.home)?,
-            None => scene.home,
-        };
+        let (mut scene, camera) = self.first_scene(&gpu, view_format)?;
         let depth = ballistic_render::gpu_depth_view(&gpu, config.width, config.height);
-        let save = if self.args.play {
-            let defaults = self.bundle.physics()?.highscores;
-            let path = self.args.save.clone().or_else(ballistic_save::default_path);
-            crate::save::SaveFile::open(path, &defaults)
-        } else {
-            crate::save::SaveFile::in_memory(&ballistic_bundle::Highscores::default())
-        }
-        .shared();
-        let play = if self.args.play {
+        let play_mode = self.args.play || self.args.game;
+        let save = self.open_save(play_mode)?;
+        let play = if self.args.play && !self.args.game {
             Some(new_play(
                 &gpu,
                 &mut self.bundle,
                 &mut scene,
                 view_format,
                 &save,
+            )?)
+        } else {
+            None
+        };
+        let game = if self.args.game {
+            Some(crate::game::Game::create(
+                &gpu,
+                &mut self.bundle,
+                view_format,
+                save.clone(),
             )?)
         } else {
             None
@@ -174,8 +184,11 @@ impl App {
             depth,
             scene,
             play,
-            play_mode: self.args.play,
+            play_mode,
             save,
+            game,
+            dead_shown: false,
+            cursor: (0.0, 0.0),
             scene_keys,
             camera,
             opts: options(&self.args),
@@ -193,9 +206,128 @@ impl App {
         })
     }
 
+    /// The scene to start with (the menu level with `--game`) and its
+    /// camera.
+    fn first_scene(
+        &mut self,
+        gpu: &Gpu,
+        view_format: wgpu::TextureFormat,
+    ) -> Result<(LoadedScene, ballistic_render::Camera)> {
+        let first = if self.args.game {
+            crate::game::MENU_LEVEL.to_owned()
+        } else {
+            self.args.scene.clone()
+        };
+        let scene = load_scene(gpu, &mut self.bundle, &first, view_format)?;
+        let mut camera = match &self.args.camera {
+            Some(s) => parse_camera(s, scene.home)?,
+            None => scene.home,
+        };
+        if self.args.game {
+            camera = crate::game::menu_camera(&self.bundle.scene(&first)?, camera);
+        }
+        Ok((scene, camera))
+    }
+
+    /// The save file: in play, `--save` or the usual place.
+    fn open_save(&mut self, play: bool) -> Result<crate::save::SharedSave> {
+        Ok(if play {
+            let defaults = self.bundle.physics()?.highscores;
+            let path = self.args.save.clone().or_else(ballistic_save::default_path);
+            crate::save::SaveFile::open(path, &defaults)
+        } else {
+            crate::save::SaveFile::in_memory(&ballistic_bundle::Highscores::default())
+        }
+        .shared())
+    }
+
     fn fail(&mut self, event_loop: &ActiveEventLoop, e: anyhow::Error) {
         self.error = Some(e);
         event_loop.exit();
+    }
+}
+
+impl State {
+    /// `--game`: menus take the keys while one is up; Escape in play pauses.
+    /// Whether the key was taken.
+    fn game_key(&mut self, code: KeyCode, ev: &KeyEvent) -> bool {
+        let Some(game) = self.game.as_mut() else {
+            return false;
+        };
+        let pressed = ev.state == ElementState::Pressed;
+        if game.paused() || self.play.is_none() {
+            let scan = match code {
+                KeyCode::ArrowUp => Some(200),
+                KeyCode::ArrowDown => Some(208),
+                KeyCode::ArrowLeft => Some(203),
+                KeyCode::ArrowRight => Some(205),
+                KeyCode::Enter | KeyCode::NumpadEnter => Some(28),
+                KeyCode::Escape => Some(1),
+                KeyCode::Space => Some(57),
+                _ => None,
+            };
+            if let Some(scan) = scan {
+                if pressed {
+                    game.key(scan);
+                } else {
+                    game.key_up(scan);
+                }
+            }
+            // Everything else waits too (except a window's own keys).
+            return code != KeyCode::F11;
+        }
+        if code == KeyCode::Escape
+            && pressed
+            && self.play.as_ref().is_some_and(|p| !p.in_level_end())
+        {
+            game.pause();
+            return true;
+        }
+        false
+    }
+
+    /// `--game`: what the level and the menus ask for. Whether to quit.
+    fn game_frame(&mut self, bundle: &mut Bundle) -> Result<bool> {
+        let Some(game) = self.game.as_mut() else {
+            return Ok(false);
+        };
+        if let Some(play) = self.play.as_mut() {
+            if let Some(after) = play.take_next_level() {
+                game.level_done(after);
+            }
+            if play.game_over() && !self.dead_shown {
+                self.dead_shown = true;
+                game.dead();
+            }
+        }
+        for action in game.take_actions() {
+            match action {
+                crate::game::Action::Play(key) => self.start_level(bundle, &key)?,
+                crate::game::Action::Restart => {
+                    let key = self.scene.key.clone();
+                    self.start_level(bundle, &key)?;
+                }
+                crate::game::Action::MainMenu => {
+                    let key = crate::game::MENU_LEVEL;
+                    self.open_scene(bundle, key, false)?;
+                    self.camera = crate::game::menu_camera(&bundle.scene(key)?, self.camera);
+                    if let Some(g) = self.game.as_mut() {
+                        g.main_menu();
+                    }
+                }
+                crate::game::Action::Quit => return Ok(true),
+            }
+        }
+        Ok(false)
+    }
+
+    fn start_level(&mut self, bundle: &mut Bundle, key: &str) -> Result<()> {
+        eprintln!("level: {key}");
+        self.open_scene(bundle, key, true)?;
+        if let Some(g) = self.game.as_mut() {
+            g.playing(crate::energy::level_index(key));
+        }
+        Ok(())
     }
 }
 
@@ -296,14 +428,16 @@ impl State {
             (cur + n - 1) % n
         };
         let key = self.scene_keys[next].clone();
-        self.open_scene(bundle, &key)
+        self.open_scene(bundle, &key, self.play_mode)
     }
 
-    /// Loads scene `key` (and play mode on it, if on).
-    fn open_scene(&mut self, bundle: &mut Bundle, key: &str) -> Result<()> {
+    /// Loads scene `key` (and play mode on it, if `play`).
+    fn open_scene(&mut self, bundle: &mut Bundle, key: &str, play: bool) -> Result<()> {
         self.scene = load_scene(&self.gpu, bundle, key, self.view_format)?;
         self.camera = self.scene.home;
-        if self.play_mode {
+        self.play = None;
+        self.dead_shown = false;
+        if play {
             // Levels have a start marker; other scenes fall back to free-fly.
             self.play = new_play(
                 &self.gpu,
@@ -327,6 +461,9 @@ impl State {
         let PhysicalKey::Code(code) = ev.physical_key else {
             return Ok(());
         };
+        if self.game.is_some() && !ev.repeat && self.game_key(code, ev) {
+            return Ok(());
+        }
         if let Some(play) = self.play.as_mut()
             && !ev.repeat
         {
@@ -411,6 +548,15 @@ impl State {
     }
 
     fn update(&mut self, dt: f32) {
+        if let Some(game) = &self.game {
+            // The level waits under a menu; the menu level stands still.
+            if game.paused() || self.play.is_none() {
+                if let Some(play) = &self.play {
+                    self.camera = play.camera(self.camera);
+                }
+                return;
+            }
+        }
         if let Some(play) = self.play.as_mut() {
             play.update(dt);
             for (i, show) in play.take_level_visibility() {
@@ -506,6 +652,13 @@ impl State {
                 (self.config.width, self.config.height),
             );
         }
+        if let Some(game) = self.game.as_mut() {
+            let size = (self.config.width, self.config.height);
+            game.menus.render(&self.gpu, &mut encoder, &view, size);
+            let save = self.save.borrow();
+            game.tables
+                .render(&self.gpu, &mut encoder, &view, size, &save.data);
+        }
         self.gpu.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
         self.gpu.queue.present(frame);
@@ -570,6 +723,27 @@ impl ApplicationHandler for App {
                 if !state.frame() {
                     event_loop.exit();
                 }
+                match state.game_frame(&mut self.bundle) {
+                    Ok(true) => {
+                        event_loop.exit();
+                        return;
+                    }
+                    Ok(false) => {}
+                    Err(e) => {
+                        self.fail(event_loop, e);
+                        return;
+                    }
+                }
+                let menu_sounds = state
+                    .game
+                    .as_mut()
+                    .map(|g| g.sounds(1.0 / 60.0))
+                    .unwrap_or_default();
+                if let Some(audio) = self.audio.as_mut() {
+                    for (key, volume) in menu_sounds {
+                        audio.play(&mut self.bundle, &key, volume, 1.0);
+                    }
+                }
                 // The score screen is gone: on to the next level.
                 match state
                     .play
@@ -578,7 +752,7 @@ impl ApplicationHandler for App {
                 {
                     Some(crate::play::AfterScore::Level(key)) => {
                         eprintln!("next level: {key}");
-                        if let Err(e) = state.open_scene(&mut self.bundle, &key) {
+                        if let Err(e) = state.open_scene(&mut self.bundle, &key, true) {
                             self.fail(event_loop, e);
                             return;
                         }
@@ -588,9 +762,10 @@ impl ApplicationHandler for App {
                     }
                     None => {}
                 }
+                let paused = state.game.as_ref().is_some_and(crate::game::Game::paused);
                 if let Some(play) = state.play.as_mut() {
                     let sounds = play.take_sounds();
-                    let loops = play.loops();
+                    let loops = if paused { Vec::new() } else { play.loops() };
                     if let Some(audio) = self.audio.as_mut() {
                         for (key, volume, pitch) in sounds {
                             audio.play(&mut self.bundle, &key, volume, pitch);
@@ -608,6 +783,25 @@ impl ApplicationHandler for App {
                 button: MouseButton::Right,
                 ..
             } => state.set_looking(s == ElementState::Pressed),
+            WindowEvent::CursorMoved { position, .. } => {
+                #[expect(clippy::cast_possible_truncation, reason = "pixels")]
+                let pos = (position.x as f32, position.y as f32);
+                state.cursor = pos;
+                let size = (state.config.width, state.config.height);
+                if let Some(g) = state.game.as_mut() {
+                    g.point(pos, size);
+                }
+            }
+            WindowEvent::MouseInput {
+                state: ElementState::Pressed,
+                button: MouseButton::Left,
+                ..
+            } => {
+                let size = (state.config.width, state.config.height);
+                if let Some(g) = state.game.as_mut() {
+                    g.click(state.cursor, size);
+                }
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let Err(e) = state.key(&mut self.bundle, event_loop, &event) {
                     self.fail(event_loop, e);

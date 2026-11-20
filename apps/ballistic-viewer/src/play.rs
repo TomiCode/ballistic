@@ -248,8 +248,14 @@ impl Play {
             format,
         )?;
         let score_screen = ScoreScreen::new(gpu, bundle, &physics.score_screen, format, "english")?;
-        let highscores =
-            HighscoreScreens::new(gpu, bundle, &physics.highscores, format, "english")?;
+        let highscores = HighscoreScreens::new(
+            gpu,
+            bundle,
+            &physics.highscores,
+            &physics.menus.fonts,
+            format,
+            "english",
+        )?;
         let mut particles = ParticleRenderer::new(gpu, format);
         let mut particle_textures = std::collections::HashMap::new();
         let keys: Vec<Option<String>> = flames
@@ -977,7 +983,7 @@ impl Play {
             place.map(|p| p + 1)
         );
         self.highscores
-            .start_table(i, self.physics.highscores.defaults.len());
+            .start_table(i, self.physics.highscores.defaults.len(), true);
     }
 
     /// `End Level`, then `Menu_Score`.
@@ -1013,6 +1019,11 @@ impl Play {
     /// Typed text, for the highscore name.
     pub fn menu_text(&mut self, s: &str) {
         self.highscores.text(s);
+    }
+
+    /// The last life is gone.
+    pub fn game_over(&self) -> bool {
+        self.energy.game_over
     }
 
     /// The highscore name entry is on: every key is for it.

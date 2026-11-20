@@ -37,6 +37,72 @@ pub struct PhysicsData {
     pub score_screen: ScoreScreen,
     /// The highscore tables, the name entry and the table screen.
     pub highscores: Highscores,
+    /// The menus.
+    pub menus: Menus,
+}
+
+/// The menus (`Menu.nmo`). Keys are `DirectInput` scan codes.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Menus {
+    /// The menu fonts, by name (`GameFont_01`, …).
+    pub fonts: std::collections::BTreeMap<String, HudFont>,
+    /// A button's look: up, the active one, a locked one (texture key,
+    /// colour).
+    pub button_up: (Option<String>, [f32; 4]),
+    pub button_over: (Option<String>, [f32; 4]),
+    pub button_inactive: (Option<String>, [f32; 4]),
+    /// `Menu_Main`: start, highscores, options, credits, exit.
+    pub main: ButtonMenu,
+    /// `Menu_Start`: the levels, then back.
+    pub start: ButtonMenu,
+    /// `Menu_Pause`: restart, highscores, options, exit level, back.
+    pub pause: ButtonMenu,
+    /// `Menu_End`: restart, highscores, options, main menu, next level.
+    pub end: ButtonMenu,
+    /// `Menu_Dead`: restart, main menu.
+    pub dead: ButtonMenu,
+    /// `Menu_Options`: graphics, keys, sound, back.
+    pub options: ButtonMenu,
+    pub yes_no: YesNoMenu,
+}
+
+/// A list of buttons (`Menu_*_ShowHide`): Up and Down move through them
+/// (round), Enter or a click picks one, Escape picks `escape`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ButtonMenu {
+    /// Shown with it (the dark band, a title's sprite).
+    pub sprites: Vec<HudSprite>,
+    pub title: Option<MenuText>,
+    pub buttons: Vec<MenuButton>,
+    /// The button active at first.
+    pub first: usize,
+    /// The button Escape picks (none: Escape does nothing).
+    pub escape: Option<usize>,
+    /// The font of a locked button's text (the level select's).
+    pub locked_font: Option<String>,
+    /// The keys it reacts to.
+    pub keys: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct MenuButton {
+    pub sprite: HudSprite,
+    pub text: MenuText,
+}
+
+/// `Menu_YesNo`: a question, Yes and No. Left and Right choose, Enter or a
+/// click confirms, Escape says No.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct YesNoMenu {
+    pub sprites: Vec<HudSprite>,
+    /// Where the question goes.
+    pub text: MenuText,
+    pub yes: MenuButton,
+    pub no: MenuButton,
+    /// The questions the menus ask, by their local's name (`Exit Game?`,
+    /// `Restart Level?`, `Exit Level?`), each by language.
+    pub questions: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    pub keys: Vec<u32>,
 }
 
 /// Highscores (`base.cmo`'s *Highscore*, `Menu.nmo`'s
@@ -50,8 +116,6 @@ pub struct Highscores {
     pub unlocked: Vec<bool>,
     /// The name the entry starts with on a new install (`DB_Options`).
     pub default_name: String,
-    /// The menus' fonts, by name (`GameFont_01`, …).
-    pub fonts: std::collections::BTreeMap<String, HudFont>,
     pub entry: HighscoreEntryScreen,
     pub table: HighscoreTableScreen,
 }
@@ -103,8 +167,10 @@ pub struct HighscoreTableScreen {
     pub sprites: Vec<HudSprite>,
     /// The headline text, then the level's number.
     pub title: MenuText,
-    /// The button leaving the table after a level (*Next*).
+    /// The button leaving the table: *Next* after a level, `back_text`
+    /// (*Back*) from a menu.
     pub back: MenuText,
+    pub back_text: std::collections::BTreeMap<String, String>,
     /// Each place's name (left, moved right by `name_offset`, a screen
     /// fraction) and score (right).
     pub names: Vec<MenuText>,
@@ -585,7 +651,7 @@ pub struct Hud {
     pub glow: HudGlow,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct HudSprite {
     pub name: String,
     /// Texture key, `None` for an untextured rectangle (the text's frame).

@@ -17,15 +17,16 @@ pub use manifest::{
     TextureEntry, TextureFormat,
 };
 pub use physics::{
-    BallJointParams, BallParams, BallPieces, BallShape, BallSoundSet, BallSounds, CloudLayer,
-    CurvePoint, EmitterShape, EnergyParams, Environment, EventSound, ExtraLife, ExtraLifeLook,
-    ExtraPoint, ExtraPointLook, ForceParams, Glyph, HighscoreEntryScreen, HighscoreRow,
-    HighscoreTableScreen, Highscores, HingeParams, HitTest, Hud, HudFont, HudGlow, HudLives,
-    HudSprite, HudText, LevelEnd, LevelEnvironment, LevelFlow, MenuText, ModuleBody, ModuleSetup,
-    ObjectSoundIds, ParticleEmitter, ParticleRender, PhysicsData, PieceSounds, Progression,
-    PropParams, RingPart, ScoreRow, ScoreScreen, SkyParams, SliderParams, SoundCue, SoundGroup,
-    SpringAnchor, SpringParams, SurfaceParams, TextAlign, TextShadow, TransformerAnimation,
-    TransformerParams, TransformerType, UvWave, Varied, WakeParams, curve_y,
+    BallJointParams, BallParams, BallPieces, BallShape, BallSoundSet, BallSounds, ButtonMenu,
+    CloudLayer, CurvePoint, EmitterShape, EnergyParams, Environment, EventSound, ExtraLife,
+    ExtraLifeLook, ExtraPoint, ExtraPointLook, ForceParams, Glyph, HighscoreEntryScreen,
+    HighscoreRow, HighscoreTableScreen, Highscores, HingeParams, HitTest, Hud, HudFont, HudGlow,
+    HudLives, HudSprite, HudText, LevelEnd, LevelEnvironment, LevelFlow, MenuButton, MenuText,
+    Menus, ModuleBody, ModuleSetup, ObjectSoundIds, ParticleEmitter, ParticleRender, PhysicsData,
+    PieceSounds, Progression, PropParams, RingPart, ScoreRow, ScoreScreen, SkyParams, SliderParams,
+    SoundCue, SoundGroup, SpringAnchor, SpringParams, SurfaceParams, TextAlign, TextShadow,
+    TransformerAnimation, TransformerParams, TransformerType, UvWave, Varied, WakeParams,
+    YesNoMenu, curve_y,
 };
 pub use scene::{
     AddressMode, BlendFactor, CompareFunc, Group, Material, Mesh, ObjectKind, Scene, SceneObject,
@@ -36,7 +37,7 @@ pub use scene::{
 pub const FORMAT_NAME: &str = "ballistic-bundle";
 /// Version of the bundle layout. Bump on any incompatible change.
 /// v2: adds `data/physics.json`.
-pub const FORMAT_VERSION: u32 = 20;
+pub const FORMAT_VERSION: u32 = 21;
 /// Version of the `.bscn` scene encoding.
 pub const SCENE_VERSION: u32 = 3;
 /// Magic at the start of every `.bscn` entry.

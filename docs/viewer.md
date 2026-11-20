@@ -25,6 +25,8 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--screenshot out.png [--size 1920x1080]` | Render one frame off-screen and exit, no window |
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
 | `--play` | Play mode: roll a ball on the level |
+| `--game` | The game: starts at the main menu over the menu level; levels are played from its level select, with pause (Escape), end and game over menus. Implies play mode |
+| `--menu-keys <codes>` | With `--game --screenshot`: menu keys to press first, as `DirectInput` scan codes (`28,208`: Enter, Down). Development aid |
 | `--save <path>` | Play mode's save file (open levels, highscores, the last name). In a window it defaults to the platform's data folder (`%APPDATA%\Ballistic\save.json`, `~/Library/Application Support/Ballistic/save.json`, `$XDG_DATA_HOME/ballistic/save.json`); headless runs keep it in memory unless given. A file that can't be read is left alone and the session isn't saved |
 | `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:4,up:2,rotate+left:0.3` (the ball comes 3 s after the start). Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), `trafo` puts the ball on the nearest transformer of another type (shown ones first), `pickup` on the nearest extra life or extra point, `fan` 2 above the nearest fan in an active sector, `near` 8 from the nearest pickup (to look at it without taking it), `lose` loses the ball (as **R**), `skip` presses Space (cuts the level end's wait short, scores fast, leaves the score screen), and `enter` presses Enter (confirms the highscore name, leaves the table), all at the start of their segment. A checkpoint arms a while after the last one, so leave 2 s or more between `next`s. The summary then also prints the points, lives and score, and any moving element that fell below the level's depth cubes. With `--camera` too, the camera stays at that view instead of following the ball |
 
@@ -162,6 +164,22 @@ findings 23):
 - While the level end or its screens are on, Escape doesn't close the
   viewer, and during the name entry every key types.
 
+**The game** (`--game`, research findings 25) wraps the levels in the
+original's menus:
+- The **main menu** over the menu level: Start, Highscore, Options, Credits,
+  Exit (asks first). Up and Down choose (round), Enter or a click picks,
+  Escape picks Exit; pointing at a button makes it the active one.
+- **Start** lists the levels: the ones the save has open can be played, the
+  others are grey.
+- In a level, **Escape pauses**: the level waits under the pause menu
+  (Restart and Exit level ask first; Back or Escape goes on).
+- After the score (and a highscore's name and table) comes the **end
+  menu**: Restart, Highscore, Options, Home, Next level (Escape).
+- With the last life gone, the **game over** menu: Restart, Home.
+- A highscore table opened from a menu starts at the current level and
+  goes back to it. Options shows its buttons, but its screens and the
+  credits aren't there yet; the menu level doesn't fly or show its sky yet.
+
 **Points and lives**, as the original counts them (research findings 16):
 - A level starts with 1000 points and 3 lives.
 - One point goes every 500 ms until the finish.
@@ -291,6 +309,7 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: the menus (and clicking the highscore buttons), explosions, the other sounds (the
+- In play mode: the options' screens, the credits, the menu level's flight
+  and sky, clicking the highscore buttons, explosions, the other sounds (the
   wooden flaps, the level finish, music), the screen fade, the paper pieces'
   wind, the last level's UFO

@@ -2,8 +2,6 @@
 //! - `base.cmo`'s tables: each level's default table (`DB_Highscore_LvNN`),
 //!   the levels open at first (`DB_Levelfreischaltung`), the last player's
 //!   name (`DB_Options`);
-//! - `Menu.nmo`'s `Menu_Init` fonts (`TT CreateFontEx` and the *Set Font
-//!   Properties* it feeds);
 //! - `Menu_HighscoreEntry` and `Menu_Highscore`: their 2D entities (shown by
 //!   their *Init*s, the places from `Menu_Highscore_ShowHide`), their *2D
 //!   Text*s (fixed texts followed to the `Language.nmo` rows `Menu_Init`
@@ -23,9 +21,6 @@ use crate::install::Install;
 use crate::physics::{Loaded, load};
 use crate::score::{keys, language_row, source_name};
 use crate::transformers::{float, input, target, text, vector, writer_of};
-
-/// The menu fonts the highscore screens use.
-const FONTS: [&str; 3] = ["GameFont_01", "GameFont_02", "GameFont_03"];
 
 #[allow(
     clippy::too_many_lines,
@@ -72,10 +67,6 @@ pub fn extract(install: &Install) -> Result<bb::Highscores> {
     let all = ex.nodes(&|_| true);
     let language = load(install, "3d entities/language.nmo")?;
     let table = language.array("language")?;
-    let fonts = FONTS
-        .iter()
-        .map(|&name| Ok((name.to_owned(), font(install, &menu, &all, name)?)))
-        .collect::<Result<BTreeMap<_, _>>>()?;
     let cx = Cx {
         install,
         menu: &menu,
@@ -130,7 +121,9 @@ pub fn extract(install: &Install) -> Result<bb::Highscores> {
         .context("Highscore: the headline's text")?;
     let mut back = cx.text(by_target(&table_nodes, "2D Text", "_But_Back")?)?;
     // After a level the button says *Next* (the selector's first input).
-    back.text = cx.localised(find(&table_nodes, "Parameter Selector")?.node, "pIn 0")?;
+    let selector = find(&table_nodes, "Parameter Selector")?;
+    back.text = cx.localised(selector.node, "pIn 0")?;
+    let back_text = cx.localised(selector.node, "pIn 1")?;
     let mut places: Vec<(String, &NodeParams)> = table_nodes
         .iter()
         .copied()
@@ -219,6 +212,7 @@ pub fn extract(install: &Install) -> Result<bb::Highscores> {
         sprites,
         title,
         back,
+        back_text,
         names,
         scores,
         name_offset,
@@ -233,14 +227,17 @@ pub fn extract(install: &Install) -> Result<bb::Highscores> {
         defaults,
         unlocked,
         default_name,
-        fonts,
         entry,
         table,
     })
 }
 
 /// The `bb_name` node whose target's name ends in `suffix`.
-fn by_target<'a>(nodes: &[&'a NodeParams], bb_name: &str, suffix: &str) -> Result<&'a NodeParams> {
+pub(crate) fn by_target<'a>(
+    nodes: &[&'a NodeParams],
+    bb_name: &str,
+    suffix: &str,
+) -> Result<&'a NodeParams> {
     nodes
         .iter()
         .copied()
@@ -248,7 +245,7 @@ fn by_target<'a>(nodes: &[&'a NodeParams], bb_name: &str, suffix: &str) -> Resul
         .with_context(|| format!("{bb_name} on *{suffix} not found"))
 }
 
-fn find<'a>(nodes: &[&'a NodeParams], bb_name: &str) -> Result<&'a NodeParams> {
+pub(crate) fn find<'a>(nodes: &[&'a NodeParams], bb_name: &str) -> Result<&'a NodeParams> {
     nodes
         .iter()
         .copied()
@@ -256,16 +253,16 @@ fn find<'a>(nodes: &[&'a NodeParams], bb_name: &str) -> Result<&'a NodeParams> {
         .with_context(|| format!("{bb_name} not found"))
 }
 
-struct Cx<'a> {
-    install: &'a Install,
-    menu: &'a Loaded,
-    all: &'a [NodeParams],
-    language: &'a DataArray,
+pub(crate) struct Cx<'a> {
+    pub(crate) install: &'a Install,
+    pub(crate) menu: &'a Loaded,
+    pub(crate) all: &'a [NodeParams],
+    pub(crate) language: &'a DataArray,
 }
 
 impl Cx<'_> {
     /// A *2D Text*'s box, font, alignment and (when fixed) text.
-    fn text(&self, n: &NodeParams) -> Result<bb::MenuText> {
+    pub(crate) fn text(&self, n: &NodeParams) -> Result<bb::MenuText> {
         let name = target(n).context("2D Text without a target")?;
         let rect = sprite(self.install, &self.menu.file, &name, true)?.rect;
         let font = source_name(self.menu, n.node, "Font").context("2D Text: Font")?;
@@ -307,7 +304,7 @@ impl Cx<'_> {
 
     /// The texts by language that `node`'s input `pin` shows (a local
     /// `Menu_Init` reads from the language table).
-    fn localised(&self, node: ObjRef, pin: &str) -> Result<BTreeMap<String, String>> {
+    pub(crate) fn localised(&self, node: ObjRef, pin: &str) -> Result<BTreeMap<String, String>> {
         let row = language_row(self.menu, self.all, node, pin)?;
         let cells = self
             .language
@@ -356,7 +353,12 @@ impl Cx<'_> {
 
 /// A font as `Menu_Init` makes it: `TT CreateFontEx` `name`, then the *Set
 /// Font Properties* it feeds.
-fn font(install: &Install, menu: &Loaded, all: &[NodeParams], name: &str) -> Result<bb::HudFont> {
+pub(crate) fn font(
+    install: &Install,
+    menu: &Loaded,
+    all: &[NodeParams],
+    name: &str,
+) -> Result<bb::HudFont> {
     let create = all
         .iter()
         .find(|n| {
@@ -398,7 +400,7 @@ fn font(install: &Install, menu: &Loaded, all: &[NodeParams], name: &str) -> Res
 }
 
 /// The behaviours linked into `node`'s input `pin` in its parent graph.
-fn linked_from(g: &Loaded, node: ObjRef, pin: &str) -> Vec<ObjRef> {
+pub(crate) fn linked_from(g: &Loaded, node: ObjRef, pin: &str) -> Vec<ObjRef> {
     let s = &g.scripts;
     let (Some(&parent), Some(b)) = (s.owner.get(&node), s.behavior(node)) else {
         return Vec::new();
@@ -452,7 +454,7 @@ fn object_cells(g: &Loaded, t: &DataArray) -> Vec<String> {
         .collect()
 }
 
-fn has_material(file: &CkFile, name: &str) -> bool {
+pub(crate) fn has_material(file: &CkFile, name: &str) -> bool {
     object(file, name, ClassId::ENTITY_2D)
         .ok()
         .and_then(|i| match decode_object(&file.objects[i]) {
@@ -463,7 +465,11 @@ fn has_material(file: &CkFile, name: &str) -> bool {
 }
 
 /// A material's texture key and diffuse colour.
-fn material(install: &Install, file: &CkFile, name: &str) -> Result<(Option<String>, [f32; 4])> {
+pub(crate) fn material(
+    install: &Install,
+    file: &CkFile,
+    name: &str,
+) -> Result<(Option<String>, [f32; 4])> {
     let i = object(file, name, ClassId::MATERIAL)?;
     let Some(Ok(Decoded::Material(m))) = decode_object(&file.objects[i]) else {
         bail!("{name} isn't a material");
@@ -494,8 +500,6 @@ mod tests {
         assert_eq!(h.defaults[11][0].name, "Mrs. Default");
         assert_eq!(h.unlocked.iter().filter(|&&u| u).count(), 1);
         assert!(h.unlocked[0]);
-        assert_eq!(h.fonts["GameFont_01"].scale, [0.45, 0.55]);
-        assert_eq!(h.fonts["GameFont_03"].scale, [0.35, 0.4]);
 
         let e = &h.entry;
         assert_eq!(e.title.text["english"], "New highscore entry!");
@@ -513,6 +517,7 @@ mod tests {
         let t = &h.table;
         assert_eq!(t.title.text["english"].trim(), "Highscore Level");
         assert_eq!(t.back.text["english"], "Next");
+        assert_eq!(t.back_text["english"].trim(), "Back");
         assert_eq!(t.names.len(), 10);
         assert_eq!(t.scores.len(), 10);
         assert_eq!(t.scores[0].align, bb::TextAlign::Right);

@@ -7,11 +7,13 @@ mod energy;
 mod flames;
 mod flow;
 mod follow;
+mod game;
 mod highscore_screens;
 mod hud;
 #[cfg(test)]
 mod levels_check;
 mod life_look;
+mod menus;
 mod modules;
 mod particles;
 mod pickups;
@@ -82,6 +84,14 @@ pub struct Args {
     /// …); headless: none (kept in memory).
     #[arg(long)]
     save: Option<PathBuf>,
+    /// The game: start at the main menu over the menu level, and play the
+    /// levels from its menus (implies `--play`).
+    #[arg(long)]
+    game: bool,
+    /// With `--game --screenshot`: menu keys to press before the frame, as
+    /// `DirectInput` scan codes (`208,28`: Down, Enter). Development aid.
+    #[arg(long, value_delimiter = ',')]
+    menu_keys: Vec<u32>,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -307,10 +317,31 @@ fn screenshot(
         gpu.bc_textures
     );
     let format = ballistic_render::OFFSCREEN_FORMAT;
-    let mut scene = load_scene(&gpu, &mut bundle, &args.scene, format)?;
+    let first = if args.game {
+        game::MENU_LEVEL
+    } else {
+        args.scene.as_str()
+    };
+    let mut scene = load_scene(&gpu, &mut bundle, first, format)?;
     let mut camera = match &args.camera {
         Some(s) => parse_camera(s, scene.home)?,
         None => scene.home,
+    };
+    // The main menu over the menu level, after `--menu-keys`.
+    let mut menus = if args.game {
+        camera = game::menu_camera(&bundle.scene(first)?, camera);
+        let defaults = bundle.physics()?.highscores;
+        let save = save::SaveFile::open(args.save.clone(), &defaults).shared();
+        let mut g = game::Game::create(&gpu, &mut bundle, format, save.clone())?;
+        for &k in &args.menu_keys {
+            g.key(k);
+        }
+        for a in g.take_actions() {
+            eprintln!("menu action (not carried out headless): {a:?}");
+        }
+        Some((g, save))
+    } else {
+        None
     };
     let mut play = if args.play {
         let level = bundle.scene(&args.scene)?;
@@ -455,6 +486,13 @@ fn screenshot(
             &opts,
         );
         p.render_hud(&gpu, &mut encoder, &target.color_view, (w, h));
+    }
+    if let Some((g, save)) = menus.as_mut() {
+        g.menus
+            .render(&gpu, &mut encoder, &target.color_view, (w, h));
+        let save = save.borrow();
+        g.tables
+            .render(&gpu, &mut encoder, &target.color_view, (w, h), &save.data);
     }
     gpu.queue.submit([encoder.finish()]);
     let rgba = target.read_rgba(&gpu)?;
