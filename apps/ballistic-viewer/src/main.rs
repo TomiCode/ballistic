@@ -3,12 +3,14 @@
 mod audio;
 mod ballsounds;
 mod energy;
+mod flames;
 mod flow;
 mod follow;
 mod hud;
 #[cfg(test)]
 mod levels_check;
 mod modules;
+mod particles;
 mod pickups;
 mod pieces;
 mod play;
@@ -344,6 +346,7 @@ fn screenshot(
             p.progress().2
         );
         eprintln!("{}", p.energy_summary());
+        eprintln!("flames burning: {}", p.flames_burning());
         let fallen = p.fallen_modules();
         if !fallen.is_empty() {
             eprintln!("fallen modules: {}", fallen.join(", "));

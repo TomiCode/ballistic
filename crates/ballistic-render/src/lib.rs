@@ -7,6 +7,7 @@
 mod camera;
 mod gpu;
 mod overlay;
+mod particles;
 mod scene;
 mod sky;
 mod texture;
@@ -14,6 +15,7 @@ mod texture;
 pub use camera::Camera;
 pub use gpu::{Gpu, RenderTarget, depth_view as gpu_depth_view};
 pub use overlay::{Overlay, Quad};
+pub use particles::{ParticleBatch, ParticleRenderer, ParticleVertex};
 pub use scene::{CullMode, RenderOptions, SceneRenderer};
 pub use sky::{SkyRenderer, sky_mesh};
 pub use texture::{GpuTexture, upload_ktx2};

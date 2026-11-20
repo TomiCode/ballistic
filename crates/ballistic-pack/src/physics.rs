@@ -246,6 +246,7 @@ pub fn extract(install: &Install) -> Result<bb::PhysicsData> {
         flow: crate::flow::extract(install)?,
         hud: crate::hud::extract(install)?,
         environment: crate::environment::extract(install)?,
+        particles: crate::particles::extract(install)?,
         balls,
     })
 }

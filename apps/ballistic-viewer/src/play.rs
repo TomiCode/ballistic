@@ -20,11 +20,14 @@ use ballistic_bundle::{BallParams, BundleReader, PhysicsData};
 use ballistic_physics::{
     BodyDesc, BodyId, PushId, Quat, Shape, Vec3, World, WorldConfig, build_level,
 };
-use ballistic_render::{Camera, Gpu, RenderOptions, SkyRenderer, upload_ktx2};
+use ballistic_render::{
+    Camera, Gpu, ParticleBatch, ParticleRenderer, RenderOptions, SkyRenderer, upload_ktx2,
+};
 use glam::Mat4;
 
 use crate::ballsounds::BallSoundsPlayer;
 use crate::energy::{Energy, Score};
+use crate::flames::Flames;
 use crate::flow::{BallPhase, DepthCubes, EventSounds, LOST_CHECK_FRAMES};
 use crate::follow::Follow;
 use crate::hud::Hud;
@@ -101,6 +104,10 @@ pub struct Play {
     /// The light, ambient and background in play.
     lighting: Lighting,
     clouds: Option<Clouds>,
+    flames: Flames,
+    particles: ParticleRenderer,
+    /// Texture key (`None`: white) → the particle renderer's texture.
+    particle_textures: std::collections::HashMap<Option<String>, usize>,
     pickups: Pickups,
     flow: ballistic_bundle::LevelFlow,
     phase: BallPhase,
@@ -196,6 +203,23 @@ impl Play {
         )?;
         let (sky, lighting) = environment(gpu, bundle, &physics, key, format)?;
         let clouds = Clouds::new(&physics.environment, key, level);
+        let flames = Flames::new(level, &physics.particles, |k| bundle.scene(k).ok());
+        let mut particles = ParticleRenderer::new(gpu, format);
+        let mut particle_textures = std::collections::HashMap::new();
+        for e in flames.emitters() {
+            let key = e.params.texture.clone();
+            if particle_textures.contains_key(&key) {
+                continue;
+            }
+            let index = match &key {
+                Some(k) => {
+                    let bytes = bundle.texture(k)?;
+                    particles.add_texture(gpu, &upload_ktx2(gpu, k, &bytes)?)
+                }
+                None => particles.add_white(gpu),
+            };
+            particle_textures.insert(key, index);
+        }
         let depth = DepthCubes::new(level, &physics.flow.depth_cubes);
         let events = EventSounds::new(&physics.flow);
         let flow = physics.flow.clone();
@@ -244,6 +268,9 @@ impl Play {
             sky,
             lighting,
             clouds,
+            flames,
+            particles,
+            particle_textures,
             score: None,
             flow,
             phase: BallPhase::Alive,
@@ -826,6 +853,9 @@ impl Play {
         self.apply_sector_changes();
 
         self.depth_test();
+        let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
+        let reached = self.progress.reached();
+        self.flames.update(ball, reached, real_dt * 1000.0);
         if !self.camera_frozen {
             let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
             let lifted = self.keys_held[key_index(PlayKey::Lift)];
@@ -940,6 +970,56 @@ impl Play {
         );
         self.transformers
             .render(gpu, encoder, color, depth, camera, aspect, &opts);
+        self.render_particles(gpu, encoder, color, depth, camera, aspect);
+    }
+
+    /// Flame emitters burning now (for headless runs).
+    pub fn flames_burning(&self) -> usize {
+        self.flames.burning()
+    }
+
+    /// The particle systems, last (blended, no depth writes).
+    fn render_particles(
+        &mut self,
+        gpu: &Gpu,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        depth: &wgpu::TextureView,
+        camera: &Camera,
+        aspect: f32,
+    ) {
+        let right = camera.right();
+        let up = right.cross(camera.forward()).normalize_or(Vec3::Y);
+        // One batch per texture and blend.
+        let mut groups: Vec<(
+            usize,
+            (ballistic_bundle::BlendFactor, ballistic_bundle::BlendFactor),
+            Vec<ballistic_render::ParticleVertex>,
+        )> = Vec::new();
+        for e in self.flames.emitters() {
+            let Some(&texture) = self.particle_textures.get(&e.params.texture) else {
+                continue;
+            };
+            let blend = e.params.blend;
+            let i = groups
+                .iter()
+                .position(|g| g.0 == texture && g.1 == blend)
+                .unwrap_or_else(|| {
+                    groups.push((texture, blend, Vec::new()));
+                    groups.len() - 1
+                });
+            e.vertices(right, up, &mut groups[i].2);
+        }
+        let batches: Vec<ParticleBatch<'_>> = groups
+            .iter()
+            .map(|(texture, blend, vertices)| ParticleBatch {
+                texture: *texture,
+                blend: *blend,
+                vertices,
+            })
+            .collect();
+        self.particles
+            .render(gpu, encoder, color, depth, camera, aspect, &batches);
     }
 
     /// The options to draw the level and play objects with: the level's

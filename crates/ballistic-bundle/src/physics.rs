@@ -29,6 +29,8 @@ pub struct PhysicsData {
     pub hud: Hud,
     /// Sky, light and background.
     pub environment: Environment,
+    /// The prefabs' particle systems.
+    pub particles: Vec<ParticleEmitter>,
 }
 
 /// Points, lives and score.
@@ -204,6 +206,76 @@ pub struct EventSound {
     /// The message's name, e.g. `Checkpoint reached`.
     pub message: String,
     pub cues: Vec<SoundCue>,
+}
+
+/// A particle system on a prefab entity (*Point*, *Planar* or *Spherical
+/// Particle System*). Times in milliseconds, speeds in units per
+/// millisecond. Each `variance` is ± (uniform), 0 when not enabled.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ParticleEmitter {
+    /// The prefab scene and the entity the system is on.
+    pub scene: String,
+    pub object: String,
+    pub shape: EmitterShape,
+    pub render: ParticleRender,
+    /// Texture key; `None`: untextured.
+    pub texture: Option<String>,
+    pub blend: (crate::BlendFactor, crate::BlendFactor),
+    /// Time between emissions.
+    pub delay_ms: f32,
+    /// Spread around the emission direction (radians).
+    pub yaw_variance: f32,
+    pub pitch_variance: f32,
+    pub speed: Varied,
+    pub lifespan_ms: Varied,
+    /// At most this many alive.
+    pub max: u32,
+    /// Particles per emission.
+    pub emission: Varied,
+    pub size: Varied,
+    /// `None`: the size stays.
+    pub end_size: Option<Varied>,
+    pub color: [f32; 4],
+    pub color_variance: [f32; 4],
+    /// `None`: the colour stays.
+    pub end_color: Option<[f32; 4]>,
+    pub end_color_variance: [f32; 4],
+    /// The texture's frames (a grid; 1 = the whole texture).
+    pub frames: u32,
+    /// Steps by the real frame time; otherwise by `delta_ms`.
+    pub real_time: bool,
+    pub delta_ms: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Varied {
+    pub value: f32,
+    pub variance: f32,
+}
+
+/// Where particles start.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EmitterShape {
+    /// At the entity, along its Z axis (spread by yaw and pitch).
+    Point,
+    /// On the entity's local XY square (−1..1), along its Z axis.
+    Planar,
+    /// On the entity's unit sphere, outwards.
+    Spherical,
+}
+
+/// How particles are drawn (*Particle Rendering*).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ParticleRender {
+    /// One camera-facing triangle per particle (apex up).
+    FastSprite,
+    Sprite,
+    OrientableSprite,
+    Line,
+    /// Another mode (its number), not drawn yet.
+    Other(u32),
 }
 
 /// Sky, light and background during play (`Gameplay_Sky`, `Light_Ingame`,

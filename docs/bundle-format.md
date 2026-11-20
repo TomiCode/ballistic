@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 14,
+  "format_version": 15,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -232,7 +232,18 @@ and useful to read). Since version 2.
       "additive": true, "z_write": false, "enabled": true },
     "levels": [
       { "level": "level/level_01", "sky": "sky/sky_l", "light": [1.0, 1.0, 1.0, 1.0],
-        "cloud_scroll": [0.01, 0.01] }, "…" ] }
+        "cloud_scroll": [0.01, 0.01] }, "…" ] },
+  "particles": [
+    { "scene": "ph/pc_twoflames", "object": "PC_TwoFlames_Flame_Big", "shape": "point",
+      "render": "fast_sprite", "texture": "particle_flames", "blend": ["SrcAlpha", "One"],
+      "delay_ms": 20.0, "yaw_variance": 0.0524, "pitch_variance": 0.0524,
+      "speed": { "value": 0.012, "variance": 0.004 },
+      "lifespan_ms": { "value": 1000.0, "variance": 500.0 }, "max": 50,
+      "emission": { "value": 1.0, "variance": 1.0 },
+      "size": { "value": 5.0, "variance": 0.3 }, "end_size": { "value": 0.1, "variance": 0.0 },
+      "color": [0.9216, 0.1647, 0.2745, 0.9804], "color_variance": [0.0, 0.0, 0.0, 0.0],
+      "end_color": [0.0, 0.0, 0.0, 0.0], "end_color_variance": [0.0, 0.0, 0.0, 0.0],
+      "frames": 1, "real_time": true, "delta_ms": 20.0 }, "…" ]
 }
 ```
 
@@ -377,6 +388,20 @@ and useful to read). Since version 2.
   - `cloud_layer`: the level object of that name, if any, is shown (when
     `enabled`) with a constant `color`, blended additively, without depth
     writes, its texture scrolling.
+- `particles`: the prefabs' particle systems, by prefab `scene` and entity
+  `object`. Times are milliseconds and speeds units per millisecond; each
+  `variance` is ± (uniform).
+  - `shape`: where particles start: `point` (the entity, along its Z axis,
+    spread by `yaw_variance` and `pitch_variance`), `planar` (its local XY
+    square), `spherical` (its unit sphere, outwards).
+  - Every `delay_ms`, `emission` particles (variance truncated), up to `max`
+    alive, with `speed`, `lifespan_ms`, `size` and `color`.
+  - `end_size` and `end_color`, when set, are reached linearly over the
+    lifespan.
+  - `render`: `fast_sprite` is one camera-facing triangle per particle (apex
+    up, `size` wide and tall); the others aren't drawn yet. Blended with
+    `blend`, without depth writes.
+  - `real_time`: steps by the frame time, else by `delta_ms`.
 
 ## Versioning rules
 
@@ -391,4 +416,4 @@ and useful to read). Since version 2.
   ball `pieces` and `pieces_fade_after_ms`. **9** adds the transformer
   `sound` and the pieces' `sounds`. **10** adds the ball's `sounds`. **11**
   adds `energy`. **12** adds `flow`, and `delay_ms` to sound cues. **13** adds `hud`. **14** adds
-  `environment`.
+  `environment`. **15** adds `particles`.

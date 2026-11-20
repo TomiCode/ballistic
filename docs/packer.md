@@ -69,7 +69,9 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      followed through the scripts). The environment: `AllLevel`'s skies and
      light colours, *TT Sky*'s settings and face order, `Light_Ingame`'s
      direction, the scene's ambient, the background, and the cloud layer's
-     settings → `data/physics.json`
+     settings. The prefabs' particle systems (`PH/*.nmo`, `Balls.nmo`): each
+     point, planar and spherical system's inputs and its rendering, blend,
+     variance and evolution settings → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

@@ -172,7 +172,7 @@ fn number(name: &str) -> Option<usize> {
 
 /// Members of a group as (row, world matrix, name), ordered by row. Row =
 /// name number − 1; members without a number are skipped.
-fn numbered(level: &Scene, group: &str) -> Vec<(usize, Mat4, String)> {
+pub(crate) fn numbered(level: &Scene, group: &str) -> Vec<(usize, Mat4, String)> {
     let Some(g) = level.groups.iter().find(|g| g.name == group) else {
         return Vec::new();
     };

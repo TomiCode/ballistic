@@ -95,8 +95,18 @@ Checkpoints must be passed in order. Rolling through the next one (within
 - brings in the next sector's, back at their places, 4 frames later.
 
 A respawn resets the current sector's props. The window title shows the
-checkpoints reached. The checkpoint flames aren't drawn yet (they're
-particles).
+checkpoints reached.
+
+**Flames** (research findings 20), as the original's particle systems:
+- the level start's four flames burn while the ball is within 70 (on X and
+  Z);
+- the next checkpoint's big flame burns while the ball is within 70.
+  Reaching it lights the two small flames instead;
+- only the next checkpoint and the last one reached have flames.
+
+Each flame emits a particle every 20 ms that rises, shrinks and fades over
+about a second. It's drawn as a camera-facing triangle of the flame texture,
+blended additively. The summary of a headless run counts the flames burning.
 
 **Moving elements** (`P_Modul_*`) are placed and drawn like the original's.
 They're physical while their sector is active. Frozen parts stay still until
@@ -247,8 +257,8 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: the score screen, the pickups' looks,
-  checkpoint flames and fan particles, the other
-  sounds (the wooden flaps, the level finish, music), the start flames,
+- In play mode: the score screen, the pickups' looks and the other particle
+  effects (fans, explosions), the other
+  sounds (the wooden flaps, the level finish, music),
   the screen fade, the paper pieces' wind, the end
   sequence (and the last level's UFO) and score

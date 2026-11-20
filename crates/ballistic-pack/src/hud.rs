@@ -214,7 +214,7 @@ fn group_members(file: &CkFile, name: &str) -> Result<Vec<String>> {
 }
 
 /// A texture object's bundle key: its file's name under `Textures/`.
-fn texture_key(install: &Install, file: &CkFile, name: &str) -> Result<String> {
+pub(crate) fn texture_key(install: &Install, file: &CkFile, name: &str) -> Result<String> {
     let i = object(file, name, ClassId::TEXTURE)?;
     texture_key_at(install, file, i)
 }

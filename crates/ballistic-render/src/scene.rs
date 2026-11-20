@@ -807,7 +807,7 @@ fn compare_function(c: bb::CompareFunc) -> wgpu::CompareFunction {
     }
 }
 
-fn blend_factor(f: bb::BlendFactor) -> wgpu::BlendFactor {
+pub(crate) fn blend_factor(f: bb::BlendFactor) -> wgpu::BlendFactor {
     use bb::BlendFactor as B;
     match f {
         B::Zero => wgpu::BlendFactor::Zero,
