@@ -117,12 +117,16 @@ impl Body {
 
     /// The shape as convex polyhedra at the current pose (boxes and hulls).
     fn polys(&self) -> Vec<Poly> {
+        self.polys_at(self.position, self.orientation)
+    }
+
+    fn polys_at(&self, position: Vec3, orientation: Quat) -> Vec<Poly> {
         match &self.shape {
             Shape::Sphere { .. } => Vec::new(),
-            Shape::Box { half } => vec![Poly::cuboid(self.position, self.orientation, *half)],
+            Shape::Box { half } => vec![Poly::cuboid(position, orientation, *half)],
             Shape::Hulls(h) => h
                 .iter()
-                .map(|h| Poly::hull(h, self.position, self.orientation))
+                .map(|h| Poly::hull(h, position, orientation))
                 .collect(),
         }
     }
@@ -1382,11 +1386,18 @@ fn sphere_statics(
     out
 }
 
+/// How far a box or hull may already be behind a one-sided level triangle's
+/// plane at the start of a step and still collide with it. A real hit from
+/// the front gets that deep only by not being pushed out in one step.
+const BEHIND: f32 = 0.5;
+
 /// Contacts of a box or hulls with static geometry: one manifold per distinct
 /// normal, with the points of every triangle sharing it (a box on a floor made
 /// of two triangles gets its four corners).
 fn poly_statics(statics: &StaticMesh, b: &Body, cfg: &WorldConfig) -> Vec<(Contact, u32)> {
     let polys = b.polys();
+    // Where the shape was at the start of the step.
+    let before = b.polys_at(b.prev_position, b.prev_orientation);
     let mut merged: Vec<(Contact, u32)> = Vec::new();
     statics.query(&b.aabb(), |ti| {
         let t = &statics.triangles[ti as usize];
@@ -1396,8 +1407,12 @@ fn poly_statics(statics: &StaticMesh, b: &Body, cfg: &WorldConfig) -> Vec<(Conta
             return;
         }
         let tri = Poly::triangle(t.a, t.b, t.c, t.normal);
-        for poly in &polys {
-            if !poly.in_front_of(&tri) {
+        for (poly, before) in polys.iter().zip(&before) {
+            // Already well behind the triangle's plane before this step:
+            // it's on the other side, not hitting the face (a plank landing
+            // on a shelf, behind the bevel under the shelf's lip, was pushed
+            // down through the shelf by it).
+            if !poly.in_front_of(&tri) || before.depth_behind(&tri) > BEHIND {
                 continue;
             }
             let Some(c) = collide::poly_poly(poly, &tri) else {

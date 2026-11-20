@@ -145,6 +145,16 @@ internal edges. A level triangle only pushes things out of its front side:
 a separating direction may point at most about 3° into it. (With a
 tolerance of 1e-4, a pusher tilted by 0.007° lost its own face's axis
 against the channel walls' ends and was thrown sideways through a wall.)
+Two more rules keep one-sided triangles from acting on things on their far
+side:
+- A box or hull that was already more than 0.5 behind a triangle's plane at
+  the start of the step doesn't collide with it. (A bridge plank landing on
+  the far bank's shelf was pushed down through it by the downward-facing
+  bevel under the shelf's lip.)
+- Shapes that overlap less than 0.02 along a direction the triangle forbids
+  only touch it: no contact. (A plank lying on the shelf touched that
+  bevel's top edge and was shoved lengthwise against its hinge every step:
+  it shook.)
 
 ## Parameters
 

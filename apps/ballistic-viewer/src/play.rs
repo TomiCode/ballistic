@@ -1386,6 +1386,11 @@ impl Play {
     }
 
     #[cfg(test)]
+    pub fn module_hinges(&self, prefix: &str) -> Vec<(usize, Vec3, Vec3)> {
+        self.modules.hinges_of(prefix)
+    }
+
+    #[cfg(test)]
     pub fn module_sectors(&self, prefix: &str) -> Vec<u32> {
         self.modules.sectors_of(prefix)
     }

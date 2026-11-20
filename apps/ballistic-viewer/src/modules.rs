@@ -489,6 +489,18 @@ impl Modules {
             .collect()
     }
 
+    /// Hinges of modules whose group starts with `prefix`: module index,
+    /// pivot and axis (world).
+    #[cfg(test)]
+    pub fn hinges_of(&self, prefix: &str) -> Vec<(usize, Vec3, Vec3)> {
+        self.items
+            .iter()
+            .filter(|m| m.group.starts_with(prefix))
+            .enumerate()
+            .flat_map(|(i, m)| m.plan.hinges.iter().map(move |h| (i, h.pivot, h.axis)))
+            .collect()
+    }
+
     #[cfg(test)]
     pub fn sectors_of(&self, prefix: &str) -> Vec<u32> {
         self.items

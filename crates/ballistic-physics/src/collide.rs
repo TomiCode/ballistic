@@ -296,10 +296,19 @@ const ABS_TOL: f32 = 0.005;
 /// out sideways through the wall's whole width instead.
 const ONE_SIDED_TOL: f32 = 0.05;
 
+/// Shapes that overlap less than this along a direction a one-sided triangle
+/// forbids only touch it: no contact. A plank lying on a shelf touched the
+/// top edge of the downward-facing bevel under the shelf's lip; moving the
+/// plank up (forbidden: into the bevel's back) was the only small way out,
+/// so it was shoved 0.8 lengthwise instead, against its hinge, every step.
+const TOUCH: f32 = 0.02;
+
 /// Contact of convex polyhedron `a` against convex polyhedron `b`.
 pub(crate) fn poly_poly(a: &Poly, b: &Poly) -> Option<Contact> {
     let allowed = |n: Vec3| b.one_sided.is_none_or(|s| n.dot(s) >= -ONE_SIDED_TOL);
     let mut best: Option<Axis> = None;
+    // The smallest overlap along a forbidden direction.
+    let mut forbidden = f32::MAX;
 
     // Faces of `b`: `a` leaves along the outward normal.
     for (i, &(n, _)) in b.faces.iter().enumerate() {
@@ -315,6 +324,9 @@ pub(crate) fn poly_poly(a: &Poly, b: &Poly) -> Option<Contact> {
     // Faces of `a`: `a` leaves against its own outward normal.
     for (i, &(n, _)) in a.faces.iter().enumerate() {
         let (_, down) = overlap(a, b, n)?;
+        if !allowed(-n) {
+            forbidden = forbidden.min(down);
+        }
         if allowed(-n) && best.is_none_or(|bst| down < bst.depth * FACE_REL - ABS_TOL) {
             best = Some(Axis {
                 depth: down,
@@ -334,6 +346,9 @@ pub(crate) fn poly_poly(a: &Poly, b: &Poly) -> Option<Contact> {
             };
             let (up, down) = overlap(a, b, l)?;
             for (depth, n) in [(up, l), (down, -l)] {
+                if !allowed(n) {
+                    forbidden = forbidden.min(depth);
+                }
                 if allowed(n) && edge_best.is_none_or(|e| depth < e.depth) {
                     edge_best = Some(Axis {
                         depth,
@@ -350,6 +365,9 @@ pub(crate) fn poly_poly(a: &Poly, b: &Poly) -> Option<Contact> {
         best = Some(e);
     }
     let best = best?;
+    if forbidden < TOUCH && forbidden < best.depth {
+        return None;
+    }
 
     let points = match best.feature {
         Feature::FaceB(f) => clip_contacts(b, f, a),
@@ -526,6 +544,15 @@ impl Poly {
         other
             .one_sided
             .is_none_or(|n| (self.center() - other.verts[0]).dot(n) >= 0.0)
+    }
+
+    /// How far the polyhedron reaches behind a one-sided face's plane (0 if
+    /// it doesn't, or the face is two-sided).
+    pub fn depth_behind(&self, other: &Poly) -> f32 {
+        other.one_sided.map_or(0.0, |n| {
+            let o = other.verts[0].dot(n);
+            self.verts.iter().map(|v| o - v.dot(n)).fold(0.0, f32::max)
+        })
     }
 }
 

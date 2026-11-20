@@ -194,3 +194,91 @@ fn the_pusher_stops_in_its_channel() {
         }
     }
 }
+
+/// The bridges (`P_Modul_25`, `P_Modul_37`): knocked over towards the gap,
+/// the plank falls onto the shelf of the far bank and lies there still. (It
+/// once fell through the shelf, pushed down by the bevel under the shelf's
+/// lip, and where it did land it shook against its hinge.)
+#[test]
+fn the_bridges_land_on_the_far_bank_and_rest() {
+    let Some(path) = std::env::var_os("BALLISTIC_BUNDLE") else {
+        eprintln!("skipping: BALLISTIC_BUNDLE not set");
+        return;
+    };
+    let Ok(gpu) = pollster::block_on(Gpu::headless()) else {
+        eprintln!("skipping: no GPU adapter");
+        return;
+    };
+    let mut bundle: Bundle = BundleReader::open(path).unwrap();
+    let physics = bundle.physics().unwrap();
+    let save = SaveFile::in_memory(&physics.highscores).shared();
+    let mut checked = 0;
+    for level in 1..=12u32 {
+        let key = format!("level/level_{level:02}");
+        let scene = bundle.scene(&key).unwrap();
+        for prefix in ["P_Modul_25", "P_Modul_37"] {
+            let (sectors, hinges) = {
+                let mut p = Play::new(
+                    &gpu,
+                    &mut bundle,
+                    &key,
+                    &scene,
+                    OFFSCREEN_FORMAT,
+                    save.clone(),
+                )
+                .unwrap();
+                step(&mut p, 0.1);
+                (p.module_sectors(prefix), p.module_hinges(prefix))
+            };
+            for (m, sector) in sectors.into_iter().enumerate() {
+                let (_, pivot, axis) = hinges.iter().find(|h| h.0 == m).copied().unwrap();
+                let mut p = Play::new(
+                    &gpu,
+                    &mut bundle,
+                    &key,
+                    &scene,
+                    OFFSCREEN_FORMAT,
+                    save.clone(),
+                )
+                .unwrap();
+                step(&mut p, 0.1);
+                p.activate_sector_for_test(sector);
+                let id = p.module_bodies(prefix)[m][0];
+                p.world.wake(id);
+                let b0 = p.world.body(id).unwrap().clone();
+                // The plank's tip: the hull corner farthest from the hinge.
+                let pivot_local = b0.orientation.inverse() * (pivot - b0.position);
+                let ballistic_physics::Shape::Hulls(hulls) = &b0.shape else {
+                    panic!("{prefix}: not hulls");
+                };
+                let tip = hulls
+                    .iter()
+                    .flat_map(|h| h.verts.iter().copied())
+                    .max_by(|a, b| a.distance(pivot_local).total_cmp(&b.distance(pivot_local)))
+                    .unwrap();
+                // A nudge towards the gap. (Hanging into it, the tip would be
+                // 9 or 14 below the hinge; level 12's first bridge 37 lands
+                // 1.4 low.)
+                p.world.body_mut(id).unwrap().angular_velocity = axis.normalize() * 0.6;
+                step(&mut p, 6.0);
+                let mut spin = 0.0f32;
+                for _ in 0..60 {
+                    step(&mut p, 1.0 / 60.0);
+                    spin = spin.max(p.world.body(id).unwrap().angular_velocity.length());
+                }
+                let b = p.world.body(id).unwrap();
+                let rise = (b.position + b.orientation * tip).y - pivot.y;
+                assert!(
+                    rise.abs() < 2.0,
+                    "level {level} {prefix} #{m}: the tip is {rise} above the hinge"
+                );
+                assert!(
+                    spin < 0.01,
+                    "level {level} {prefix} #{m}: still turning at {spin} rad/s"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert!(checked > 30, "{checked} bridges");
+}
