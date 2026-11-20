@@ -40,6 +40,15 @@ struct Part {
     local: Mat4,
 }
 
+/// The fan's rotor turns this fast (radians per second, Virtools' sense)
+/// while its particle script runs (`P_Modul_18_Particle Script`: *Rotate*
+/// about its Y axis by *Per Second* of −15).
+const FAN_ROTOR_SPEED: f32 = -15.0;
+
+/// The fan's particle script runs while the ball is this near (X and Z;
+/// `P_Modul_18_MF Script`).
+pub const FAN_NEAR: f32 = 80.0;
+
 /// Two forces switched on in turn (`Delayer` chains in the swing's and the
 /// bag's scripts): `first` for `on`, nothing for `gap`, `second` for `on`,
 /// nothing for `gap`, again.
@@ -118,6 +127,9 @@ struct Module {
     wake: Option<Proximity>,
     wake_template: Option<Proximity>,
     parts: Vec<Part>,
+    /// A static part that spins (the fan's rotor): its index in `parts`
+    /// and its angle.
+    rotor: Option<(usize, f32)>,
 }
 
 pub struct Modules {
@@ -352,6 +364,12 @@ impl Modules {
             return;
         };
         for m in &mut self.items {
+            if let (Some(f), Some((_, angle))) = (m.fan.as_ref(), m.rotor.as_mut()) {
+                let d = ball - f.target;
+                if f.active && d.x * d.x + d.z * d.z <= FAN_NEAR * FAN_NEAR {
+                    *angle = (*angle + FAN_ROTOR_SPEED * real_dt).rem_euclid(std::f32::consts::TAU);
+                }
+            }
             if let Some(f) = m.fan.as_mut()
                 && f.active
             {
@@ -494,6 +512,16 @@ impl Modules {
             return;
         };
         for m in &self.items {
+            if let Some((i, angle)) = m.rotor {
+                // About its own Y axis; the bundle's mirrored Z turns the
+                // sense round.
+                let part = &m.parts[i];
+                r.set_object_transform(
+                    gpu,
+                    part.object,
+                    part.local * Mat4::from_rotation_y(-angle),
+                );
+            }
             for part in &m.parts {
                 let Some(bi) = part.body else { continue };
                 let pose = m
@@ -586,8 +614,12 @@ fn place(
             w.xz,
         )
     });
+    let rotor = parts
+        .iter()
+        .position(|p| p.body.is_none() && merged.objects[p.object].name.ends_with("_Rotor"));
     let program = alternate(setup, &plan);
     let fan = fan(setup, prefab, &placed, &plan);
+    let rotor = rotor.filter(|_| fan.is_some()).map(|i| (i, 0.0));
     let balloon = balloon(setup, prefab, &plan);
     Module {
         group: setup.group.clone(),
@@ -602,6 +634,7 @@ fn place(
         wake: None,
         wake_template,
         parts,
+        rotor,
     }
 }
 
@@ -767,6 +800,17 @@ fn balloon(setup: &ModuleSetup, prefab: &Scene, plan: &ModulePlan) -> Option<Bal
         platform,
         ..Balloon::default()
     })
+}
+
+impl Modules {
+    /// Each fan: what its scripts measure to (`P_Modul_18_Particle`) and
+    /// whether its sector is active.
+    pub fn fans(&self) -> Vec<(Vec3, bool)> {
+        self.items
+            .iter()
+            .filter_map(|m| m.fan.as_ref().map(|f| (f.target, f.active)))
+            .collect()
+    }
 }
 
 #[cfg(test)]

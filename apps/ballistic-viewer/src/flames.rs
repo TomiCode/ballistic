@@ -13,7 +13,7 @@
 use ballistic_bundle::{ParticleEmitter, Scene};
 use glam::{Mat4, Vec3};
 
-use crate::particles::Emitter;
+use crate::particles::{Emitter, place};
 use crate::progress::numbered;
 
 /// The scripts' "near" distance (X and Z).
@@ -30,40 +30,6 @@ struct Site {
 pub struct Flames {
     start: Option<Site>,
     checkpoints: Vec<Site>,
-}
-
-/// The emitters of placeholder `name` (prefab `ph/<name without _NN>`),
-/// placed at `world`.
-fn place(
-    particles: &[ParticleEmitter],
-    prefab: &mut impl FnMut(&str) -> Option<Scene>,
-    name: &str,
-    world: Mat4,
-    seed: &mut u32,
-) -> Vec<Emitter> {
-    let Some((base, _)) = name.rsplit_once('_') else {
-        return Vec::new();
-    };
-    let key = format!("ph/{}", base.to_lowercase());
-    let Some(scene) = prefab(&key) else {
-        return Vec::new();
-    };
-    let find = |n: &str| scene.objects.iter().find(|o| o.name == n);
-    let root = find(&format!("{base}_MF"))
-        .map_or(Mat4::IDENTITY, |o| Mat4::from_cols_array_2d(&o.transform));
-    particles
-        .iter()
-        .filter(|p| p.scene == key)
-        .filter_map(|p| {
-            let entity = Mat4::from_cols_array_2d(&find(&p.object)?.transform);
-            *seed = seed.wrapping_mul(747_796_405).wrapping_add(2_891_336_453);
-            Some(Emitter::new(
-                p.clone(),
-                world * root.inverse() * entity,
-                *seed,
-            ))
-        })
-        .collect()
 }
 
 impl Flames {

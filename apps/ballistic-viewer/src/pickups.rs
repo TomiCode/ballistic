@@ -24,7 +24,8 @@ use crate::progress::{Edge, Proximity};
 /// What the pickups do this frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Event {
-    LifeUp,
+    /// An extra life taken: its level object (the placeholder).
+    LifeUp(usize),
     /// An extra point activated (its points).
     Activated(i32),
     /// Small balls reached the ball (their points).
@@ -152,7 +153,7 @@ impl Pickups {
                 l.taken = true;
                 l.proximity.switch_off();
                 self.visibility.push((l.marker, false));
-                out.push(Event::LifeUp);
+                out.push(Event::LifeUp(l.marker));
             }
         }
         let xp = &self.params.extra_point;

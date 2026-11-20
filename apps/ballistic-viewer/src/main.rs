@@ -2,6 +2,7 @@
 
 mod audio;
 mod ballsounds;
+mod effects;
 mod energy;
 mod flames;
 mod flow;
@@ -210,6 +211,8 @@ pub struct Segment {
     pub trafo: bool,
     /// Put the ball on the nearest pickup first.
     pub pickup: bool,
+    /// Put the ball at the nearest fan in an active sector first.
+    pub fan: bool,
     /// Lose the ball first (as **R**).
     pub lose: bool,
 }
@@ -232,6 +235,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
             let wake = keys.split('+').any(|k| k.trim() == "wake");
             let trafo = keys.split('+').any(|k| k.trim() == "trafo");
             let pickup = keys.split('+').any(|k| k.trim() == "pickup");
+            let fan = keys.split('+').any(|k| k.trim() == "fan");
             let lose = keys.split('+').any(|k| k.trim() == "lose");
             let keys = keys
                 .split('+')
@@ -242,7 +246,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                     "right" => Some(Ok(K::Right)),
                     "rotate" => Some(Ok(K::Rotate)),
                     "lift" => Some(Ok(K::Lift)),
-                    "wait" | "next" | "wake" | "trafo" | "pickup" | "lose" => None,
+                    "wait" | "next" | "wake" | "trafo" | "pickup" | "fan" | "lose" => None,
                     other => Some(Err(anyhow::anyhow!("unknown key {other:?}"))),
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -253,6 +257,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                 wake,
                 trafo,
                 pickup,
+                fan,
                 lose,
             })
         })
@@ -300,6 +305,9 @@ fn screenshot(
             if seg.trafo {
                 p.warp_to_transformer();
             }
+            if seg.fan {
+                p.warp_to_fan();
+            }
             if seg.pickup {
                 p.warp_to_pickup();
             }
@@ -346,7 +354,11 @@ fn screenshot(
             p.progress().2
         );
         eprintln!("{}", p.energy_summary());
-        eprintln!("flames burning: {}", p.flames_burning());
+        eprintln!(
+            "flames burning: {}, fans running: {}",
+            p.flames_burning(),
+            p.fans_running()
+        );
         let fallen = p.fallen_modules();
         if !fallen.is_empty() {
             eprintln!("fallen modules: {}", fallen.join(", "));

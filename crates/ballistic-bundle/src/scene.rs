@@ -33,6 +33,9 @@ pub struct Mesh {
     /// Local-space bounds.
     pub bounds_min: [f32; 3],
     pub bounds_max: [f32; 3],
+    /// Drawn; false for collision and helper meshes (physics still uses
+    /// them).
+    pub visible: bool,
 }
 
 impl Mesh {

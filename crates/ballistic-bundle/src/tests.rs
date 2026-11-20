@@ -32,6 +32,7 @@ fn sample_scene() -> Scene {
             }],
             bounds_min: [0.0, 0.0, -1.0],
             bounds_max: [1.0, 0.0, 0.0],
+            visible: true,
         }],
         materials: vec![],
         objects: vec![SceneObject {

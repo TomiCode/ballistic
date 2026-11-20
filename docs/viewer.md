@@ -25,7 +25,7 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--screenshot out.png [--size 1920x1080]` | Render one frame off-screen and exit, no window |
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
 | `--play` | Play mode: roll a ball on the level |
-| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:4,up:2,rotate+left:0.3` (the ball comes 3 s after the start). Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), `trafo` puts the ball on the nearest transformer of another type (shown ones first), `pickup` on the nearest extra life or extra point, and `lose` loses the ball (as **R**), all at the start of their segment. A checkpoint arms a while after the last one, so leave 2 s or more between `next`s. The summary then also prints the points, lives and score, and any moving element that fell below the level's depth cubes. With `--camera` too, the camera stays at that view instead of following the ball |
+| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:4,up:2,rotate+left:0.3` (the ball comes 3 s after the start). Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), `trafo` puts the ball on the nearest transformer of another type (shown ones first), `pickup` on the nearest extra life or extra point, `fan` 2 above the nearest fan in an active sector, and `lose` loses the ball (as **R**), all at the start of their segment. A checkpoint arms a while after the last one, so leave 2 s or more between `next`s. The summary then also prints the points, lives and score, and any moving element that fell below the level's depth cubes. With `--camera` too, the camera stays at that view instead of following the ball |
 
 The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 
@@ -120,7 +120,9 @@ swing or tip by themselves.
   - the swing, pushed one way for 0.5 s, resting 0.5 s, pushed back, resting;
   - the punching bags (ball joints), pushed each way in turn for 1.5 s;
   - the fans, which push the ball up while it's in their air column. That's
-    only strong enough for the paper ball.
+    only strong enough for the paper ball. While the ball is within 80, a
+    fan's rotor turns and wind lines and smoke rise from it (research
+    findings 20).
 - The lift doesn't rise: with the original's values it can't carry the walls
   standing on it (research findings 13).
 
@@ -146,8 +148,9 @@ good, and the window title shows the time since the level started.
 - **Extra lives** (+1) and **extra points** (+100, then +20 for each of its
   six small balls as they reach the ball: 220 in all) are only there while
   their sector is active. The level's placeholder markers stand in for them
-  until their particle effects exist. An extra life comes back when its
-  sector is entered again; an extra point doesn't.
+  until their own looks exist. Taking an extra life bursts its particles
+  (sparks and fizz lines). An extra life comes back when its sector is
+  entered again; an extra point doesn't.
 - At the finish the score is printed: the level's bonus (100 × its number) +
   the points left + 200 per life left.
 - The status line shows the points and lives, and `[new ball]` or `[ball
@@ -257,8 +260,8 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: the score screen, the pickups' looks and the other particle
-  effects (fans, explosions), the other
+- In play mode: the score screen, the pickups' looks (and the extra point's
+  particles), explosions, the other
   sounds (the wooden flaps, the level finish, music),
   the screen fade, the paper pieces' wind, the end
   sequence (and the last level's UFO) and score

@@ -7,9 +7,16 @@
 //!   (uniform). Size and colour then change linearly to their ending values
 //!   over the lifespan; colour stays within 0..1.
 //! - Times are milliseconds: the real frame time, or a fixed `delta_ms`.
-//! - Drawn as *Fast Sprite*: one camera-facing triangle per particle, its
-//!   apex up, `size` wide and tall, over the texture's top centre and bottom
-//!   corners.
+//! - Drawn by the system's mode:
+//!   - *Fast Sprite*: one camera-facing triangle per particle, its apex up,
+//!     `size` wide and tall, over the texture's top centre and bottom
+//!     corners;
+//!   - *Sprite*: a camera-facing square, `size` wide;
+//!   - *Orientable Sprite*: a quad along the particle's last step, from its
+//!     previous position to its current one, stretched by its size along it
+//!     and `size` to either side across it (facing the camera);
+//!   - *Line*: a line from the particle's previous position to its current
+//!     one, fading from its previous colour.
 
 use ballistic_bundle as bb;
 use ballistic_render::ParticleVertex;
@@ -24,6 +31,17 @@ struct Particle {
     color_step: [f32; 4],
     size: f32,
     size_step: f32,
+    /// The last update's step (ms): the length of the line and orientable
+    /// sprite trails.
+    last_step: f32,
+}
+
+/// The camera's axes, for facing particles.
+#[derive(Debug, Clone, Copy)]
+pub struct Facing {
+    pub right: Vec3,
+    pub up: Vec3,
+    pub forward: Vec3,
 }
 
 pub struct Emitter {
@@ -62,11 +80,19 @@ impl Emitter {
         if on == self.on {
             return;
         }
-        self.on = on;
-        self.clock_ms = 0.0;
+        self.set_emitting(on);
         if !on {
             self.particles.clear();
         }
+    }
+
+    /// The *On* and *Off* inputs: off stops emitting, the particles live
+    /// on. On emits at once (the emission clock starts full).
+    pub fn set_emitting(&mut self, on: bool) {
+        if on && !self.on {
+            self.clock_ms = self.params.delay_ms;
+        }
+        self.on = on;
     }
 
     /// Uniform in −1..1.
@@ -108,6 +134,7 @@ impl Emitter {
             }
             p.size += p.size_step * step;
             p.life_ms -= dt;
+            p.last_step = step;
             true
         });
         if !self.on {
@@ -213,27 +240,98 @@ impl Emitter {
             color_step,
             size,
             size_step,
+            last_step: 0.01,
         });
     }
 
-    /// Appends the triangles, facing the camera (`right`, `up`: its axes).
-    pub fn vertices(&self, right: Vec3, up: Vec3, out: &mut Vec<ParticleVertex>) {
-        if !matches!(self.params.render, bb::ParticleRender::FastSprite) {
-            return;
-        }
+    /// Appends the system's triangles (or, for *Line*, line vertices).
+    pub fn vertices(
+        &self,
+        f: Facing,
+        triangles: &mut Vec<ParticleVertex>,
+        lines: &mut Vec<ParticleVertex>,
+    ) {
+        let v = |pos: Vec3, uv: [f32; 2], color: [f32; 4]| ParticleVertex {
+            position: pos.to_array(),
+            uv,
+            color,
+        };
         for p in &self.particles {
-            let half = p.size.max(0.0) * 0.5;
-            let (r, u) = (right * half, up * half);
-            let v = |pos: Vec3, uv: [f32; 2]| ParticleVertex {
-                position: pos.to_array(),
-                uv,
-                color: p.color,
-            };
-            out.push(v(p.position + u, [0.5, 0.0]));
-            out.push(v(p.position - r - u, [0.0, 1.0]));
-            out.push(v(p.position + r - u, [1.0, 1.0]));
+            let size = p.size.max(0.0);
+            let mut tail_color = p.color;
+            for (c, d) in tail_color.iter_mut().zip(p.color_step) {
+                *c = (*c - d * p.last_step).clamp(0.0, 1.0);
+            }
+            match self.params.render {
+                bb::ParticleRender::FastSprite => {
+                    let (r, u) = (f.right * size * 0.5, f.up * size * 0.5);
+                    triangles.push(v(p.position + u, [0.5, 0.0], p.color));
+                    triangles.push(v(p.position - r - u, [0.0, 1.0], p.color));
+                    triangles.push(v(p.position + r - u, [1.0, 1.0], p.color));
+                }
+                bb::ParticleRender::Sprite => {
+                    let (r, u) = (f.right * size * 0.5, f.up * size * 0.5);
+                    let tl = v(p.position - r + u, [0.0, 0.0], p.color);
+                    let tr = v(p.position + r + u, [1.0, 0.0], p.color);
+                    let br = v(p.position + r - u, [1.0, 1.0], p.color);
+                    let bl = v(p.position - r - u, [0.0, 1.0], p.color);
+                    triangles.extend_from_slice(&[tl, bl, br, tl, br, tr]);
+                }
+                bb::ParticleRender::OrientableSprite => {
+                    let tail = p.position - p.velocity * p.last_step;
+                    let d = p.position - tail;
+                    let across = d.normalize_or_zero().cross(f.forward).normalize_or(f.right);
+                    let prev = (p.size - p.size_step * p.last_step).max(0.0);
+                    let h0 = v(p.position + d * size + across * size, [0.0, 0.0], p.color);
+                    let h1 = v(p.position + d * size - across * size, [1.0, 0.0], p.color);
+                    let t1 = v(tail - d * prev - across * prev, [1.0, 1.0], tail_color);
+                    let t0 = v(tail - d * prev + across * prev, [0.0, 1.0], tail_color);
+                    triangles.extend_from_slice(&[h0, t0, t1, h0, t1, h1]);
+                }
+                bb::ParticleRender::Line => {
+                    let tail = p.position - p.velocity * p.last_step;
+                    lines.push(v(tail, [0.0, 0.0], tail_color));
+                    lines.push(v(p.position, [1.0, 1.0], p.color));
+                }
+                bb::ParticleRender::Other(_) => {}
+            }
         }
     }
+}
+
+/// The emitters of prefab `ph/<base>` placed at `world`, where `base` is
+/// `name` without its `_NN` suffix (a level placeholder's name): placeholder
+/// x the prefab root's inverse x the entity.
+pub fn place(
+    particles: &[bb::ParticleEmitter],
+    prefab: &mut impl FnMut(&str) -> Option<bb::Scene>,
+    name: &str,
+    world: Mat4,
+    seed: &mut u32,
+) -> Vec<Emitter> {
+    let Some((base, _)) = name.rsplit_once('_') else {
+        return Vec::new();
+    };
+    let key = format!("ph/{}", base.to_lowercase());
+    let Some(scene) = prefab(&key) else {
+        return Vec::new();
+    };
+    let find = |n: &str| scene.objects.iter().find(|o| o.name == n);
+    let root = find(&format!("{base}_MF"))
+        .map_or(Mat4::IDENTITY, |o| Mat4::from_cols_array_2d(&o.transform));
+    particles
+        .iter()
+        .filter(|p| p.scene == key)
+        .filter_map(|p| {
+            let entity = Mat4::from_cols_array_2d(&find(&p.object)?.transform);
+            *seed = seed.wrapping_mul(747_796_405).wrapping_add(2_891_336_453);
+            Some(Emitter::new(
+                p.clone(),
+                world * root.inverse() * entity,
+                *seed,
+            ))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -320,18 +418,63 @@ mod tests {
         assert_eq!(e.count(), 0);
     }
 
+    fn facing() -> Facing {
+        Facing {
+            right: Vec3::X,
+            up: Vec3::Y,
+            forward: Vec3::NEG_Z,
+        }
+    }
+
     #[test]
     fn fast_sprites_are_upright_triangles() {
         let mut e = Emitter::new(flame(), Mat4::IDENTITY, 1);
         e.set_on(true);
         e.update(20.0);
-        let mut v = Vec::new();
-        e.vertices(Vec3::X, Vec3::Y, &mut v);
+        let (mut v, mut lines) = (Vec::new(), Vec::new());
+        e.vertices(facing(), &mut v, &mut lines);
+        assert_eq!(lines.len(), 0);
         assert_eq!(v.len() % 3, 0);
         let apex = Vec3::from(v[0].position);
         let left = Vec3::from(v[1].position);
         let right = Vec3::from(v[2].position);
         assert!(apex.y > left.y && (left.y - right.y).abs() < 1e-5);
         assert!((right.x - left.x - e.particles[0].size).abs() < 1e-4);
+    }
+
+    #[test]
+    fn lines_trail_the_last_step() {
+        let mut params = flame();
+        params.render = bb::ParticleRender::Line;
+        params.yaw_variance = 0.0;
+        params.pitch_variance = 0.0;
+        let mut e = Emitter::new(params, upright(), 3);
+        e.set_on(true);
+        e.update(20.0);
+        e.update(20.0);
+        let (mut tris, mut lines) = (Vec::new(), Vec::new());
+        e.vertices(facing(), &mut tris, &mut lines);
+        assert_eq!(tris.len(), 0);
+        assert_ne!(lines.len(), 0);
+        // The first particle moved 20 ms x 0.01 upwards in its last step.
+        let (a, b) = (Vec3::from(lines[0].position), Vec3::from(lines[1].position));
+        assert!((b.y - a.y - 0.2).abs() < 0.02, "{a} {b}");
+    }
+
+    #[test]
+    fn orientable_sprites_follow_the_motion() {
+        let mut params = flame();
+        params.render = bb::ParticleRender::OrientableSprite;
+        let mut e = Emitter::new(params, upright(), 5);
+        e.set_on(true);
+        e.update(20.0);
+        e.update(20.0);
+        let (mut tris, mut lines) = (Vec::new(), Vec::new());
+        e.vertices(facing(), &mut tris, &mut lines);
+        assert_eq!(tris.len() % 6, 0);
+        // Head above tail: along the (upward) motion.
+        let head = Vec3::from(tris[0].position);
+        let tail = Vec3::from(tris[1].position);
+        assert!(head.y > tail.y);
     }
 }

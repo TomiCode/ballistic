@@ -27,6 +27,7 @@ pub struct Face {
 #[cfg_attr(feature = "serde", derive(serde::Serialize))]
 pub struct Mesh {
     /// Raw mesh flags.
+    /// Flag bits; see [`Mesh::FLAG_VISIBLE`].
     pub flags: u32,
     pub positions: Vec<[f32; 3]>,
     /// `None` when the file omits normals (they must be generated).
@@ -44,6 +45,15 @@ pub struct Mesh {
 }
 
 impl Mesh {
+    /// Flag bit: the mesh is drawn. Collision and helper meshes (`*_Col*`,
+    /// the fan's `Kollisionsquader`, `FixCube`) don't have it.
+    pub const FLAG_VISIBLE: u32 = 0x2;
+
+    /// Whether the mesh is drawn (see [`Mesh::FLAG_VISIBLE`]).
+    pub fn is_visible(&self) -> bool {
+        self.flags & Self::FLAG_VISIBLE != 0
+    }
+
     pub fn decode(chunk: &StateChunk) -> Result<Self> {
         let flags = match chunk.section(SECTION_FLAGS)? {
             Some(mut r) => r.u32()?,

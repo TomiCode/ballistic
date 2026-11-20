@@ -108,6 +108,8 @@ struct GpuMesh {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
     submeshes: Vec<(Range<u32>, Option<u32>)>,
+    /// Drawn (collision meshes aren't, unless showing hidden objects).
+    visible: bool,
 }
 
 struct DrawObject {
@@ -328,6 +330,7 @@ impl SceneRenderer {
                         .iter()
                         .map(|s| (s.first_index..s.first_index + s.index_count, s.material))
                         .collect(),
+                    visible: m.visible,
                 }
             })
             .collect();
@@ -360,7 +363,7 @@ impl SceneRenderer {
                 center += w / 8.0;
                 amin = amin.min(w);
                 amax = amax.max(w);
-                if !o.hidden {
+                if !o.hidden && src.visible {
                     bmin = bmin.min(w);
                     bmax = bmax.max(w);
                 }
@@ -627,10 +630,11 @@ impl SceneRenderer {
         let mut opaque = Vec::new();
         let mut blended = Vec::new();
         for (oi, o) in self.objects.iter().enumerate() {
-            if o.hidden && !opts.show_hidden {
+            let mesh = &self.meshes[o.mesh as usize];
+            if (o.hidden || !mesh.visible) && !opts.show_hidden {
                 continue;
             }
-            for (si, (_, mat)) in self.meshes[o.mesh as usize].submeshes.iter().enumerate() {
+            for (si, (_, mat)) in mesh.submeshes.iter().enumerate() {
                 let m = self.material(*mat);
                 let key = Self::key(m, opts.cull);
                 if m.blend.is_some() {

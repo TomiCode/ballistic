@@ -222,6 +222,7 @@ impl Cx<'_> {
             submeshes,
             bounds_min,
             bounds_max,
+            visible: m.is_visible(),
         }
     }
 

@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 15,
+  "format_version": 16,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -47,7 +47,7 @@ support, and tells the user to re-run the packer. The manifest has no timestamps
 
 ```
 8 bytes  magic   "BLSCENE\0"
-u32 LE   scene format version (1)
+u32 LE   scene format version (2)
 …        postcard-encoded `Scene` (see `crates/ballistic-bundle/src/scene.rs`)
 ```
 
@@ -58,6 +58,8 @@ ball models, the menu background):
   `normal: [f32; 3]`, `uv: [f32; 2]`, 32 bytes per vertex) and a `u16` index
   buffer. Both are stored as raw little-endian bytes that can be uploaded to the
   GPU as-is. Faces are sorted into **submeshes**, one per material.
+  `visible` is false for collision and helper meshes: physics uses them, the
+  renderer doesn't draw them.
 - **materials**: the original's fixed-function material state as plain enums.
   Colours are `[f32; 4]` RGBA in the original's gamma space. Textures are
   referenced by key.
@@ -398,9 +400,10 @@ and useful to read). Since version 2.
     alive, with `speed`, `lifespan_ms`, `size` and `color`.
   - `end_size` and `end_color`, when set, are reached linearly over the
     lifespan.
-  - `render`: `fast_sprite` is one camera-facing triangle per particle (apex
-    up, `size` wide and tall); the others aren't drawn yet. Blended with
-    `blend`, without depth writes.
+  - `render`: `fast_sprite`, one camera-facing triangle per particle (apex
+    up, `size` wide and tall); `sprite`, a camera-facing square; `orientable_sprite`,
+    a quad along the particle's last step; `line`, a line over its last
+    step. Blended with `blend`, without depth writes.
   - `real_time`: steps by the frame time, else by `delta_ms`.
 
 ## Versioning rules
@@ -416,4 +419,5 @@ and useful to read). Since version 2.
   ball `pieces` and `pieces_fade_after_ms`. **9** adds the transformer
   `sound` and the pieces' `sounds`. **10** adds the ball's `sounds`. **11**
   adds `energy`. **12** adds `flow`, and `delay_ms` to sound cues. **13** adds `hud`. **14** adds
-  `environment`. **15** adds `particles`.
+  `environment`. **15** adds `particles`. **16** adds the
+  meshes' `visible` (scene encoding 2).

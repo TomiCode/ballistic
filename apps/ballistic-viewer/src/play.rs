@@ -26,6 +26,7 @@ use ballistic_render::{
 use glam::Mat4;
 
 use crate::ballsounds::BallSoundsPlayer;
+use crate::effects::Effects;
 use crate::energy::{Energy, Score};
 use crate::flames::Flames;
 use crate::flow::{BallPhase, DepthCubes, EventSounds, LOST_CHECK_FRAMES};
@@ -105,6 +106,7 @@ pub struct Play {
     lighting: Lighting,
     clouds: Option<Clouds>,
     flames: Flames,
+    effects: Effects,
     particles: ParticleRenderer,
     /// Texture key (`None`: white) → the particle renderer's texture.
     particle_textures: std::collections::HashMap<Option<String>, usize>,
@@ -204,9 +206,10 @@ impl Play {
         let (sky, lighting) = environment(gpu, bundle, &physics, key, format)?;
         let clouds = Clouds::new(&physics.environment, key, level);
         let flames = Flames::new(level, &physics.particles, |k| bundle.scene(k).ok());
+        let effects = Effects::new(level, &physics.particles, |k| bundle.scene(k).ok());
         let mut particles = ParticleRenderer::new(gpu, format);
         let mut particle_textures = std::collections::HashMap::new();
-        for e in flames.emitters() {
+        for e in flames.emitters().chain(effects.emitters()) {
             let key = e.params.texture.clone();
             if particle_textures.contains_key(&key) {
                 continue;
@@ -269,6 +272,7 @@ impl Play {
             lighting,
             clouds,
             flames,
+            effects,
             particles,
             particle_textures,
             score: None,
@@ -427,6 +431,27 @@ impl Play {
         if let Some(target) = self.transformers.nearest_other(ball, self.active_ball) {
             self.world.reset_body(self.ball, target);
             self.follow.reset(target, self.heading_view);
+        }
+    }
+
+    /// Development aid: puts the ball, at rest, 2 above the nearest fan in
+    /// an active sector (where its wind starts).
+    pub fn warp_to_fan(&mut self) {
+        let Some(id) = self.ball_id() else { return };
+        let Some(ball) = self.world.body(id).map(|b| b.position) else {
+            return;
+        };
+        let nearest = self
+            .modules
+            .fans()
+            .into_iter()
+            .filter(|f| f.1)
+            .map(|f| f.0)
+            .min_by(|a, b| a.distance(ball).total_cmp(&b.distance(ball)));
+        if let Some(target) = nearest {
+            let at = target + Vec3::Y * 2.0;
+            self.world.reset_body(id, at);
+            self.follow.reset(at, self.heading_view);
         }
     }
 
@@ -725,7 +750,8 @@ impl Play {
     fn pickup_frame(&mut self, ball: Vec3, real_dt: f32) {
         for e in self.pickups.frame(ball, real_dt) {
             match e {
-                pickups::Event::LifeUp => {
+                pickups::Event::LifeUp(marker) => {
+                    self.effects.life_up(marker);
                     self.energy.add_life();
                     self.events.emit("Life_Up");
                     self.hud.life_up();
@@ -856,6 +882,8 @@ impl Play {
         let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
         let reached = self.progress.reached();
         self.flames.update(ball, reached, real_dt * 1000.0);
+        let fans = self.modules.fans();
+        self.effects.update(ball, &fans, real_dt * 1000.0);
         if !self.camera_frozen {
             let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
             let lifted = self.keys_held[key_index(PlayKey::Lift)];
@@ -978,6 +1006,11 @@ impl Play {
         self.flames.burning()
     }
 
+    /// Fans whose particles run now (for headless runs).
+    pub fn fans_running(&self) -> usize {
+        self.effects.fans_running()
+    }
+
     /// The particle systems, last (blended, no depth writes).
     fn render_particles(
         &mut self,
@@ -988,15 +1021,21 @@ impl Play {
         camera: &Camera,
         aspect: f32,
     ) {
-        let right = camera.right();
-        let up = right.cross(camera.forward()).normalize_or(Vec3::Y);
-        // One batch per texture and blend.
-        let mut groups: Vec<(
+        type Group = (
             usize,
             (ballistic_bundle::BlendFactor, ballistic_bundle::BlendFactor),
             Vec<ballistic_render::ParticleVertex>,
-        )> = Vec::new();
-        for e in self.flames.emitters() {
+            Vec<ballistic_render::ParticleVertex>,
+        );
+        let right = camera.right();
+        let facing = crate::particles::Facing {
+            right,
+            up: right.cross(camera.forward()).normalize_or(Vec3::Y),
+            forward: camera.forward(),
+        };
+        // One batch of triangles and one of lines per texture and blend.
+        let mut groups: Vec<Group> = Vec::new();
+        for e in self.flames.emitters().chain(self.effects.emitters()) {
             let Some(&texture) = self.particle_textures.get(&e.params.texture) else {
                 continue;
             };
@@ -1005,17 +1044,29 @@ impl Play {
                 .iter()
                 .position(|g| g.0 == texture && g.1 == blend)
                 .unwrap_or_else(|| {
-                    groups.push((texture, blend, Vec::new()));
+                    groups.push((texture, blend, Vec::new(), Vec::new()));
                     groups.len() - 1
                 });
-            e.vertices(right, up, &mut groups[i].2);
+            let g = &mut groups[i];
+            e.vertices(facing, &mut g.2, &mut g.3);
         }
         let batches: Vec<ParticleBatch<'_>> = groups
             .iter()
-            .map(|(texture, blend, vertices)| ParticleBatch {
-                texture: *texture,
-                blend: *blend,
-                vertices,
+            .flat_map(|(texture, blend, triangles, lines)| {
+                [
+                    ParticleBatch {
+                        texture: *texture,
+                        blend: *blend,
+                        lines: false,
+                        vertices: triangles,
+                    },
+                    ParticleBatch {
+                        texture: *texture,
+                        blend: *blend,
+                        lines: true,
+                        vertices: lines,
+                    },
+                ]
             })
             .collect();
         self.particles

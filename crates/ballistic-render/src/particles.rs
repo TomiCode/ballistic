@@ -23,15 +23,19 @@ pub struct ParticleBatch<'a> {
     /// From [`ParticleRenderer::add_texture`].
     pub texture: usize,
     pub blend: (bb::BlendFactor, bb::BlendFactor),
+    /// A line list (*Line* particles) instead of triangles.
+    pub lines: bool,
     pub vertices: &'a [ParticleVertex],
 }
+
+type PipelineKey = ((bb::BlendFactor, bb::BlendFactor), bool);
 
 pub struct ParticleRenderer {
     shader: wgpu::ShaderModule,
     layout: wgpu::PipelineLayout,
     texture_layout: wgpu::BindGroupLayout,
     format: wgpu::TextureFormat,
-    pipelines: HashMap<(bb::BlendFactor, bb::BlendFactor), wgpu::RenderPipeline>,
+    pipelines: HashMap<PipelineKey, wgpu::RenderPipeline>,
     globals: wgpu::Buffer,
     globals_group: wgpu::BindGroup,
     sampler: wgpu::Sampler,
@@ -143,10 +147,11 @@ impl ParticleRenderer {
         self.add_texture(gpu, &white)
     }
 
-    fn pipeline(&mut self, gpu: &Gpu, blend: (bb::BlendFactor, bb::BlendFactor)) {
-        if self.pipelines.contains_key(&blend) {
+    fn pipeline(&mut self, gpu: &Gpu, key: PipelineKey) {
+        if self.pipelines.contains_key(&key) {
             return;
         }
+        let (blend, lines) = key;
         let c = wgpu::BlendComponent {
             src_factor: blend_factor(blend.0),
             dst_factor: blend_factor(blend.1),
@@ -168,7 +173,14 @@ impl ParticleRenderer {
                         attributes: &attributes,
                     })],
                 },
-                primitive: wgpu::PrimitiveState::default(),
+                primitive: wgpu::PrimitiveState {
+                    topology: if lines {
+                        wgpu::PrimitiveTopology::LineList
+                    } else {
+                        wgpu::PrimitiveTopology::TriangleList
+                    },
+                    ..Default::default()
+                },
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: Some(false),
@@ -190,7 +202,7 @@ impl ParticleRenderer {
                 multiview_mask: None,
                 cache: None,
             });
-        self.pipelines.insert(blend, p);
+        self.pipelines.insert(key, p);
     }
 
     /// Draws `batches` over `color`, tested against `depth`.
@@ -213,7 +225,7 @@ impl ParticleRenderer {
             return;
         }
         for b in &batches {
-            self.pipeline(gpu, b.blend);
+            self.pipeline(gpu, (b.blend, b.lines));
         }
         let view_proj = camera.projection(aspect) * camera.view();
         gpu.queue
@@ -268,7 +280,7 @@ impl ParticleRenderer {
         for b in batches {
             #[expect(clippy::cast_possible_truncation, reason = "a few thousand vertices")]
             let n = b.vertices.len() as u32;
-            if let Some(p) = self.pipelines.get(&b.blend) {
+            if let Some(p) = self.pipelines.get(&(b.blend, b.lines)) {
                 pass.set_pipeline(p);
                 pass.set_bind_group(1, &self.textures[b.texture], &[]);
                 pass.draw(first..first + n, 0..1);

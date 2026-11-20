@@ -37,6 +37,7 @@ fn quad_scene(material: bb::Material) -> bb::Scene {
             }],
             bounds_min: [-1.0, 0.0, -1.0],
             bounds_max: [1.0, 0.0, 1.0],
+            visible: true,
         }],
         materials: vec![material],
         objects: vec![bb::SceneObject {
