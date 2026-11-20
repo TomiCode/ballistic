@@ -20,9 +20,7 @@ use ballistic_bundle::{BallParams, BundleReader, PhysicsData};
 use ballistic_physics::{
     BodyDesc, BodyId, PushId, Quat, Shape, Vec3, World, WorldConfig, build_level,
 };
-use ballistic_render::{
-    Camera, Gpu, ParticleBatch, ParticleRenderer, RenderOptions, SkyRenderer, upload_ktx2,
-};
+use ballistic_render::{Camera, Gpu, ParticleRenderer, RenderOptions, SkyRenderer, upload_ktx2};
 use glam::Mat4;
 
 use crate::ballsounds::BallSoundsPlayer;
@@ -1358,72 +1356,34 @@ impl Play {
         camera: &Camera,
         aspect: f32,
     ) {
-        type Group = (
-            usize,
-            (ballistic_bundle::BlendFactor, ballistic_bundle::BlendFactor),
-            Vec<ballistic_render::ParticleVertex>,
-            Vec<ballistic_render::ParticleVertex>,
-        );
-        let right = camera.right();
-        let facing = crate::particles::Facing {
-            right,
-            up: right.cross(camera.forward()).normalize_or(Vec3::Y),
-            forward: camera.forward(),
-        };
-        // One batch of triangles and one of lines per texture and blend.
-        let mut groups: Vec<Group> = Vec::new();
-        for e in self
+        let facing = crate::particles::Facing::of(camera);
+        // The extra lives' and extra points' silver balls (sprites).
+        let sprites: Vec<_> = self
+            .life_looks
+            .sprites(facing)
+            .into_iter()
+            .chain(self.point_looks.sprites(facing))
+            .collect();
+        let emitters: Vec<&crate::particles::Emitter> = self
             .flames
             .emitters()
             .chain(self.effects.emitters())
             .chain(self.point_looks.emitters())
-        {
-            let Some(&texture) = self.particle_textures.get(&e.params.texture) else {
-                continue;
-            };
-            let blend = e.params.blend;
-            let i = groups
-                .iter()
-                .position(|g| g.0 == texture && g.1 == blend)
-                .unwrap_or_else(|| {
-                    groups.push((texture, blend, Vec::new(), Vec::new()));
-                    groups.len() - 1
-                });
-            let g = &mut groups[i];
-            e.vertices(facing, &mut g.2, &mut g.3);
-        }
-        // The extra lives' and extra points' silver balls (sprites).
-        let sprites = self
-            .life_looks
-            .sprites(facing)
-            .into_iter()
-            .chain(self.point_looks.sprites(facing));
-        for (key, blend, quads) in sprites {
-            if let Some(&texture) = self.particle_textures.get(&key) {
-                groups.push((texture, blend, quads, Vec::new()));
-            }
-        }
-        let batches: Vec<ParticleBatch<'_>> = groups
-            .iter()
-            .flat_map(|(texture, blend, triangles, lines)| {
-                [
-                    ParticleBatch {
-                        texture: *texture,
-                        blend: *blend,
-                        lines: false,
-                        vertices: triangles,
-                    },
-                    ParticleBatch {
-                        texture: *texture,
-                        blend: *blend,
-                        lines: true,
-                        vertices: lines,
-                    },
-                ]
-            })
             .collect();
-        self.particles
-            .render(gpu, encoder, color, depth, camera, aspect, &batches);
+        crate::particles::draw(
+            &mut self.particles,
+            &self.particle_textures,
+            &emitters,
+            sprites,
+            crate::particles::Target {
+                gpu,
+                encoder,
+                color,
+                depth,
+                camera,
+                aspect,
+            },
+        );
     }
 
     /// The options to draw the level and play objects with: the level's
@@ -1593,16 +1553,16 @@ fn snap90(h: f32) -> f32 {
 }
 
 /// Light, ambient and background for the scene renderer.
-struct Lighting {
-    towards_light: glam::Vec3,
-    light_color: glam::Vec3,
-    ambient: glam::Vec3,
-    background: [f64; 4],
+pub(crate) struct Lighting {
+    pub(crate) towards_light: glam::Vec3,
+    pub(crate) light_color: glam::Vec3,
+    pub(crate) ambient: glam::Vec3,
+    pub(crate) background: [f64; 4],
 }
 
 /// The level's sky and lighting (research findings 19). Without an entry
 /// for the level, no sky and the renderer's default light.
-fn environment(
+pub(crate) fn environment(
     gpu: &Gpu,
     bundle: &mut Bundle,
     physics: &PhysicsData,

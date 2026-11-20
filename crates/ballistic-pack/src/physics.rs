@@ -268,6 +268,7 @@ pub fn extract(install: &Install) -> Result<bb::PhysicsData> {
         highscores: crate::highscores::extract(install)?,
         menus: crate::menus::extract(install)?,
         music: crate::music::extract(install)?,
+        menu_level: crate::menu_level::extract(install)?,
         balls,
     })
 }

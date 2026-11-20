@@ -94,6 +94,10 @@ struct State {
     dead_shown: bool,
     /// The mouse pointer (pixels).
     cursor: (f32, f32),
+    /// `--game` without a level: the scene behind the main menu.
+    menu_level: Option<crate::menu_level::MenuLevelView>,
+    /// Its sounds, for the audio.
+    menu_sounds: Vec<String>,
     /// The game's default keys (`DirectInput` scan codes), where the
     /// settings have none.
     default_keys: Vec<u32>,
@@ -172,16 +176,7 @@ impl App {
         } else {
             None
         };
-        let game = if self.args.game {
-            Some(crate::game::Game::create(
-                &gpu,
-                &mut self.bundle,
-                view_format,
-                save.clone(),
-            )?)
-        } else {
-            None
-        };
+        let (menu_level, game) = self.game_parts(&gpu, view_format, &save)?;
         Ok(State {
             window,
             surface,
@@ -195,6 +190,8 @@ impl App {
             game,
             dead_shown: false,
             cursor: (0.0, 0.0),
+            menu_level,
+            menu_sounds: Vec::new(),
             default_keys: self
                 .bundle
                 .physics()
@@ -215,6 +212,41 @@ impl App {
             exit_after: self.args.exit_after,
             gpu,
         })
+    }
+
+    /// `--game`: the menu level and the menus.
+    #[allow(clippy::type_complexity, reason = "two optional parts")]
+    fn game_parts(
+        &mut self,
+        gpu: &Gpu,
+        view_format: wgpu::TextureFormat,
+        save: &crate::save::SharedSave,
+    ) -> Result<(
+        Option<crate::menu_level::MenuLevelView>,
+        Option<crate::game::Game>,
+    )> {
+        let menu_level = if self.args.game {
+            let scene = self.bundle.scene(crate::game::MENU_LEVEL)?;
+            Some(crate::menu_level::MenuLevelView::new(
+                gpu,
+                &mut self.bundle,
+                &scene,
+                view_format,
+            )?)
+        } else {
+            None
+        };
+        let game = if self.args.game {
+            Some(crate::game::Game::create(
+                gpu,
+                &mut self.bundle,
+                view_format,
+                save.clone(),
+            )?)
+        } else {
+            None
+        };
+        Ok((menu_level, game))
     }
 
     /// The scene to start with (the menu level with `--game`) and its
@@ -283,6 +315,13 @@ impl State {
             return true;
         }
         if game.paused() || self.play.is_none() {
+            // The credits listen for the cheat word.
+            if pressed
+                && game.typing()
+                && let Some(text) = ev.text.as_deref()
+            {
+                game.text(text);
+            }
             let scan = match code {
                 KeyCode::ArrowUp => Some(200),
                 KeyCode::ArrowDown => Some(208),
@@ -337,7 +376,14 @@ impl State {
                 crate::game::Action::MainMenu => {
                     let key = crate::game::MENU_LEVEL;
                     self.open_scene(bundle, key, false)?;
-                    self.camera = crate::game::menu_camera(&bundle.scene(key)?, self.camera);
+                    let scene = bundle.scene(key)?;
+                    self.camera = crate::game::menu_camera(&scene, self.camera);
+                    self.menu_level = Some(crate::menu_level::MenuLevelView::new(
+                        &self.gpu,
+                        bundle,
+                        &scene,
+                        self.view_format,
+                    )?);
                     if let Some(g) = self.game.as_mut() {
                         g.main_menu();
                     }
@@ -350,13 +396,32 @@ impl State {
     }
 
     /// The game's menus and screens over the frame.
-    fn render_menus(&mut self, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView) {
+    fn render_menus(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        view: &wgpu::TextureView,
+        aspect: f32,
+    ) {
+        // The menu level's flames.
+        if self.play.is_none()
+            && let Some(ml) = self.menu_level.as_mut()
+        {
+            ml.render_particles(crate::particles::Target {
+                gpu: &self.gpu,
+                encoder,
+                color: view,
+                depth: &self.depth,
+                camera: &self.camera,
+                aspect,
+            });
+        }
         let Some(game) = self.game.as_mut() else {
             return;
         };
         let size = (self.config.width, self.config.height);
         game.menus.render(&self.gpu, encoder, view, size);
         game.options.render(&self.gpu, encoder, view, size);
+        game.credits.render(&self.gpu, encoder, view, size);
         let save = self.save.borrow();
         game.tables
             .render(&self.gpu, encoder, view, size, &save.data);
@@ -382,6 +447,7 @@ impl State {
 
     fn start_level(&mut self, bundle: &mut Bundle, key: &str) -> Result<()> {
         eprintln!("level: {key}");
+        self.menu_level = None;
         self.open_scene(bundle, key, true)?;
         if let Some(g) = self.game.as_mut() {
             g.playing(crate::energy::level_index(key));
@@ -607,8 +673,19 @@ impl State {
     }
 
     fn update(&mut self, dt: f32) {
+        if let Some(game) = self.game.as_mut() {
+            game.frame(dt);
+        }
+        // The menu level goes round behind the main menu.
+        if self.play.is_none()
+            && let Some(ml) = self.menu_level.as_mut()
+        {
+            self.menu_sounds.extend(ml.update(dt));
+            self.camera = ml.camera(self.camera);
+            return;
+        }
         if let Some(game) = &self.game {
-            // The level waits under a menu; the menu level stands still.
+            // The level waits under a menu.
             if game.paused() || self.play.is_none() {
                 if let Some(play) = &self.play {
                     self.camera = play.camera(self.camera);
@@ -678,12 +755,17 @@ impl State {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         let aspect = self.config.width as f32 / self.config.height.max(1) as f32;
-        let opts = match self.play.as_ref() {
-            Some(p) => {
+        let menu_level = self.menu_level.as_ref().filter(|_| self.play.is_none());
+        let opts = match (self.play.as_ref(), menu_level) {
+            (Some(p), _) => {
                 p.render_sky(&self.gpu, &mut encoder, &view, &self.camera, aspect);
                 p.scene_options(&self.opts)
             }
-            None => self.opts,
+            (None, Some(ml)) => {
+                ml.render_sky(&self.gpu, &mut encoder, &view, &self.camera, aspect);
+                ml.scene_options(&self.opts)
+            }
+            (None, None) => self.opts,
         };
         self.scene.renderer.render(
             &self.gpu,
@@ -711,7 +793,7 @@ impl State {
                 (self.config.width, self.config.height),
             );
         }
-        self.render_menus(&mut encoder, &view);
+        self.render_menus(&mut encoder, &view, aspect);
         self.gpu.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
         self.gpu.queue.present(frame);
@@ -760,6 +842,14 @@ impl App {
         let Some(state) = self.state.as_mut() else {
             return;
         };
+        // The menu level's sounds.
+        if let Some(audio) = self.audio.as_mut() {
+            for key in state.menu_sounds.drain(..) {
+                audio.play(&mut self.bundle, &key, 1.0, 1.0);
+            }
+        } else {
+            state.menu_sounds.clear();
+        }
         // The options' music volume.
         if let Some(audio) = self.audio.as_mut() {
             audio.set_music_level(state.save.borrow().data.settings.volume);

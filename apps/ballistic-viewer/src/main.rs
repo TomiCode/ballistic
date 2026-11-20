@@ -2,6 +2,7 @@
 
 mod audio;
 mod ballsounds;
+mod credits_screen;
 mod effects;
 mod energy;
 mod flames;
@@ -14,6 +15,7 @@ mod keys;
 #[cfg(test)]
 mod levels_check;
 mod life_look;
+mod menu_level;
 mod menus;
 mod modules;
 mod music;
@@ -342,7 +344,21 @@ fn screenshot(
         for a in g.take_actions() {
             eprintln!("menu action (not carried out headless): {a:?}");
         }
-        Some((g, save))
+        // The menu level, after the script's time (its `wait`s).
+        let menu_scene = bundle.scene(first)?;
+        let mut ml = menu_level::MenuLevelView::new(&gpu, &mut bundle, &menu_scene, format)?;
+        let seconds: f32 = parse_play_script(args.play_script.as_deref().unwrap_or(""))?
+            .iter()
+            .map(|s| s.seconds)
+            .sum();
+        let dt = 1.0 / 60.0;
+        #[expect(clippy::cast_sign_loss, reason = "durations are non-negative")]
+        for _ in 0..(seconds / dt).round() as u32 {
+            ml.update(dt);
+            g.frame(dt);
+        }
+        camera = ml.camera(camera);
+        Some((g, save, ml))
     } else {
         None
     };
@@ -457,8 +473,8 @@ fn screenshot(
     let mut encoder = gpu
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    let opts = match play.as_ref() {
-        Some(p) => {
+    let opts = match (play.as_ref(), menus.as_ref()) {
+        (Some(p), _) => {
             p.render_sky(
                 &gpu,
                 &mut encoder,
@@ -468,7 +484,17 @@ fn screenshot(
             );
             p.scene_options(&options(args))
         }
-        None => options(args),
+        (None, Some((_, _, ml))) => {
+            ml.render_sky(
+                &gpu,
+                &mut encoder,
+                &target.color_view,
+                &camera,
+                w as f32 / h as f32,
+            );
+            ml.scene_options(&options(args))
+        }
+        (None, None) => options(args),
     };
     scene.renderer.render(
         &gpu,
@@ -491,10 +517,20 @@ fn screenshot(
         );
         p.render_hud(&gpu, &mut encoder, &target.color_view, (w, h));
     }
-    if let Some((g, save)) = menus.as_mut() {
+    if let Some((g, save, ml)) = menus.as_mut() {
+        ml.render_particles(particles::Target {
+            gpu: &gpu,
+            encoder: &mut encoder,
+            color: &target.color_view,
+            depth: &target.depth_view,
+            camera: &camera,
+            aspect: w as f32 / h as f32,
+        });
         g.menus
             .render(&gpu, &mut encoder, &target.color_view, (w, h));
         g.options
+            .render(&gpu, &mut encoder, &target.color_view, (w, h));
+        g.credits
             .render(&gpu, &mut encoder, &target.color_view, (w, h));
         let save = save.borrow();
         g.tables

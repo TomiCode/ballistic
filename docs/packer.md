@@ -97,7 +97,12 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      `Gameplay_Blitz`'s storm. The options' screens: their rows (by the 2D
      entities' names the scripts use) and texts, the fields' materials,
      `Dummy_ScreenModes`, the default keys (`Keyboard`) and the volume's
-     step → `data/physics.json`
+     step. The credits: the logos' fades, the pages (`Menu_Credits_Strings`),
+     their box, fonts and timing, the cheat word. The menu level
+     (`MenuLevel.nmo`): the camera's curve (its points decoded from the
+     curve's chunk) and progression, the sky's level, the light, the fog
+     and the ambient sound; its flames join the particle systems →
+     `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

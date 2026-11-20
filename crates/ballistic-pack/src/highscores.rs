@@ -369,11 +369,19 @@ pub(crate) fn font(
                 && text(input(n, "Font Name")).as_deref() == Some(name)
         })
         .with_context(|| format!("{name}'s TT_CreateFontEx"))?;
+    // The *Set Font Properties* the creation feeds, else one on the font's
+    // local (the credits' fonts are set where they're shown).
     let props = all
         .iter()
         .find(|n| {
             n.building_block == "Set Font Properties"
                 && writer_of(&menu.file, &menu.scripts, n.node, "Font") == Some(create.node)
+        })
+        .or_else(|| {
+            all.iter().find(|n| {
+                n.building_block == "Set Font Properties"
+                    && crate::score::source_name(menu, n.node, "Font").as_deref() == Some(name)
+            })
         })
         .with_context(|| format!("{name}'s Set Font Properties"))?;
     let pair = |pin: &str| -> Result<[f32; 2]> {
@@ -382,7 +390,13 @@ pub(crate) fn font(
             other => bail!("{name}: {pin} {other:?}"),
         }
     };
-    let color = match vector(input(props, "Color")).as_deref() {
+    // A colour that fades (an *Interpolator* feeds it) is its end colour.
+    let faded = || {
+        let w = writer_of(&menu.file, &menu.scripts, props.node, "Color")?;
+        let n = all.iter().find(|n| n.node == w)?;
+        vector(input(n, "B"))
+    };
+    let color = match vector(input(props, "Color")).or_else(faded).as_deref() {
         Some(&[r, g, b, a]) => [r, g, b, a],
         other => bail!("{name}: Color {other:?}"),
     };

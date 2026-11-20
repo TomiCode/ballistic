@@ -41,6 +41,32 @@ pub struct PhysicsData {
     pub menus: Menus,
     /// The music, and the last level's storm.
     pub music: Music,
+    /// The scene behind the main menu.
+    pub menu_level: MenuLevel,
+}
+
+/// The scene behind the main menu (`MenuLevel.nmo`'s `MenuLevel_Init`).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct MenuLevel {
+    /// The scene's bundle key.
+    pub scene: String,
+    /// The camera goes round `path` (a curve through these points, bundle
+    /// space; `closed`: back to the first) once every `progression`,
+    /// looking at the scene object `target`.
+    pub path: Vec<[f32; 3]>,
+    pub closed: bool,
+    pub progression: Progression,
+    pub target: String,
+    /// The level whose sky it shows (`AllLevel`'s row).
+    pub sky_level: String,
+    pub light_color: [f32; 4],
+    /// Linear fog: start, end, colour.
+    pub fog: [f32; 2],
+    pub fog_color: [f32; 4],
+    /// Plays once in a while: after a random wait between the two (ms),
+    /// again after it ends.
+    pub atmo: String,
+    pub atmo_gap_ms: [f32; 2],
 }
 
 /// The music (`Sound.nmo`'s `Music_Manager`) and the last level's storm
@@ -117,6 +143,34 @@ pub struct Menus {
     pub yes_no: YesNoMenu,
     /// The options' screens (`Menu_Opt_Graphics`, `_Keys`, `_Sound`).
     pub settings: OptionsScreens,
+    pub credits: CreditsScreen,
+}
+
+/// `Menu_Credits`: two logos, then pages of a title and a text, round and
+/// round. Escape, Enter or *Back* leave.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct CreditsScreen {
+    pub back: MenuButton,
+    /// Each logo fades in, stays, fades out (`fades_ms`: in, hold, out).
+    pub logos: Vec<HudSprite>,
+    pub logo_fades_ms: Vec<[f32; 3]>,
+    /// After the logos.
+    pub pause_ms: f32,
+    /// The pages: title (in `title_font`) and text (in `text_font`), both in
+    /// `text`'s box. Each fades in and out over `fade_ms` and stays
+    /// `hold_per_char_ms` × the text's length + `hold_ms`; the first
+    /// `first_shorter_ms` less.
+    pub pages: Vec<[String; 2]>,
+    pub text: MenuText,
+    pub title_font: String,
+    pub text_font: String,
+    pub fade_ms: f32,
+    pub hold_per_char_ms: f32,
+    pub hold_ms: f32,
+    pub first_shorter_ms: f32,
+    /// Typing this opens every level.
+    pub cheat: String,
+    pub keys: Vec<u32>,
 }
 
 /// The options' screens. Up and Down move between the rows and the Ok

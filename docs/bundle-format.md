@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 23,
+  "format_version": 24,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -330,7 +330,19 @@ and useful to read). Since version 2.
       "field_active": ["…", [1.0, 1.0, 1.0, 1.0]], "field_inactive": ["…", [1.0, 1.0, 1.0, 1.0]],
       "key_waiting": ["…", [1.0, 1.0, 1.0, 1.0]],
       "resolutions": [[640, 480], [800, 600], [1024, 768], [1152, 864], [1280, 960], [1600, 1200]],
-      "default_keys": [200, 208, 203, 205, 42, 57], "volume_step": 0.1 } }
+      "default_keys": [200, 208, 203, 205, 42, 57], "volume_step": 0.1 },
+    "credits": { "back": { "…": "…" }, "logos": [ { "name": "M_Credits_Logo1", "…": "…" }, "…" ],
+      "logo_fades_ms": [[500.0, 4000.0, 500.0], [500.0, 4000.0, 2000.0]], "pause_ms": 1000.0,
+      "pages": [["…title…", "…text…"], "…"], "text": { "…": "…" },
+      "title_font": "GameFont_Credits_Big", "text_font": "GameFont_Credits_Small",
+      "fade_ms": 500.0, "hold_per_char_ms": 50.0, "hold_ms": 1500.0, "first_shorter_ms": 2000.0,
+      "cheat": "gravity", "keys": [1, 28] } },
+  "menu_level": {
+    "scene": "menulevel", "path": [[0.48, 40.0, 94.96], "…"], "closed": true,
+    "progression": { "duration_ms": 44000.0, "curve": ["…"] }, "target": "Cam_MenuLevel_Target",
+    "sky_level": "level/level_05", "light_color": [1.0, 1.0, 1.0, 1.0],
+    "fog": [100.0, 800.0], "fog_color": [0.8275, 0.7843, 0.5804, 1.0],
+    "atmo": "menu_atmo", "atmo_gap_ms": [1000.0, 10000.0] }
 }
 ```
 
@@ -560,6 +572,18 @@ and useful to read). Since version 2.
     `key_waiting`), the `resolutions` offered, the `default_keys` (scan
     codes: forward, backward, left, right, rotation, lift) and the
     `volume_step`.
+  - `credits`: the `back` button; the `logos`, each fading in, staying and
+    fading out (`logo_fades_ms`); a pause; the `pages` (title, text) in the
+    `text` box, the title in `title_font` and the text in `text_font`, each
+    fading over `fade_ms` and staying `hold_per_char_ms` × the text's
+    length + `hold_ms` (the first `first_shorter_ms` less); the `cheat` word
+    that opens every level; its `keys`.
+- `menu_level`: the scene behind the main menu. The camera goes round a
+  curve through `path` (bundle space; `closed`) once per `progression`,
+  looking at the scene object `target`. The sky of `sky_level`, the light
+  `light_color`, linear `fog` (start, end) in `fog_color`, and `atmo` played
+  after random waits in `atmo_gap_ms`. Its flames are in `particles` (scene
+  `menulevel`).
 
 - `music`: `Sound.nmo`'s `Music_Manager` and the last level's storm. Times
   in milliseconds, sounds as bundle keys.
@@ -597,4 +621,5 @@ and useful to read). Since version 2.
   `particles`. **19** adds `level_end` and `score_screen`. **20** adds
   `highscores`. **21** adds `menus` (the fonts move there from
   `highscores`) and the table's `back_text`. **22** adds `music` and
-  `sounds.flaps`. **23** adds `menus.settings` and text's `top`.
+  `sounds.flaps`. **23** adds `menus.settings` and text's `top`. **24** adds
+  `menu_level`, `menus.credits` and the menu level's particle systems.

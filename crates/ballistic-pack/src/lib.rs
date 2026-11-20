@@ -3,6 +3,7 @@
 
 pub mod audio;
 mod ballsounds;
+mod credits;
 mod energy;
 mod environment;
 mod flow;
@@ -10,6 +11,7 @@ mod highscores;
 mod hud;
 pub mod install;
 mod ktx2;
+mod menu_level;
 mod menus;
 mod modules;
 mod music;

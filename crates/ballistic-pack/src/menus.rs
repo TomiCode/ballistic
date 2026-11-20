@@ -24,12 +24,14 @@ use crate::score::{keys, language_row, source_name};
 use crate::transformers::{float, input, target};
 
 /// The fonts the menus use.
-const FONTS: [&str; 5] = [
+const FONTS: [&str; 7] = [
     "GameFont_01",
     "GameFont_02",
     "GameFont_03",
     "GameFont_03a",
     "GameFont_04",
+    "GameFont_Credits_Small",
+    "GameFont_Credits_Big",
 ];
 
 pub fn extract(install: &Install) -> Result<bb::Menus> {
@@ -61,6 +63,7 @@ pub fn extract(install: &Install) -> Result<bb::Menus> {
         options: button_menu(&cx, "Menu_Options", Buttons::Table("Menu_Options_ShowHide"))?,
         yes_no: yes_no(&cx)?,
         settings: crate::options::extract(&cx)?,
+        credits: crate::credits::extract(&cx)?,
     })
 }
 
@@ -313,7 +316,7 @@ mod tests {
         };
         let install = Install::index(std::path::Path::new(&dir)).unwrap();
         let m = extract(&install).unwrap();
-        assert_eq!(m.fonts.len(), 5);
+        assert_eq!(m.fonts.len(), 7);
         assert_eq!(m.fonts["GameFont_01"].scale, [0.45, 0.55]);
         assert!(m.button_over.0.is_some());
         let text = |b: &bb::MenuButton| b.text.text["english"].clone();

@@ -44,6 +44,103 @@ pub struct Facing {
     pub forward: Vec3,
 }
 
+impl Facing {
+    /// Facing `camera`.
+    pub fn of(camera: &ballistic_render::Camera) -> Self {
+        let right = camera.right();
+        Self {
+            right,
+            up: right.cross(camera.forward()).normalize_or(Vec3::Y),
+            forward: camera.forward(),
+        }
+    }
+}
+
+/// Camera-facing quads: texture key, blend, triangles.
+pub type SpriteQuads = (
+    Option<String>,
+    (bb::BlendFactor, bb::BlendFactor),
+    Vec<ParticleVertex>,
+);
+
+/// Where particles are drawn.
+pub struct Target<'a> {
+    pub gpu: &'a ballistic_render::Gpu,
+    pub encoder: &'a mut wgpu::CommandEncoder,
+    pub color: &'a wgpu::TextureView,
+    pub depth: &'a wgpu::TextureView,
+    pub camera: &'a ballistic_render::Camera,
+    pub aspect: f32,
+}
+
+/// Draws `emitters` and camera-facing `sprites` (texture key, blend,
+/// triangles): one batch of triangles and one of lines per texture and
+/// blend. `textures`: texture key (`None`: white) → the renderer's texture.
+pub fn draw(
+    renderer: &mut ballistic_render::ParticleRenderer,
+    textures: &std::collections::HashMap<Option<String>, usize>,
+    emitters: &[&Emitter],
+    sprites: Vec<SpriteQuads>,
+    t: Target<'_>,
+) {
+    type Group = (
+        usize,
+        (bb::BlendFactor, bb::BlendFactor),
+        Vec<ParticleVertex>,
+        Vec<ParticleVertex>,
+    );
+    let Target {
+        gpu,
+        encoder,
+        color,
+        depth,
+        camera,
+        aspect,
+    } = t;
+    let facing = Facing::of(camera);
+    let mut groups: Vec<Group> = Vec::new();
+    for e in emitters {
+        let Some(&texture) = textures.get(&e.params.texture) else {
+            continue;
+        };
+        let blend = e.params.blend;
+        let i = groups
+            .iter()
+            .position(|g| g.0 == texture && g.1 == blend)
+            .unwrap_or_else(|| {
+                groups.push((texture, blend, Vec::new(), Vec::new()));
+                groups.len() - 1
+            });
+        let g = &mut groups[i];
+        e.vertices(facing, &mut g.2, &mut g.3);
+    }
+    for (key, blend, quads) in sprites {
+        if let Some(&texture) = textures.get(&key) {
+            groups.push((texture, blend, quads, Vec::new()));
+        }
+    }
+    let batches: Vec<ballistic_render::ParticleBatch<'_>> = groups
+        .iter()
+        .flat_map(|(texture, blend, triangles, lines)| {
+            [
+                ballistic_render::ParticleBatch {
+                    texture: *texture,
+                    blend: *blend,
+                    lines: false,
+                    vertices: triangles,
+                },
+                ballistic_render::ParticleBatch {
+                    texture: *texture,
+                    blend: *blend,
+                    lines: true,
+                    vertices: lines,
+                },
+            ]
+        })
+        .collect();
+    renderer.render(gpu, encoder, color, depth, camera, aspect, &batches);
+}
+
 pub struct Emitter {
     pub params: bb::ParticleEmitter,
     /// The entity's world transform (bundle space).

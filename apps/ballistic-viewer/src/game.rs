@@ -18,6 +18,7 @@
 use ballistic_bundle::{LevelFlow, Scene};
 use ballistic_render::Camera;
 
+use crate::credits_screen::{self, CreditsScreen};
 use crate::flow::EventSounds;
 use crate::highscore_screens::{self, HighscoreScreens};
 use crate::menus::{self, MenuId, MenuScreens};
@@ -43,6 +44,7 @@ pub struct Game {
     pub menus: MenuScreens,
     pub tables: HighscoreScreens,
     pub options: OptionsScreens,
+    pub credits: CreditsScreen,
     sounds: EventSounds,
     save: SharedSave,
     levels: usize,
@@ -83,10 +85,12 @@ impl Game {
             "english",
         )?;
         let options = OptionsScreens::new(gpu, bundle, &physics.menus, format, "english")?;
+        let credits = CreditsScreen::new(gpu, bundle, &physics.menus, format)?;
         let mut g = Self::new(
             menus,
             tables,
             options,
+            credits,
             &physics.flow,
             physics.highscores.defaults.len(),
             save,
@@ -100,6 +104,7 @@ impl Game {
         menus: MenuScreens,
         tables: HighscoreScreens,
         options: OptionsScreens,
+        credits: CreditsScreen,
         flow: &LevelFlow,
         levels: usize,
         save: SharedSave,
@@ -108,6 +113,7 @@ impl Game {
             menus,
             tables,
             options,
+            credits,
             sounds: EventSounds::new(flow),
             save,
             levels,
@@ -121,7 +127,25 @@ impl Game {
 
     /// A menu or table is up: the level waits.
     pub fn paused(&self) -> bool {
-        self.menus.active() || self.tables.active() || self.options.active()
+        self.menus.active()
+            || self.tables.active()
+            || self.options.active()
+            || self.credits.active()
+    }
+
+    /// The credits are on: typed text goes to them (the cheat word).
+    pub fn typing(&self) -> bool {
+        self.credits.active()
+    }
+
+    pub fn text(&mut self, s: &str) {
+        self.credits.text(s);
+        self.handle();
+    }
+
+    /// One frame of the screens' animations.
+    pub fn frame(&mut self, real_dt: f32) {
+        self.credits.frame(real_dt);
     }
 
     /// An options key row waits for its key: every key is for it.
@@ -169,7 +193,9 @@ impl Game {
     }
 
     pub fn key(&mut self, scan: u32) -> bool {
-        let taken = if self.options.active() {
+        let taken = if self.credits.active() {
+            self.credits.key(scan)
+        } else if self.options.active() {
             self.options.key(scan)
         } else if self.tables.active() {
             self.tables.key(scan)
@@ -185,7 +211,9 @@ impl Game {
     }
 
     pub fn point(&mut self, pos: (f32, f32), size: (u32, u32)) {
-        if self.options.active() {
+        if self.credits.active() {
+            self.credits.point(pos, size);
+        } else if self.options.active() {
             self.options.point(pos, size);
         } else {
             self.menus.point(pos, size);
@@ -193,7 +221,9 @@ impl Game {
     }
 
     pub fn click(&mut self, pos: (f32, f32), size: (u32, u32)) -> bool {
-        let taken = if self.options.active() {
+        let taken = if self.credits.active() {
+            self.credits.click(pos, size)
+        } else if self.options.active() {
             self.options.click(pos, size)
         } else {
             self.menus.click(pos, size)
@@ -212,6 +242,21 @@ impl Game {
     }
 
     fn handle(&mut self) {
+        for e in self.credits.take_events() {
+            match e {
+                credits_screen::Event::Message(m) => self.sounds.emit(m),
+                credits_screen::Event::Left => self.open(MenuId::Main),
+                // Every level opens.
+                credits_screen::Event::Cheat => {
+                    let mut save = self.save.borrow_mut();
+                    for i in 0..self.levels {
+                        save.data.unlock(i);
+                    }
+                    save.write();
+                    eprintln!("every level is open");
+                }
+            }
+        }
         for e in self.options.take_events() {
             match e {
                 options_screens::Event::Message(m) => self.sounds.emit(m),
@@ -284,10 +329,7 @@ impl Game {
             (MenuId::Main, 0) => self.open(MenuId::Start),
             (MenuId::Main, 1) => self.table(MenuId::Main),
             (MenuId::Main, 2) => self.options(MenuId::Main),
-            (MenuId::Main, 3) => {
-                eprintln!("credits: not there yet");
-                self.open(MenuId::Main);
-            }
+            (MenuId::Main, 3) => self.credits.open(),
             (MenuId::Main, _) => self.ask("Exit Game?", MenuId::Main),
             (MenuId::Start, i) if i < self.levels => {
                 self.sounds.emit("Menu_Load");
@@ -406,6 +448,7 @@ mod tests {
                 std::collections::HashMap::new(),
             ),
             OptionsScreens::with_textures(&menus, "english", std::collections::HashMap::new()),
+            CreditsScreen::with_textures(&menus, std::collections::HashMap::new()),
             &flow,
             3,
             save,

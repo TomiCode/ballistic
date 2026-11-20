@@ -44,6 +44,8 @@ pub fn extract(install: &Install) -> Result<Vec<bb::ParticleEmitter>> {
         })
         .collect();
     files.push(("3d entities/balls.nmo".into(), "balls".into()));
+    // The flames behind the main menu.
+    files.push(("3d entities/menulevel.nmo".into(), "menulevel".into()));
     files.sort();
     let mut out = Vec::new();
     for (key, scene) in files {

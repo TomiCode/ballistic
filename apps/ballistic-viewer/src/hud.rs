@@ -342,6 +342,7 @@ impl Hud {
 }
 
 /// How a *2D Text* is laid out and coloured.
+#[derive(Clone, Copy)]
 pub struct TextStyle {
     pub align: bb::TextAlign,
     /// Left, top, right, bottom, in pixels at 480 lines.
@@ -425,6 +426,78 @@ pub fn text_quads(
         x = x2 + g.after * xf + spacing;
     }
     quads
+}
+
+/// `s` in lines no wider than `room` (by `width`), broken at spaces; a word
+/// wider than `room` gets a line of its own.
+pub fn wrap_words(s: &str, room: f32, width: impl Fn(&str) -> f32) -> Vec<String> {
+    let mut lines: Vec<String> = Vec::new();
+    for word in s.split(' ') {
+        match lines.last_mut() {
+            Some(line) if width(&format!("{line} {word}")) <= room => {
+                line.push(' ');
+                line.push_str(word);
+            }
+            _ => lines.push(word.to_owned()),
+        }
+    }
+    lines
+}
+
+/// Text over several lines: broken at its line breaks and, with `wrap`, at
+/// spaces to fit the box; stacked from the box's top (`style.top`) or
+/// centred as a block.
+pub fn text_block(
+    font: &bb::HudFont,
+    texture: usize,
+    s: &str,
+    rect: [f32; 4],
+    style: &TextStyle,
+    frame: (f32, f32),
+    wrap: bool,
+) -> Vec<Quad> {
+    let m = style.margins.map(|v| v * frame.1 / REFERENCE_HEIGHT);
+    let room = rect[2] - rect[0] - m[0] - m[2];
+    let lines: Vec<String> = s
+        .split('\n')
+        .flat_map(|part| {
+            if wrap {
+                wrap_words(part, room, |l| text_size(font, l, style.scale, frame).0)
+            } else {
+                vec![part.to_owned()]
+            }
+        })
+        .collect();
+    let line_h = text_size(font, "", style.scale, frame).1;
+    #[expect(clippy::cast_precision_loss, reason = "a few lines")]
+    let height = line_h * lines.len() as f32;
+    let top = if style.top {
+        rect[1] + m[1]
+    } else {
+        (rect[1] + rect[3] - height) * 0.5
+    };
+    // Each line in its own row, without the vertical margins again.
+    let line_style = TextStyle {
+        margins: [style.margins[0], 0.0, style.margins[2], 0.0],
+        top: true,
+        ..*style
+    };
+    lines
+        .iter()
+        .enumerate()
+        .flat_map(|(i, line)| {
+            #[expect(clippy::cast_precision_loss, reason = "a few lines")]
+            let y = top + line_h * i as f32;
+            text_quads(
+                font,
+                texture,
+                line,
+                [rect[0], y, rect[2], y + line_h],
+                &line_style,
+                frame,
+            )
+        })
+        .collect()
 }
 
 #[cfg(test)]

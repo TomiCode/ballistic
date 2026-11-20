@@ -26,7 +26,7 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
 | `--play` | Play mode: roll a ball on the level |
 | `--game` | The game: starts at the main menu over the menu level; levels are played from its level select, with pause (Escape), end and game over menus. Implies play mode |
-| `--menu-keys <codes>` | With `--game --screenshot`: menu keys to press first, as `DirectInput` scan codes (`28,208`: Enter, Down). Development aid |
+| `--menu-keys <codes>` | With `--game --screenshot`: menu keys to press first, as `DirectInput` scan codes (`28,208`: Enter, Down); `--play-script wait:N` lets N seconds pass (the menu level's flight, the credits). Development aid |
 | `--save <path>` | Play mode's save file (open levels, highscores, the last name). In a window it defaults to the platform's data folder (`%APPDATA%\Ballistic\save.json`, `~/Library/Application Support/Ballistic/save.json`, `$XDG_DATA_HOME/ballistic/save.json`); headless runs keep it in memory unless given. A file that can't be read is left alone and the session isn't saved |
 | `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:4,up:2,rotate+left:0.3` (the ball comes 3 s after the start). Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), `trafo` puts the ball on the nearest transformer of another type (shown ones first), `pickup` on the nearest extra life or extra point, `fan` 2 above the nearest fan in an active sector, `near` 8 from the nearest pickup (to look at it without taking it), `lose` loses the ball (as **R**), `skip` presses Space (cuts the level end's wait short, scores fast, leaves the score screen), and `enter` presses Enter (confirms the highscore name, leaves the table), all at the start of their segment. A checkpoint arms a while after the last one, so leave 2 s or more between `next`s. The summary then also prints the points, lives and score, and any moving element that fell below the level's depth cubes. With `--camera` too, the camera stays at that view instead of following the ball |
 
@@ -177,8 +177,13 @@ original's menus:
   menu**: Restart, Highscore, Options, Home, Next level (Escape).
 - With the last life gone, the **game over** menu: Restart, Home.
 - A highscore table opened from a menu starts at the current level and
-  goes back to it. The credits aren't there yet; the menu level doesn't fly
-  or show its sky yet.
+  goes back to it.
+- Behind the main menu the **menu level** (research findings 28): the
+  camera goes round it every 44 s under level 5's sky, in fog, with its four
+  flames burning and its ambient sound now and then.
+- **Credits**: the two logos, then the pages fading in and out, round and
+  round; Escape, Enter or *Back* leave. Typing "gravity" there opens every
+  level.
 - **Options** (research findings 27): *Graphics* (the window's size from
   the original's list, or as it opened; vsync; the cloud layer), *Controls*
   (the six keys: Enter on one, then press the new key; a key in use
@@ -327,6 +332,5 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
-- In play mode: the credits, the menu level's flight
-  and sky, clicking the highscore buttons, explosions, the screen fade, the
+- In play mode: clicking the highscore buttons, explosions, the screen fade, the
   paper pieces' wind, the last level's UFO

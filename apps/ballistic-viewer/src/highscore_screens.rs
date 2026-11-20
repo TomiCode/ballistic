@@ -19,7 +19,7 @@ use ballistic_bundle as bb;
 use ballistic_render::{Gpu, Overlay, Quad, upload_ktx2};
 use ballistic_save::Save;
 
-use crate::hud::{REFERENCE_HEIGHT, TextStyle, text_quads, text_size};
+use crate::hud::{REFERENCE_HEIGHT, TextStyle, text_block, text_quads};
 use crate::play::Bundle;
 
 /// Scan code of Backspace (the original's `TT InputString` edits with it).
@@ -369,32 +369,11 @@ impl HighscoreScreens {
             top: t.top,
         };
         let size = (frame.fw, frame.fh);
-        if !t.wrap {
-            return text_quads(font, texture, s, r, &style, size);
+        if t.wrap {
+            // *WordWrap*: lines broken at spaces to fit.
+            return text_block(font, texture, s, r, &style, size, true);
         }
-        // *WordWrap*: lines broken at spaces to fit, stacked and centred.
-        let m = t.margins.map(|v| v * frame.fh / REFERENCE_HEIGHT);
-        let room = r[2] - r[0] - m[0] - m[2];
-        let lines = wrap(s, room, |l| text_size(font, l, font.scale, size).0);
-        let line_h = text_size(font, "", font.scale, size).1 + m[1] + m[3];
-        #[expect(clippy::cast_precision_loss, reason = "a few lines")]
-        let top = (r[1] + r[3] - line_h * lines.len() as f32) * 0.5;
-        lines
-            .iter()
-            .enumerate()
-            .flat_map(|(i, line)| {
-                #[expect(clippy::cast_precision_loss, reason = "a few lines")]
-                let y = top + line_h * i as f32;
-                text_quads(
-                    font,
-                    texture,
-                    line,
-                    [r[0], y, r[2], y + line_h],
-                    &style,
-                    size,
-                )
-            })
-            .collect()
+        text_quads(font, texture, s, r, &style, size)
     }
 
     pub fn render(
@@ -410,22 +389,6 @@ impl HighscoreScreens {
             o.render(gpu, encoder, color, size, &quads);
         }
     }
-}
-
-/// `s` in lines no wider than `room` (by `width`), broken at spaces; a word
-/// wider than `room` gets a line of its own.
-fn wrap(s: &str, room: f32, width: impl Fn(&str) -> f32) -> Vec<String> {
-    let mut lines: Vec<String> = Vec::new();
-    for word in s.split(' ') {
-        match lines.last_mut() {
-            Some(line) if width(&format!("{line} {word}")) <= room => {
-                line.push(' ');
-                line.push_str(word);
-            }
-            _ => lines.push(word.to_owned()),
-        }
-    }
-    lines
 }
 
 /// The 4:3 frame in the window.
@@ -500,14 +463,14 @@ mod tests {
         #[expect(clippy::cast_precision_loss, reason = "short strings")]
         let width = |s: &str| s.len() as f32;
         assert_eq!(
-            wrap("Highscore Level 1", 15.0, width),
+            crate::hud::wrap_words("Highscore Level 1", 15.0, width),
             ["Highscore Level", "1"]
         );
         assert_eq!(
-            wrap("Highscore Level 1", 9.0, width),
+            crate::hud::wrap_words("Highscore Level 1", 9.0, width),
             ["Highscore", "Level 1"]
         );
-        assert_eq!(wrap("Ok", 1.0, width), ["Ok"]);
+        assert_eq!(crate::hud::wrap_words("Ok", 1.0, width), ["Ok"]);
     }
 
     #[test]
