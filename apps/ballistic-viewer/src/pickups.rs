@@ -12,14 +12,23 @@
 //!   each that comes within 4 is 20 more (220 in all). Once taken it doesn't
 //!   come back (it clears its row's *Set?*).
 //!
-//! The small balls' flight is approximated: *TT Extra*'s fly-away and chase
-//! aren't traced in detail. Their points are exact.
+//! The small balls' flight is *TT Extra*'s (research findings 22), each step
+//! scaled by the frame time `dt` in seconds:
+//! - fly-away (1 s): position + its last step × 0.3 + (position − a point 3
+//!   below the centre) × 1 × `dt`: out and up, faster the further away;
+//! - chase: position + its last step × 0.95 + (ball − position) × its share
+//!   × `dt`, the shares 0.12 + k × 0.08 / 6. A soft spring: they trail a
+//!   rolling ball at about its speed and catch it when it slows.
 
 use ballistic_bundle::{EnergyParams, Scene};
 use ballistic_physics::{Mat4, Vec3, props};
 
 use crate::follow::TICK_HZ;
 use crate::progress::{Edge, Proximity};
+
+/// The fly-away pushes out from this far below the extra point's centre
+/// (`TT_Gravity_RT.dll` `0x10010228`).
+const AWAY_BELOW: f32 = 3.0;
 
 /// What the pickups do this frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,8 +55,9 @@ struct Life {
 struct SmallBall {
     pos: Vec3,
     prev: Vec3,
-    /// Its share of the chase force (`1 ± force_width`).
-    pull: f32,
+    /// Its share of the chase: the force plus k × the force width / the
+    /// number of balls.
+    share: f32,
     hit: bool,
 }
 
@@ -177,7 +187,7 @@ impl Pickups {
                     p.used = true;
                     p.flying = Some(0.0);
                     let start = orbit(p.at, &p.offsets, p.orbit_s, xp.look.rotation_speed);
-                    p.balls = small_balls(&start, xp.small_balls, xp.force_width);
+                    p.balls = small_balls(&start, xp.small_balls, xp.force, xp.force_width);
                     out.push(Event::Activated(xp.activation_points));
                 }
                 continue;
@@ -192,10 +202,10 @@ impl Pickups {
                     let motion = b.pos - b.prev;
                     b.prev = b.pos;
                     if away {
-                        let out = (b.pos - p.at).normalize_or_zero();
-                        b.pos += motion * xp.away_damping + out * xp.away_force * tick * 10.0;
+                        let from = p.at - Vec3::Y * AWAY_BELOW;
+                        b.pos += motion * xp.away_damping + (b.pos - from) * xp.away_force * tick;
                     } else {
-                        b.pos += motion * xp.damping + (ball - b.pos) * xp.force * b.pull;
+                        b.pos += motion * xp.damping + (ball - b.pos) * b.share * tick;
                         if b.pos.distance(ball) < xp.hit_distance {
                             b.hit = true;
                             hits += 1;
@@ -215,6 +225,15 @@ impl Pickups {
     }
 
     /// Development aid: the nearest pickup still there (in an active sector).
+    /// The nearest extra point not taken yet (development aid).
+    pub fn nearest_point(&self, ball: Vec3) -> Option<Vec3> {
+        self.points
+            .iter()
+            .filter(|p| !p.used)
+            .map(|p| p.at)
+            .min_by(|a, b| a.distance(ball).total_cmp(&b.distance(ball)))
+    }
+
     pub fn nearest(&self, ball: Vec3) -> Option<Vec3> {
         self.lives
             .iter()
@@ -308,24 +327,17 @@ fn orbit(at: Vec3, offsets: &[Vec3], t: f32, speed: f32) -> Vec<Vec3> {
 }
 
 /// The small balls flying from `start`, each with its share of the force.
-fn small_balls(start: &[Vec3], n: u32, width: f32) -> Vec<SmallBall> {
+fn small_balls(start: &[Vec3], n: u32, force: f32, width: f32) -> Vec<SmallBall> {
     let n = n.max(1).min(start.len().max(1) as u32);
     start
         .iter()
         .take(n as usize)
         .enumerate()
-        .map(|(i, &pos)| {
-            let spread = if n > 1 {
-                i as f32 / (n - 1) as f32 * 2.0 - 1.0
-            } else {
-                0.0
-            };
-            SmallBall {
-                pos,
-                prev: pos,
-                pull: 1.0 + width * spread,
-                hit: false,
-            }
+        .map(|(i, &pos)| SmallBall {
+            pos,
+            prev: pos,
+            share: force + i as f32 * width / n as f32,
+            hit: false,
         })
         .collect()
 }
@@ -334,8 +346,8 @@ fn small_balls(start: &[Vec3], n: u32, width: f32) -> Vec<SmallBall> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn small_balls_all_reach_a_resting_ball() {
+    /// One extra point at the origin, its six balls 2 out, sector 1 active.
+    fn one_point() -> Pickups {
         let xp = ballistic_bundle::ExtraPoint {
             group: String::new(),
             small_balls: 6,
@@ -352,7 +364,7 @@ mod tests {
             hit_frames: String::new(),
             look: ballistic_bundle::ExtraPointLook::default(),
         };
-        let mut p = Pickups {
+        Pickups {
             params: ballistic_bundle::EnergyParams {
                 start_points: 1000,
                 start_lives: 3,
@@ -392,7 +404,12 @@ mod tests {
                 active: true,
             }],
             visibility: Vec::new(),
-        };
+        }
+    }
+
+    #[test]
+    fn small_balls_all_reach_a_resting_ball() {
+        let mut p = one_point();
         let mut total = 0;
         // The ball rolls through it and stops 10 further on.
         for frame in 0..900 {
@@ -408,6 +425,33 @@ mod tests {
         p.set_sector_active(1, false);
         p.set_sector_active(1, true);
         assert_eq!(p.frame(Vec3::ZERO, 1.0 / 60.0), Vec::new());
+    }
+
+    #[test]
+    fn small_balls_trail_a_rolling_ball_until_it_stops() {
+        fn hits(p: &mut Pickups, ball: Vec3) -> i32 {
+            p.frame(ball, 1.0 / 60.0)
+                .into_iter()
+                .map(|e| if let Event::Hits(n) = e { n } else { 0 })
+                .sum()
+        }
+        let mut p = one_point();
+        // Taken, then rolling away at 24 a second: they follow, none
+        // reaches it in the first 1.5 s, and in 3 s only the strongest have
+        // caught up (the weakest trail by 6.7 or more).
+        let early: i32 = (0..90)
+            .map(|frame| hits(&mut p, Vec3::new(frame as f32 * 0.4, 0.0, 0.0)))
+            .sum();
+        assert_eq!(early, 0, "caught a rolling ball at once");
+        let rolling: i32 = (90..180)
+            .map(|frame| hits(&mut p, Vec3::new(frame as f32 * 0.4, 0.0, 0.0)))
+            .sum();
+        assert!(rolling < 120, "all caught a rolling ball");
+        // Stopped: they catch up.
+        let stopped: i32 = (0..600)
+            .map(|_| hits(&mut p, Vec3::new(72.0, 0.0, 0.0)))
+            .sum();
+        assert_eq!(rolling + stopped, 120);
     }
 
     #[test]

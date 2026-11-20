@@ -781,6 +781,21 @@ pub struct LevelFlow {
     /// The screen's fade when a ball is lost (*Überblendung*).
     #[serde(default)]
     pub fade: ScreenFade,
+    /// The ball's shadow (`Ball_Shadow`'s *TT Simple Shadow*).
+    #[serde(default)]
+    pub shadow: BallShadow,
+}
+
+/// The ball's shadow: `texture` multiplied onto the members of the level
+/// group `group` (the level init gives them the floor attribute) straight
+/// below the ball, `size_scale` × the ball's width across, while they're at
+/// most `max_height` below it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct BallShadow {
+    pub texture: String,
+    pub size_scale: f32,
+    pub max_height: f32,
+    pub group: String,
 }
 
 /// The lightning a new ball comes in (`Balls.nmo`'s `Ball_LightningSphere`),

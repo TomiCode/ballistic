@@ -497,9 +497,7 @@ fn new_play(
 ) -> Result<crate::play::Play> {
     let level = bundle.scene(&scene.key)?;
     let play = crate::play::Play::new(gpu, bundle, &scene.key, &level, format, save.clone())?;
-    for i in play.placeholders() {
-        scene.renderer.set_object_hidden(i, true);
-    }
+    play.prepare_level(gpu, &mut scene.renderer);
     Ok(play)
 }
 

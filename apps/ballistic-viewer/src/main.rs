@@ -244,6 +244,8 @@ pub struct Segment {
     pub fan: bool,
     /// Put the ball 8 from the nearest pickup first.
     pub near: bool,
+    /// 8 from the nearest extra point.
+    pub point: bool,
     /// Lose the ball first (as **R**).
     pub lose: bool,
     /// Press Space first: cuts the level end's wait short, scores fast,
@@ -274,6 +276,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
             let pickup = keys.split('+').any(|k| k.trim() == "pickup");
             let fan = keys.split('+').any(|k| k.trim() == "fan");
             let near = keys.split('+').any(|k| k.trim() == "near");
+            let point = keys.split('+').any(|k| k.trim() == "point");
             let lose = keys.split('+').any(|k| k.trim() == "lose");
             let skip = keys.split('+').any(|k| k.trim() == "skip");
             let enter = keys.split('+').any(|k| k.trim() == "enter");
@@ -286,8 +289,8 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                     "right" => Some(Ok(K::Right)),
                     "rotate" => Some(Ok(K::Rotate)),
                     "lift" => Some(Ok(K::Lift)),
-                    "wait" | "next" | "wake" | "trafo" | "pickup" | "fan" | "near" | "lose"
-                    | "skip" | "enter" => None,
+                    "wait" | "next" | "wake" | "trafo" | "pickup" | "fan" | "near" | "point"
+                    | "lose" | "skip" | "enter" => None,
                     other => Some(Err(anyhow::anyhow!("unknown key {other:?}"))),
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -300,6 +303,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                 pickup,
                 fan,
                 near,
+                point,
                 lose,
                 skip,
                 enter,
@@ -371,9 +375,7 @@ fn screenshot(
         let defaults = bundle.physics()?.highscores;
         let save = save::SaveFile::open(args.save.clone(), &defaults).shared();
         let mut p = play::Play::new(&gpu, &mut bundle, &args.scene, &level, format, save)?;
-        for i in p.placeholders() {
-            scene.renderer.set_object_hidden(i, true);
-        }
+        p.prepare_level(&gpu, &mut scene.renderer);
         let dt = 1.0 / 60.0;
         for seg in parse_play_script(args.play_script.as_deref().unwrap_or("wait:1"))? {
             let (keys, seconds) = (seg.keys, seg.seconds);
@@ -391,6 +393,9 @@ fn screenshot(
             }
             if seg.near {
                 p.warp_near_pickup();
+            }
+            if seg.point {
+                p.warp_near_point();
             }
             if seg.pickup {
                 p.warp_to_pickup();

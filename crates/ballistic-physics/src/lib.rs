@@ -111,7 +111,10 @@ pub struct ContactModel {
 impl Default for ContactModel {
     fn default() -> Self {
         Self {
-            friction: Combine::GeometricMean,
+            // The product: a wooden ball pushes a box from rest, as in the
+            // original (a playtest; the geometric mean let the ball's spin
+            // pin the box to the floor).
+            friction: Combine::Multiply,
             restitution: Combine::Multiply,
             damping: DampingLaw::Linear,
             bounce_threshold: 1.0,

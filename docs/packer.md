@@ -65,7 +65,9 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      `BallManager`'s Delayers and depth tests and `DepthTestGroups`, the new
      ball's lightning (`Balls.nmo`'s `Ball_LightningSphere`: the sphere, its
      textures, turn, growth curve and the smoke puff's system and timing) and
-     the lost ball's fade (*Überblendung*'s colours and curve), and the
+     the lost ball's fade (*Überblendung*'s colours and curve), the ball's
+     shadow (`Ball_Shadow`'s *TT Simple Shadow* and the group *set Floor*
+     marks), and the
      event sounds from `Sound.nmo`'s *Switch On Message* blocks, followed
      through links, Delayers and sub-graphs to their Wave Players. The HUD:
      `Camera.nmo`'s 2D entities and `HUD_sprites`, `Menu.nmo`'s font texture

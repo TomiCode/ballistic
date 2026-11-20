@@ -64,6 +64,7 @@ pub fn extract(install: &Install) -> Result<bb::LevelFlow> {
         event_sounds: event_sounds(install)?,
         arrival: crate::arrival::arrival(install)?,
         fade: crate::arrival::fade(&nodes)?,
+        shadow: crate::arrival::shadow(install)?,
     })
 }
 

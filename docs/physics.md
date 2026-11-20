@@ -175,7 +175,7 @@ from the original yet. The defaults are reasonable guesses:
 
 | Option | Default | Alternatives |
 |---|---|---|
-| Friction combination (ball × surface) | geometric mean | multiply, average, min, max |
+| Friction combination (ball × surface) | multiply (a playtest: a wooden ball pushes a box from rest) | geometric mean, average, min, max |
 | Elasticity combination | multiply | same set |
 | Damping law | linear: `v ·= 1 − k·Δt` | exponential: `v ·= e^(−k·Δt)` |
 | Bounce threshold | 1 unit/s | |

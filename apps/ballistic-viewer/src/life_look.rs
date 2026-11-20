@@ -175,9 +175,10 @@ impl LifeLooks {
             Some(BallSprite {
                 local: sphere_world.inverse() * world(i),
                 texture: mat.and_then(|m| m.texture.clone()),
-                blend: mat.map_or((BlendFactor::SrcAlpha, BlendFactor::InvSrcAlpha), |m| {
-                    (m.src_blend, m.dest_blend)
-                }),
+                blend: mat.map_or(
+                    (BlendFactor::SrcAlpha, BlendFactor::InvSrcAlpha),
+                    sprite_blend,
+                ),
                 uv: s.uv,
                 offset: s.offset,
                 color: mat.map_or([1.0; 4], |m| m.diffuse),
@@ -399,6 +400,18 @@ impl LifeLooks {
     /// Extra lives shown now (for headless runs).
     pub fn shown(&self) -> usize {
         self.lives.iter().filter(|l| l.shown).count()
+    }
+}
+
+/// How a sprite's material blends. An unblended one (*One* / *Zero*) still
+/// cuts out its texture's colour key, as the original's alpha test does
+/// (the extra point's silver balls): drawn by the texture's alpha.
+pub fn sprite_blend(m: &bb::Material) -> (BlendFactor, BlendFactor) {
+    match (m.blend, m.src_blend, m.dest_blend) {
+        (false, ..) | (true, BlendFactor::One, BlendFactor::Zero) => {
+            (BlendFactor::SrcAlpha, BlendFactor::InvSrcAlpha)
+        }
+        (true, s, d) => (s, d),
     }
 }
 

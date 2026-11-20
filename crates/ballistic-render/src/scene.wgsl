@@ -11,11 +11,17 @@ struct Globals {
     fog_color: vec4<f32>,
     // x = start, y = end, z = enabled (0/1)
     fog: vec4<f32>,
+    // x, y = the shadow's centre (X, Z), z = its size, w = on
+    shadow: vec4<f32>,
+    // x = the ball's bottom, y = its top, z = the maximum height
+    shadow_y: vec4<f32>,
 };
 
 struct Object {
     model: mat4x4<f32>,
     normal: mat4x4<f32>,
+    // x = receives the shadow
+    flags: vec4<f32>,
 };
 
 struct Material {
@@ -33,6 +39,8 @@ struct Material {
 const FLAG_ENV_MAP: u32 = 1u;
 
 @group(0) @binding(0) var<uniform> globals: Globals;
+@group(0) @binding(1) var shadow_tex: texture_2d<f32>;
+@group(0) @binding(2) var shadow_samp: sampler;
 @group(1) @binding(0) var<uniform> object: Object;
 @group(2) @binding(0) var<uniform> material: Material;
 @group(2) @binding(1) var tex: texture_2d<f32>;
@@ -110,6 +118,17 @@ fn fs_main(i: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
         let h = normalize(globals.light_dir.xyz + to_eye);
         let s = pow(max(dot(n, h), 0.0), material.specular.w) * f32(ndl > 0.0);
         c = vec4<f32>(min(c.rgb + material.specular.rgb * globals.light_color.rgb * s, vec3<f32>(1.0)), c.a);
+    }
+
+    // The ball's shadow (*TT Simple Shadow*): its texture projected straight
+    // down, multiplied in (a material channel blended Zero / Src Color).
+    if globals.shadow.w > 0.5 && object.flags.x > 0.5 {
+        let suv = (i.world_pos.xz - globals.shadow.xy) / globals.shadow.z + vec2<f32>(0.5);
+        let below = globals.shadow_y.x - i.world_pos.y;
+        if all(suv >= vec2<f32>(0.0)) && all(suv <= vec2<f32>(1.0))
+            && i.world_pos.y <= globals.shadow_y.y && below <= globals.shadow_y.z {
+            c = vec4<f32>(c.rgb * textureSampleLevel(shadow_tex, shadow_samp, suv, 0.0).rgb, c.a);
+        }
     }
 
     let func = u32(material.params.y);

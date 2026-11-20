@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 27,
+  "format_version": 28,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -229,7 +229,8 @@ and useful to read). Since version 2.
       "spin": 6.2832, "shown_ms": 3000.0, "grow": { "duration_ms": 1500.0, "curve": ["…"] },
       "puff_object": "Ball_Particle_Frame", "puff_ms": 2500.0, "puff_frames": 6 },
     "fade": { "from": [0.0, 0.0, 0.0, 0.0039], "to": [1.0, 1.0, 1.0, 1.0],
-      "progression": { "duration_ms": 2000.0, "curve": ["…"] } } },
+      "progression": { "duration_ms": 2000.0, "curve": ["…"] } },
+    "shadow": { "texture": "hardshadow", "size_scale": 1.3, "max_height": 20.0, "group": "Shadow" } },
   "hud": {
     "sprites": [
       { "name": "Interface_Life_Kugel", "texture": "button01_special",
@@ -494,6 +495,9 @@ and useful to read). Since version 2.
     `puff_object` emits for `puff_frames` frames at the ball.
   - `fade`: when a lost ball is taken back, the screen is covered by a colour
     going from `from` to `to` along `progression` (alpha-blended).
+  - `shadow`: the ball's shadow, `texture` multiplied onto the level group
+    `group`'s objects straight below the ball, `size_scale` × its diameter
+    across, while they're at most `max_height` below it.
 - `hud`: the in-game HUD (`Gameplay_Energy`). Rectangles are fractions of the
   screen: left, top, right, bottom.
   - `sprites`: 2D entities in drawing order (`z_order`), each a `source` part
@@ -671,6 +675,6 @@ and useful to read). Since version 2.
   `highscores`) and the table's `back_text`. **22** adds `music` and
   `sounds.flaps`. **23** adds `menus.settings` and text's `top`. **24** adds
   `menu_level`, `menus.credits` and the menu level's particle systems.
-  **25** adds `tutorial`. **26** adds `flow.arrival` and `flow.fade`. **27** changes content
+  **25** adds `tutorial`. **26** adds `flow.arrival` and `flow.fade`. **28** adds `flow.shadow`. **27** changes content
   only: the rails' texture coordinates are baked (reflection mapping), and
   particle textures looked up by name are resolved.

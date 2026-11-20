@@ -16,7 +16,7 @@ pub use camera::Camera;
 pub use gpu::{Gpu, RenderTarget, depth_view as gpu_depth_view};
 pub use overlay::{Overlay, Quad};
 pub use particles::{ParticleBatch, ParticleRenderer, ParticleVertex};
-pub use scene::{CullMode, RenderOptions, SceneRenderer};
+pub use scene::{CullMode, RenderOptions, SceneRenderer, Shadow};
 pub use sky::{SkyRenderer, sky_mesh};
 pub use texture::{GpuTexture, upload_ktx2, white};
 

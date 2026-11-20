@@ -37,6 +37,20 @@ pub struct RenderOptions {
     pub ambient: Vec3,
     /// `(start, end, colour)` for linear distance fog.
     pub fog: Option<(f32, f32, Vec3)>,
+    /// The ball's shadow, on objects that receive it.
+    pub shadow: Option<Shadow>,
+}
+
+/// A shadow projected straight down (*TT Simple Shadow*): the shadow
+/// texture, `size` across, centred under `center`, multiplied onto receiving
+/// objects between `top` and `max_height` below `bottom`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Shadow {
+    pub center: Vec3,
+    pub size: f32,
+    pub bottom: f32,
+    pub top: f32,
+    pub max_height: f32,
 }
 
 impl Default for RenderOptions {
@@ -51,6 +65,7 @@ impl Default for RenderOptions {
             light_color: Vec3::splat(0.85),
             ambient: Vec3::splat(0.45),
             fog: None,
+            shadow: None,
         }
     }
 }
@@ -66,6 +81,10 @@ struct GlobalsUniform {
     ambient: Vec4,
     fog_color: Vec4,
     fog: Vec4,
+    /// x, y: the shadow's centre (X, Z); z: its size; w: on.
+    shadow: Vec4,
+    /// x: the ball's bottom; y: its top; z: the maximum height.
+    shadow_y: Vec4,
 }
 
 #[repr(C)]
@@ -73,6 +92,18 @@ struct GlobalsUniform {
 struct ObjectUniform {
     model: Mat4,
     normal: Mat4,
+    /// x: receives the shadow.
+    flags: Vec4,
+}
+
+impl ObjectUniform {
+    fn new(model: Mat4, receives_shadow: bool) -> Self {
+        Self {
+            model,
+            normal: Mat4::from_mat3(Mat3::from_mat4(model).inverse().transpose()),
+            flags: Vec4::new(f32::from(u8::from(receives_shadow)), 0.0, 0.0, 0.0),
+        }
+    }
 }
 
 #[repr(C)]
@@ -128,6 +159,8 @@ struct DrawObject {
     center: Vec3,
     /// Local-space bounds centre (to recompute `center` after moves).
     local_center: Vec3,
+    model: Mat4,
+    receives_shadow: bool,
 }
 
 pub struct SceneRenderer {
@@ -137,6 +170,8 @@ pub struct SceneRenderer {
     pipelines: HashMap<PipelineKey, wgpu::RenderPipeline>,
     globals_buffer: wgpu::Buffer,
     globals_group: wgpu::BindGroup,
+    globals_layout: wgpu::BindGroupLayout,
+    shadow_sampler: wgpu::Sampler,
     object_group: wgpu::BindGroup,
     object_buffer: wgpu::Buffer,
     materials: Vec<GpuMaterial>,
@@ -183,7 +218,25 @@ impl SceneRenderer {
         };
         let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("globals"),
-            entries: &[uniform_entry(0, false)],
+            entries: &[
+                uniform_entry(0, false),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+            ],
         });
         let object_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("object"),
@@ -227,14 +280,20 @@ impl SceneRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        let globals_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("globals"),
-            layout: &globals_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: globals_buffer.as_entire_binding(),
-            }],
+        // The shadow's texture: clamped (its border is white); white until set.
+        let shadow_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("shadow"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
         });
+        let globals_group = globals_bind_group(
+            device,
+            &globals_layout,
+            &globals_buffer,
+            &texture::white(gpu),
+            &shadow_sampler,
+        );
 
         // Materials.
         let mut samplers: HashMap<(bb::AddressMode, bool), wgpu::Sampler> = HashMap::new();
@@ -363,9 +422,8 @@ impl SceneRenderer {
         for (scene_index, o) in scene.objects.iter().enumerate() {
             let Some(mesh) = o.mesh else { continue };
             let model = Mat4::from_cols_array_2d(&o.transform);
-            let normal = Mat4::from_mat3(Mat3::from_mat4(model).inverse().transpose());
             let offset = object_bytes.len() as u32;
-            object_bytes.extend_from_slice(bytemuck::bytes_of(&ObjectUniform { model, normal }));
+            object_bytes.extend_from_slice(bytemuck::bytes_of(&ObjectUniform::new(model, false)));
             object_bytes.resize((offset + stride) as usize, 0);
             let src = &scene.meshes[mesh as usize];
             let (lo, hi) = (Vec3::from(src.bounds_min), Vec3::from(src.bounds_max));
@@ -392,6 +450,8 @@ impl SceneRenderer {
                 hidden: o.hidden,
                 center,
                 local_center: (lo + hi) * 0.5,
+                model,
+                receives_shadow: false,
             });
         }
         if bmin.x > bmax.x {
@@ -437,6 +497,8 @@ impl SceneRenderer {
                 pipelines: HashMap::new(),
                 globals_buffer,
                 globals_group,
+                globals_layout,
+                shadow_sampler,
                 object_group,
                 object_buffer,
                 materials,
@@ -462,12 +524,37 @@ impl SceneRenderer {
         else {
             return;
         };
-        let normal = Mat4::from_mat3(Mat3::from_mat4(model).inverse().transpose());
         o.center = model.transform_point3(o.local_center);
+        o.model = model;
         gpu.queue.write_buffer(
             &self.object_buffer,
             u64::from(o.uniform_offset),
-            bytemuck::bytes_of(&ObjectUniform { model, normal }),
+            bytemuck::bytes_of(&ObjectUniform::new(model, o.receives_shadow)),
+        );
+    }
+
+    /// Lets a scene object receive the shadow ([`RenderOptions::shadow`]).
+    pub fn set_object_receives_shadow(&mut self, gpu: &Gpu, scene_index: usize, on: bool) {
+        for o in &mut self.objects {
+            if o.scene_index as usize == scene_index {
+                o.receives_shadow = on;
+                gpu.queue.write_buffer(
+                    &self.object_buffer,
+                    u64::from(o.uniform_offset),
+                    bytemuck::bytes_of(&ObjectUniform::new(o.model, on)),
+                );
+            }
+        }
+    }
+
+    /// The shadow's texture.
+    pub fn set_shadow_texture(&mut self, gpu: &Gpu, texture: &GpuTexture) {
+        self.globals_group = globals_bind_group(
+            &gpu.device,
+            &self.globals_layout,
+            &self.globals_buffer,
+            texture,
+            &self.shadow_sampler,
         );
     }
 
@@ -664,7 +751,11 @@ impl SceneRenderer {
     }
 
     /// Records the scene into `encoder`, clearing `color` and `depth`.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "one draw: the globals, the sorted draw list, the pass"
+    )]
     pub fn render(
         &mut self,
         gpu: &Gpu,
@@ -689,6 +780,12 @@ impl SceneRenderer {
             ambient: opts.ambient.extend(1.0),
             fog_color: fog_color.extend(1.0),
             fog: Vec4::new(fog_start, fog_end, fog_on, 0.0),
+            shadow: opts.shadow.map_or(Vec4::ZERO, |s| {
+                Vec4::new(s.center.x, s.center.z, s.size, 1.0)
+            }),
+            shadow_y: opts.shadow.map_or(Vec4::ZERO, |s| {
+                Vec4::new(s.bottom, s.top, s.max_height, 0.0)
+            }),
         };
         gpu.queue
             .write_buffer(&self.globals_buffer, 0, bytemuck::bytes_of(&globals));
@@ -895,4 +992,31 @@ pub(crate) fn blend_factor(f: bb::BlendFactor) -> wgpu::BlendFactor {
         B::InvDestColor => wgpu::BlendFactor::OneMinusDst,
         B::SrcAlphaSat => wgpu::BlendFactor::SrcAlphaSaturated,
     }
+}
+
+fn globals_bind_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    buffer: &wgpu::Buffer,
+    shadow: &GpuTexture,
+    sampler: &wgpu::Sampler,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("globals"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&shadow.view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    })
 }

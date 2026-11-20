@@ -439,6 +439,7 @@ mod tests {
             event_sounds: Vec::new(),
             arrival: ballistic_bundle::BallArrival::default(),
             fade: ballistic_bundle::ScreenFade::default(),
+            shadow: ballistic_bundle::BallShadow::default(),
         };
         let save = SaveFile::in_memory(&highscores).shared();
         Game::new(

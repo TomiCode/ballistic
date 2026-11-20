@@ -74,9 +74,10 @@ fn sprite_look(prefab: &Scene, name: &str) -> Option<SpriteLook> {
         offset: s.offset,
         uv: s.uv,
         texture: mat.and_then(|m| m.texture.clone()),
-        blend: mat.map_or((BlendFactor::SrcAlpha, BlendFactor::InvSrcAlpha), |m| {
-            (m.src_blend, m.dest_blend)
-        }),
+        blend: mat.map_or(
+            (BlendFactor::SrcAlpha, BlendFactor::InvSrcAlpha),
+            crate::life_look::sprite_blend,
+        ),
         color: mat.map_or([1.0; 4], |m| m.diffuse),
     })
 }

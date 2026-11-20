@@ -184,6 +184,9 @@ pub struct Play {
     fade: ScreenFade,
     /// The placeholders the level's init deletes (`INIT_DELETED`).
     init_deleted: Vec<usize>,
+    /// The ball's shadow: its texture, and the level objects that receive it.
+    shadow_texture: Option<ballistic_render::GpuTexture>,
+    shadow_receivers: Vec<usize>,
 }
 
 /// The placeholder groups the level's init deletes after reading them
@@ -352,6 +355,22 @@ impl Play {
             particle_textures.insert(key, index);
         }
         let fade = ScreenFade::new(gpu, &physics.flow.fade, format);
+        let shadow = &physics.flow.shadow;
+        let shadow_texture = (!shadow.texture.is_empty())
+            .then(|| -> Result<_> {
+                Ok(upload_ktx2(
+                    gpu,
+                    &shadow.texture,
+                    &bundle.texture(&shadow.texture)?,
+                )?)
+            })
+            .transpose()?;
+        let shadow_receivers = level
+            .groups
+            .iter()
+            .filter(|g| g.name == shadow.group)
+            .flat_map(|g| g.members.iter().map(|&m| m as usize))
+            .collect();
         let init_deleted = level
             .groups
             .iter()
@@ -436,6 +455,8 @@ impl Play {
             arrival,
             fade,
             init_deleted,
+            shadow_texture,
+            shadow_receivers,
             serial: {
                 static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
                 NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
@@ -619,11 +640,25 @@ impl Play {
     /// Development aid: puts the ball, at rest, 8 from the nearest pickup
     /// (towards where it was), to look at it without taking it.
     pub fn warp_near_pickup(&mut self) {
+        self.warp_near(false);
+    }
+
+    /// Development aid: 8 from the nearest extra point.
+    pub fn warp_near_point(&mut self) {
+        self.warp_near(true);
+    }
+
+    fn warp_near(&mut self, points_only: bool) {
         let Some(id) = self.ball_id() else { return };
         let Some(ball) = self.world.body(id).map(|b| b.position) else {
             return;
         };
-        if let Some(target) = self.pickups.nearest(ball) {
+        let target = if points_only {
+            self.pickups.nearest_point(ball)
+        } else {
+            self.pickups.nearest(ball)
+        };
+        if let Some(target) = target {
             let mut away = ball - target;
             away.y = 0.0;
             let at = target + away.normalize_or(Vec3::X) * 8.0;
@@ -1559,6 +1594,38 @@ impl Play {
 
     /// The options to draw the level and play objects with: the level's
     /// light and the scene's ambient, over the sky.
+    /// Sets up the level's renderer for play: the placeholders hidden, the
+    /// shadow's receivers and texture.
+    pub fn prepare_level(&self, gpu: &Gpu, level: &mut ballistic_render::SceneRenderer) {
+        for i in self.placeholders() {
+            level.set_object_hidden(i, true);
+        }
+        for &i in &self.shadow_receivers {
+            level.set_object_receives_shadow(gpu, i, true);
+        }
+        if let Some(t) = &self.shadow_texture {
+            level.set_shadow_texture(gpu, t);
+        }
+    }
+
+    /// The ball's shadow (*TT Simple Shadow*): `size_scale` × its width
+    /// across, while it's shown.
+    fn shadow(&self) -> Option<ballistic_render::Shadow> {
+        if !self.ball_shown {
+            return None;
+        }
+        let (p, _) = self.ball_pose()?;
+        let s = &self.physics.flow.shadow;
+        let r = self.physics.balls[self.active_ball].shape.radius();
+        Some(ballistic_render::Shadow {
+            center: p,
+            size: 2.0 * r * s.size_scale,
+            bottom: p.y - r,
+            top: p.y + r,
+            max_height: s.max_height,
+        })
+    }
+
     pub fn scene_options(&self, opts: &RenderOptions) -> RenderOptions {
         let l = &self.lighting;
         // The storm's flash lights everything.
@@ -1573,6 +1640,7 @@ impl Play {
             clear_color: l.background,
             keep_color: self.sky.is_some(),
             fog: None,
+            shadow: self.shadow(),
             ..*opts
         }
     }

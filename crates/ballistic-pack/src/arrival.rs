@@ -133,6 +133,36 @@ pub fn fade(nodes: &[NodeParams]) -> Result<bb::ScreenFade> {
     })
 }
 
+/// The ball's shadow: `Balls.nmo`'s `Ball_Shadow` (*TT Simple Shadow*: its
+/// texture, size scale and maximum height) and the group `Levelinit.nmo`'s
+/// *set Floor* gives the floor attribute (the shadow's receivers).
+pub fn shadow(install: &Install) -> Result<bb::BallShadow> {
+    let b = load(install, "3d entities/balls.nmo")?;
+    let nodes = Extractor::new(&b.file, &b.scripts).nodes(&|_| true);
+    let n = nodes
+        .iter()
+        .find(|n| {
+            n.building_block == "TT Simple Shadow"
+                && n.path.first().map(String::as_str) == Some("Ball_Shadow")
+        })
+        .context("Ball_Shadow: TT Simple Shadow not found")?;
+    let num = |pin: &str| float(input(n, pin)).with_context(|| format!("TT Simple Shadow: {pin}"));
+    let texture = text(input(n, "Texture")).context("TT Simple Shadow: Texture")?;
+    let li = load(install, "3d entities/levelinit.nmo")?;
+    let group = Extractor::new(&li.file, &li.scripts)
+        .nodes(&|_| true)
+        .iter()
+        .filter(|n| n.path.last().map(String::as_str) == Some("set Floor"))
+        .find_map(|n| text(input(n, "p1")))
+        .context("Levelinit: set Floor's group")?;
+    Ok(bb::BallShadow {
+        texture: texture_key(install, &b.file, &texture)?,
+        size_scale: num("Size Scale")?,
+        max_height: num("Maximum Height")?,
+        group,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,6 +181,16 @@ mod tests {
         assert_eq!((a.shown_ms, a.puff_ms, a.puff_frames), (3000.0, 2500.0, 6));
         assert_eq!(a.grow.duration_ms, 1500.0);
         assert_eq!(a.puff_object, "Ball_Particle_Frame");
+        let s = shadow(&install).unwrap();
+        assert_eq!(
+            (
+                s.texture.as_str(),
+                s.size_scale,
+                s.max_height,
+                s.group.as_str()
+            ),
+            ("hardshadow", 1.3, 20.0, "Shadow")
+        );
         let g = crate::physics::load(&install, "3d entities/gameplay.nmo").unwrap();
         let nodes = Extractor::new(&g.file, &g.scripts).nodes(&|_| true);
         let f = fade(&nodes).unwrap();
