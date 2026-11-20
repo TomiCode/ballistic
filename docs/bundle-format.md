@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 21,
+  "format_version": 22,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -407,6 +407,9 @@ and useful to read). Since version 2.
     `roll_volume`) and pitch (`roll_pitch[0]` + speed × `roll_pitch[1]`). The
     speed is in units per real second.
   - `hit_groups`, `roll_groups`: level groups whose members get that ID.
+  - `flaps`: a level `group` with its own hit `sound` (the wooden flaps): a
+    hit between `min_speed` and `max_speed` plays at its place in that
+    range, then it sleeps `sleep_s`.
   - `objects`: prefab objects' IDs (their attributes), by prefab scene key
     and object name.
 - `energy`: points, lives and score (`Gameplay_Energy`, `Menu_Score`).
@@ -535,6 +538,22 @@ and useful to read). Since version 2.
     the `questions` the menus ask, by name (`Exit Game?`, `Restart
     Level?`, `Exit Level?`), each by language.
 
+- `music`: `Sound.nmo`'s `Music_Manager` and the last level's storm. Times
+  in milliseconds, sounds as bundle keys.
+  - `fade_ms`: the music fades in at the level start and out on leaving.
+  - `atmo` (one at a time, after random waits up to `atmo_gap_ms`) and
+    `themes` (by level, three each; the first wait starts `theme_start_ms`
+    in, then up to `theme_gap_ms`).
+  - `last_stage`: looped from the last checkpoint, fading out over
+    `last_stage_fade_out_ms`; within `near_end_distance` of the level end it
+    fades in and out (`near_end_fades_ms`). At the finish it fades out over
+    `finish_fade_out_ms` and `finish` (`last_finish` on the last level)
+    plays.
+  - `highscore`, `thunder`: the name entry's tune, the storm's thunder.
+  - `storm`: the first flash `first_ms` in, then every `gap_ms` (random
+    between the two): `color` along `flash`, thunder `thunder_delay_ms`
+    later.
+
 ## Versioning rules
 
 - Any change to entry layout or to a serialised type bumps `format_version`.
@@ -554,4 +573,5 @@ and useful to read). Since version 2.
   **18** adds the extra point's `look`, and its trail systems to
   `particles`. **19** adds `level_end` and `score_screen`. **20** adds
   `highscores`. **21** adds `menus` (the fonts move there from
-  `highscores`) and the table's `back_text`.
+  `highscores`) and the table's `back_text`. **22** adds `music` and
+  `sounds.flaps`.

@@ -90,7 +90,11 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      their texts (a *2D Text* on the button, or the level select's *Button*
      sub-graphs), the first active row, the row Escape picks (the *Identity*
      a *Secure Key* feeds), the sprites it shows and its keys; the Yes/No
-     question and the questions the menus give it → `data/physics.json`
+     question and the questions the menus give it. The music:
+     `Music_Manager`'s random waits, sounds (their locals' names), fades and
+     last-stage settings, the highscore and thunder sounds, each level's
+     theme set (`AllLevel`), the wooden flaps' hit sound, and
+     `Gameplay_Blitz`'s storm → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

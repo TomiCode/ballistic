@@ -20,6 +20,8 @@ pub struct SurfaceMaterial {
 pub struct SoundIds {
     pub hit: u8,
     pub roll: u8,
+    /// Part of the level group with its own hit sound (the wooden flaps).
+    pub flap: bool,
 }
 
 #[derive(Debug, Clone, Copy)]

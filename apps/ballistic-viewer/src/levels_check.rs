@@ -18,6 +18,7 @@ fn run(p: &mut Play, seconds: f32) {
         p.update(dt);
         p.take_level_visibility();
         p.take_sounds();
+        p.take_music();
         p.loops();
     }
 }

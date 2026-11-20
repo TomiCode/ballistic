@@ -214,6 +214,7 @@ pub fn object_sound(sounds: &bb::BallSounds, scene: &str, object: &str) -> Sound
         .map_or(SoundIds::default(), |o| SoundIds {
             hit: o.hit,
             roll: o.roll,
+            flap: false,
         })
 }
 

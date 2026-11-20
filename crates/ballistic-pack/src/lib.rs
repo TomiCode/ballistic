@@ -12,6 +12,7 @@ pub mod install;
 mod ktx2;
 mod menus;
 mod modules;
+mod music;
 pub mod pack;
 pub mod particles;
 mod physics;

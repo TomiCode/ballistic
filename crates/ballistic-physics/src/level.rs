@@ -30,8 +30,10 @@ pub fn build_level(scene: &bb::Scene, physics: &bb::PhysicsData) -> (StaticMesh,
         };
         let mut materials: HashMap<SoundIds, u32> = HashMap::new();
         let before = mesh.triangle_count();
+        let flap = s.group == physics.sounds.flaps.group;
         for &oi in &group.members {
-            let ids = sound.get(&(oi as usize)).copied().unwrap_or_default();
+            let mut ids = sound.get(&(oi as usize)).copied().unwrap_or_default();
+            ids.flap = flap;
             let material = *materials.entry(ids).or_insert_with(|| {
                 mesh.add_material(SurfaceMaterial {
                     friction: s.friction,

@@ -45,6 +45,8 @@ pub struct BallSoundsPlayer {
     playing: BTreeMap<String, bool>,
     last_pos: Option<Vec3>,
     speed: f32,
+    /// The wooden flaps' last hit (simulated seconds).
+    last_flap: Option<f64>,
 }
 
 impl BallSoundsPlayer {
@@ -64,6 +66,7 @@ impl BallSoundsPlayer {
             active: false,
             playing: BTreeMap::new(),
             last_pos: None,
+            last_flap: None,
             speed: 0.0,
         }
     }
@@ -100,6 +103,25 @@ impl BallSoundsPlayer {
                 self.speed = pos.distance(last) / real_dt;
             }
             self.last_pos = Some(pos);
+        }
+        // HitSound Woodenflaps: from Start Music on, whatever the control.
+        let f = &self.params.flaps;
+        if let Some((id, _)) = ball
+            && !f.sound.is_empty()
+        {
+            for h in hits.iter().filter(|h| h.body == id && h.other_sound.flap) {
+                if h.speed < f.min_speed
+                    || self
+                        .last_flap
+                        .is_some_and(|l| h.time - l < f64::from(f.sleep_s))
+                {
+                    continue;
+                }
+                self.last_flap = Some(h.time);
+                let range = (f.max_speed - f.min_speed).max(f32::EPSILON);
+                let volume = ((h.speed - f.min_speed) / range).clamp(0.0, 1.0);
+                out.push((f.sound.clone(), volume));
+            }
         }
         let Some(set) = self.set_of.get(ball_type).copied().flatten() else {
             return out;
@@ -210,6 +232,13 @@ mod tests {
             hit_groups: Vec::new(),
             roll_groups: Vec::new(),
             objects: Vec::new(),
+            flaps: ballistic_bundle::GroupHitSound {
+                group: "Phys_FloorStopper".into(),
+                sound: "hit_woodenflap".into(),
+                min_speed: 0.3,
+                max_speed: 10.0,
+                sleep_s: 0.5,
+            },
         }
     }
 
@@ -223,6 +252,7 @@ mod tests {
             active: true,
             playing: BTreeMap::new(),
             last_pos: None,
+            last_flap: None,
             speed: 0.0,
         }
     }
@@ -232,7 +262,10 @@ mod tests {
             body,
             other: None,
             speed,
-            other_sound: SoundIds { hit: id, roll: 0 },
+            other_sound: SoundIds {
+                hit: id,
+                ..SoundIds::default()
+            },
             point: Vec3::ZERO,
             time,
         }
@@ -271,12 +304,41 @@ mod tests {
     }
 
     #[test]
+    fn the_flaps_sound_in_their_speed_range_then_sleep() {
+        let mut p = player();
+        let mut world = World::new(WorldConfig::default(), StaticMesh::default());
+        let b = world.add_body(ballistic_physics::BodyDesc::default());
+        let flap = |speed, time| Collision {
+            other_sound: SoundIds {
+                flap: true,
+                ..SoundIds::default()
+            },
+            ..hit(b, 0, speed, time)
+        };
+        p.set_active(false);
+        let mut f =
+            |hits: &[Collision]| p.frame(&world, Some((b, Vec3::ZERO)), 0, hits, 1.0 / 60.0);
+        // (5.15 − 0.3) / (10 − 0.3) = 0.5; even with control off.
+        let out = f(&[flap(5.15, 1.0)]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].0, "hit_woodenflap");
+        assert!((out[0].1 - 0.5).abs() < 1e-4);
+        assert_eq!(f(&[flap(5.0, 1.4)]), Vec::new(), "asleep");
+        assert_eq!(f(&[flap(0.2, 2.0)]), Vec::new(), "too slow");
+        assert_eq!(f(&[flap(50.0, 2.0)]).first().map(|o| o.1), Some(1.0));
+    }
+
+    #[test]
     fn rolls_start_and_stop_after_their_delays() {
         // A sphere resting on a wood-roll floor.
         let mut m = StaticMesh::default();
         let mat = m.add_material(SurfaceMaterial {
             friction: 0.7,
-            sound: SoundIds { hit: 2, roll: 2 },
+            sound: SoundIds {
+                hit: 2,
+                roll: 2,
+                flap: false,
+            },
             ..SurfaceMaterial::default()
         });
         let s = 50.0;
@@ -306,10 +368,12 @@ mod tests {
             world.step();
             let hits = world.take_collisions();
             // Collisions carry what was hit.
-            assert!(
-                hits.iter()
-                    .all(|h| h.other_sound == SoundIds { hit: 2, roll: 2 })
-            );
+            assert!(hits.iter().all(|h| h.other_sound
+                == SoundIds {
+                    hit: 2,
+                    roll: 2,
+                    flap: false,
+                }));
             let pos = world.body(id).unwrap().position;
             p.frame(&world, Some((id, pos)), 0, &hits, 1.0 / 66.0);
             if started.is_none() && !p.loops().is_empty() {

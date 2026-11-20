@@ -39,6 +39,57 @@ pub struct PhysicsData {
     pub highscores: Highscores,
     /// The menus.
     pub menus: Menus,
+    /// The music, and the last level's storm.
+    pub music: Music,
+}
+
+/// The music (`Sound.nmo`'s `Music_Manager`) and the last level's storm
+/// (`Gameplay.nmo`'s `Gameplay_Blitz`). Sounds are bundle keys; times in
+/// milliseconds.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Music {
+    /// *Start Music* / *End Music* fade the music in and out this long.
+    pub fade_ms: f32,
+    /// `Music_Atmo`: one of these at a time, after a random wait up to
+    /// `atmo_gap_ms` (again after each).
+    pub atmo: Vec<String>,
+    pub atmo_gap_ms: f32,
+    /// `Music_Theme`: the level's three themes (`AllLevel`'s *Music* set), by
+    /// level; the first wait starts `theme_start_ms` into the level, then a
+    /// random wait up to `theme_gap_ms` before each.
+    pub themes: Vec<Vec<String>>,
+    pub theme_gap_ms: f32,
+    pub theme_start_ms: f32,
+    /// *Last Stage*: at the last checkpoint the themes stop and
+    /// `last_stage` (looping) sounds, fading out over
+    /// `last_stage_fade_out_ms`. Within `near_end_distance` of the level end
+    /// it fades in again (`near_end_fades_ms`: in, and out on leaving).
+    pub last_stage: String,
+    pub last_stage_fade_out_ms: f32,
+    pub near_end_distance: f32,
+    pub near_end_fades_ms: [f32; 2],
+    /// At the finish it fades out over `finish_fade_out_ms`, and `finish`
+    /// plays (`last_finish` on the last level).
+    pub finish_fade_out_ms: f32,
+    pub finish: String,
+    pub last_finish: String,
+    /// For a new highscore (`Menu_Highscore`).
+    pub highscore: String,
+    /// *Donner*.
+    pub thunder: String,
+    pub storm: Storm,
+}
+
+/// The last level's lightning: the first `first_ms` in, then every
+/// `gap_ms` (random between the two), a flash of `color` along `flash`, and
+/// the thunder `thunder_delay_ms` after it.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Storm {
+    pub first_ms: f32,
+    pub gap_ms: [f32; 2],
+    pub flash: Progression,
+    pub color: [f32; 4],
+    pub thunder_delay_ms: f32,
 }
 
 /// The menus (`Menu.nmo`). Keys are `DirectInput` scan codes.
@@ -401,6 +452,20 @@ pub struct BallSounds {
     pub roll_groups: Vec<SoundGroup>,
     /// Prefab objects' IDs (their attributes).
     pub objects: Vec<ObjectSoundIds>,
+    /// `HitSound Woodenflaps`: anything hitting this level group sounds.
+    pub flaps: GroupHitSound,
+}
+
+/// A level group's own hit sound (`PhysicsCollDetection`, *Play Sound
+/// Instance*): a hit between `min_speed` and `max_speed` (units per second)
+/// plays `sound` at the hit's place in that range; then it sleeps `sleep_s`.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct GroupHitSound {
+    pub group: String,
+    pub sound: String,
+    pub min_speed: f32,
+    pub max_speed: f32,
+    pub sleep_s: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

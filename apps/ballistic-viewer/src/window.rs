@@ -51,6 +51,7 @@ pub fn run(args: Args, bundle: Bundle) -> Result<()> {
         state: None,
         error: None,
         audio,
+        music_of: None,
     };
     event_loop.run_app(&mut app)?;
     match app.error {
@@ -65,6 +66,8 @@ struct App {
     state: Option<State>,
     error: Option<anyhow::Error>,
     audio: Option<crate::audio::Audio>,
+    /// The play mode whose music is playing ([`crate::play::Play::serial`]).
+    music_of: Option<u64>,
 }
 
 #[allow(
@@ -701,6 +704,39 @@ impl State {
     }
 }
 
+impl App {
+    /// The level's sounds and music this frame.
+    fn audio_frame(&mut self) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        // A new level (or none): the last one's music fades out.
+        let serial = state.play.as_ref().map(crate::play::Play::serial);
+        if serial != self.music_of {
+            self.music_of = serial;
+            if let Some(audio) = self.audio.as_mut() {
+                audio.end_music(1000.0);
+            }
+        }
+        if let (Some(play), Some(audio)) = (state.play.as_mut(), self.audio.as_mut()) {
+            for cmd in play.take_music() {
+                audio.music(&mut self.bundle, &cmd);
+            }
+        }
+        let paused = state.game.as_ref().is_some_and(crate::game::Game::paused);
+        if let Some(play) = state.play.as_mut() {
+            let sounds = play.take_sounds();
+            let loops = if paused { Vec::new() } else { play.loops() };
+            if let Some(audio) = self.audio.as_mut() {
+                for (key, volume, pitch) in sounds {
+                    audio.play(&mut self.bundle, &key, volume, pitch);
+                }
+                audio.sync_loops(&mut self.bundle, &loops);
+            }
+        }
+    }
+}
+
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.state.is_some() {
@@ -762,17 +798,7 @@ impl ApplicationHandler for App {
                     }
                     None => {}
                 }
-                let paused = state.game.as_ref().is_some_and(crate::game::Game::paused);
-                if let Some(play) = state.play.as_mut() {
-                    let sounds = play.take_sounds();
-                    let loops = if paused { Vec::new() } else { play.loops() };
-                    if let Some(audio) = self.audio.as_mut() {
-                        for (key, volume, pitch) in sounds {
-                            audio.play(&mut self.bundle, &key, volume, pitch);
-                        }
-                        audio.sync_loops(&mut self.bundle, &loops);
-                    }
-                }
+                self.audio_frame();
             }
             WindowEvent::Focused(false) => {
                 state.keys.clear();

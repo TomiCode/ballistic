@@ -4,6 +4,7 @@
 
 use std::collections::HashMap;
 use std::io::Cursor;
+use std::time::Duration;
 
 use kira::Tween;
 use kira::sound::static_sound::{StaticSoundData, StaticSoundHandle};
@@ -16,6 +17,10 @@ pub struct Audio {
     sounds: HashMap<String, Option<StaticSoundData>>,
     /// Looping sounds playing now, by key.
     loops: HashMap<String, StaticSoundHandle>,
+    /// Music voices, by the music player's ids.
+    music: HashMap<u32, StaticSoundHandle>,
+    /// The music's volume (0–1).
+    music_volume: f32,
 }
 
 impl Audio {
@@ -26,6 +31,8 @@ impl Audio {
                 manager,
                 sounds: HashMap::new(),
                 loops: HashMap::new(),
+                music: HashMap::new(),
+                music_volume: 0.0,
             }),
             Err(e) => {
                 eprintln!("warning: no audio output: {e}");
@@ -81,6 +88,64 @@ impl Audio {
         }
     }
 
+    /// Carries out a music command.
+    pub fn music(&mut self, bundle: &mut Bundle, cmd: &crate::music::Cmd) {
+        use crate::music::Cmd;
+        match cmd {
+            Cmd::Play {
+                id,
+                key,
+                fade_in_ms,
+                looped,
+            } => {
+                if let Some(old) = self.music.get_mut(id) {
+                    // Playing already (a fade out under way): fade back in.
+                    old.set_volume(decibels(self.music_volume), tween(*fade_in_ms));
+                    return;
+                }
+                let Some(mut data) = self.data(bundle, key) else {
+                    return;
+                };
+                if *looped {
+                    data = data.loop_region(..);
+                }
+                let start = if *fade_in_ms > 0.0 {
+                    Decibels::SILENCE
+                } else {
+                    decibels(self.music_volume)
+                };
+                match self.manager.play(data.volume(start)) {
+                    Ok(mut h) => {
+                        if *fade_in_ms > 0.0 {
+                            h.set_volume(decibels(self.music_volume), tween(*fade_in_ms));
+                        }
+                        self.music.insert(*id, h);
+                    }
+                    Err(e) => eprintln!("warning: playing music {key}: {e}"),
+                }
+            }
+            Cmd::Stop { id, fade_out_ms } => {
+                if let Some(mut h) = self.music.remove(id) {
+                    h.stop(tween(*fade_out_ms));
+                }
+            }
+            Cmd::Volume { volume, ms } => {
+                self.music_volume = *volume;
+                for h in self.music.values_mut() {
+                    h.set_volume(decibels(*volume), tween(*ms));
+                }
+            }
+        }
+    }
+
+    /// *End Music*: all music fades out over `ms` and stops.
+    pub fn end_music(&mut self, ms: f32) {
+        for (_, mut h) in self.music.drain() {
+            h.stop(tween(ms));
+        }
+        self.music_volume = 0.0;
+    }
+
     fn data(&mut self, bundle: &mut Bundle, key: &str) -> Option<StaticSoundData> {
         self.sounds
             .entry(key.to_owned())
@@ -94,6 +159,13 @@ impl Audio {
                     .ok()
             })
             .clone()
+    }
+}
+
+fn tween(ms: f32) -> Tween {
+    Tween {
+        duration: Duration::from_secs_f32(ms.max(0.0) / 1000.0),
+        ..Tween::default()
     }
 }
 

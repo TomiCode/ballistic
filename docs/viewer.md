@@ -258,7 +258,18 @@ silent if there's none):
   ball goes; the paper ball has one roll sound;
 - **events**, as the sound scripts play them: the level start, the
   lightning before each ball, a lost ball, a checkpoint, an extra life (and
-  317 ms later its jingle), an extra point and its small balls.
+  317 ms later its jingle), an extra point and its small balls;
+- the **wooden flaps** (`Phys_FloorStopper`): the ball hitting them faster
+  than 0.3, louder up to 10, at most every 0.5 s.
+
+**Music** (research findings 26): it fades in at the level start. Now and
+then (waits up to 15 s) one of three ambient pieces plays; from 7 s in, the
+level's themes the same way (waits up to 50 s). At the last checkpoint the
+themes stop and a loop sounds and fades out; near the level end it fades
+back in, and at the finish the finish music plays (another after the last
+level). A new highscore plays its tune. Leaving a level fades its music out.
+On the last level a storm flashes now and then (10 to 90 s apart), with
+thunder.
 
 Hits and rolls only sound while ball control is on: not during a
 transformation, nor after the finish. Surfaces get their kind from the level's
@@ -310,6 +321,5 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI
 - In play mode: the options' screens, the credits, the menu level's flight
-  and sky, clicking the highscore buttons, explosions, the other sounds (the
-  wooden flaps, the level finish, music), the screen fade, the paper pieces'
-  wind, the last level's UFO
+  and sky, clicking the highscore buttons, explosions, the screen fade, the
+  paper pieces' wind, the last level's UFO, volume settings

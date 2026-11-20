@@ -15,6 +15,7 @@ mod levels_check;
 mod life_look;
 mod menus;
 mod modules;
+mod music;
 mod particles;
 mod pickups;
 mod pieces;
@@ -402,6 +403,7 @@ fn screenshot(
                 }
                 // Headless: counted, not played.
                 p.take_sounds();
+                p.take_music();
                 p.loops();
                 // An explicit --camera stays put (to look at something else).
                 if args.camera.is_none() {

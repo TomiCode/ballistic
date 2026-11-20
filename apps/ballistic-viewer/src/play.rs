@@ -35,6 +35,7 @@ use crate::highscore_screens::{self, HighscoreScreens};
 use crate::hud::Hud;
 use crate::life_look::LifeLooks;
 use crate::modules::Modules;
+use crate::music::{self, MusicPlayer};
 use crate::pickups::{self, Pickups};
 use crate::pieces::Pieces;
 use crate::point_look::PointLooks;
@@ -164,6 +165,11 @@ pub struct Play {
     highscores: HighscoreScreens,
     /// While the highscore screens are on: the score, and what comes after.
     pending: Option<(i32, AfterScore)>,
+    music: MusicPlayer,
+    /// Music commands for the window.
+    music_cmds: Vec<music::Cmd>,
+    /// Tells play modes apart (a restart is a new one).
+    serial: u64,
 }
 
 fn key_index(k: PlayKey) -> usize {
@@ -256,6 +262,19 @@ impl Play {
             format,
             "english",
         )?;
+        let level_index = crate::energy::level_index(key);
+        let lengths = bundle
+            .manifest()
+            .sounds
+            .iter()
+            .map(|s| {
+                #[expect(clippy::cast_precision_loss, reason = "sound lengths")]
+                let ms = s.frames as f32 * 1000.0 / s.sample_rate.max(1) as f32;
+                (s.key.clone(), ms)
+            })
+            .collect();
+        let last_level = level_index.is_some_and(|i| i + 1 >= physics.highscores.defaults.len());
+        let music = MusicPlayer::new(&physics.music, lengths, level_index, last_level, None);
         let mut particles = ParticleRenderer::new(gpu, format);
         let mut particle_textures = std::collections::HashMap::new();
         let keys: Vec<Option<String>> = flames
@@ -356,9 +375,16 @@ impl Play {
             save,
             highscores,
             pending: None,
+            music,
+            music_cmds: Vec::new(),
+            serial: {
+                static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+                NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            },
         };
-        // Start Level, then the BallManager's New Ball.
+        // Start Level (and Start Music), then the BallManager's New Ball.
         play.events.emit("Start Level");
+        play.music.start_music();
         play.begin_new_ball();
         play.show_active_ball();
         Ok(play)
@@ -870,6 +896,7 @@ impl Play {
     /// `Level_Finish`: ball control off; the balloon lets go; the counter
     /// stops (the score screen's sum).
     fn finished(&mut self) {
+        self.music.level_finish();
         self.finished_at = Some((self.elapsed, self.world.steps));
         self.modules.level_finished(&mut self.world);
         self.nav_off();
@@ -931,7 +958,12 @@ impl Play {
         }
         for e in self.highscores.take_events() {
             match e {
-                highscore_screens::Event::Message(m) => self.events.emit(m),
+                highscore_screens::Event::Message(m) => {
+                    if m == "Menu_Highscore" {
+                        self.music.highscore();
+                    }
+                    self.events.emit(m);
+                }
                 highscore_screens::Event::Named(name) => self.named(&name),
                 highscore_screens::Event::Left => {
                     self.next_level = self.pending.take().map(|(_, next)| next);
@@ -1037,6 +1069,35 @@ impl Play {
         self.level_end.is_some() || self.score_screen.active() || self.highscores.active()
     }
 
+    /// The music and the storm, each frame.
+    fn music_frame(&mut self, real_dt: f32) {
+        let ball = self.ball_pose().map(|(p, _)| p);
+        let end = self.modules.level_end_platform(&self.world);
+        for key in self.music.frame(real_dt, ball, end) {
+            *self.sound_counts.entry(key.clone()).or_default() += 1;
+            self.sounds.push((key, 1.0, 1.0));
+        }
+        for c in self.music.take_cmds() {
+            if let music::Cmd::Play { key, .. } = &c {
+                *self
+                    .sound_counts
+                    .entry(format!("{key} (music)"))
+                    .or_default() += 1;
+            }
+            self.music_cmds.push(c);
+        }
+    }
+
+    /// This play mode's number (each one gets its own).
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+
+    /// Music commands since the last call.
+    pub fn take_music(&mut self) -> Vec<music::Cmd> {
+        std::mem::take(&mut self.music_cmds)
+    }
+
     /// Once, when the score screen is gone: what comes next.
     pub fn take_next_level(&mut self) -> Option<AfterScore> {
         self.next_level.take()
@@ -1046,6 +1107,7 @@ impl Play {
     pub fn update(&mut self, real_dt: f32) {
         self.hud.frame(real_dt);
         self.level_end_frame(real_dt);
+        self.music_frame(real_dt);
         if let Some(c) = self.clouds.as_mut() {
             c.frame(real_dt);
         }
@@ -1109,6 +1171,11 @@ impl Play {
                 Some(progress::Event::Checkpoint(i)) => {
                     self.events.emit("Checkpoint reached");
                     eprintln!("checkpoint {} reached", i + 1);
+                    // The next one is the level end.
+                    if self.progress.reached() == self.progress.checkpoint_count() {
+                        self.events.emit("last Checkpoint reached");
+                        self.music.last_checkpoint();
+                    }
                 }
                 Some(progress::Event::Finished) => self.finished(),
                 None => {}
@@ -1358,10 +1425,15 @@ impl Play {
     /// light and the scene's ambient, over the sky.
     pub fn scene_options(&self, opts: &RenderOptions) -> RenderOptions {
         let l = &self.lighting;
+        // The storm's flash lights everything.
+        let flash = self
+            .music
+            .flash()
+            .map_or(glam::Vec3::ZERO, |c| glam::Vec3::new(c[0], c[1], c[2]));
         RenderOptions {
             light_dir: l.towards_light,
-            light_color: l.light_color,
-            ambient: l.ambient,
+            light_color: l.light_color + flash,
+            ambient: l.ambient + flash,
             clear_color: l.background,
             keep_color: self.sky.is_some(),
             fog: None,

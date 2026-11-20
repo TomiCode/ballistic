@@ -207,6 +207,7 @@ pub fn extract(install: &Install, balls: &[bb::BallParams]) -> Result<bb::BallSo
         hit_groups,
         roll_groups,
         objects: object_ids(install)?,
+        flaps: crate::music::flaps(install)?,
     })
 }
 
