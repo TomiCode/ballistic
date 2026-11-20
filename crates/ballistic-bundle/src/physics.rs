@@ -56,6 +56,49 @@ pub struct ExtraLife {
     /// Prefab group.
     pub group: String,
     pub reach: WakeParams,
+    pub look: ExtraLifeLook,
+}
+
+/// How an extra life looks (`P_Extra_Life_MF Script`, `P_Extra_Life Anim
+/// Script`), by prefab object name.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ExtraLifeLook {
+    /// Shown while the ball is within this (X and Y) of it.
+    pub show_distance: f32,
+    pub sphere: String,
+    /// A sprite, the sphere's child.
+    pub ball: String,
+    pub shadow: String,
+    /// The shadow's material, whose emissive colour follows the bounce.
+    pub shadow_material: String,
+    /// Bouncing (only over a floor): the sphere's position, relative to the
+    /// prefab's frame, from `bounce_from` to `bounce_to` by the curve.
+    pub bounce_from: [f32; 3],
+    pub bounce_to: [f32; 3],
+    pub bounce: Progression,
+    pub shadow_from: [f32; 4],
+    pub shadow_to: [f32; 4],
+    /// Squashing: the sphere's scale, always.
+    pub squash_from: [f32; 3],
+    pub squash_to: [f32; 3],
+    pub squash: Progression,
+    /// The floor test: a ray from `floor_ray_origin` (in the frame) down
+    /// `floor_ray_depth`, against the level group `floor_group`.
+    pub floor_ray_origin: [f32; 3],
+    pub floor_ray_depth: f32,
+    pub floor_group: String,
+    /// `TT_TextureSine` on the sphere's texture coordinates.
+    pub uv_wave: UvWave,
+}
+
+/// `TT_TextureSine`: each vertex's (u, v) moves towards (0.5, 0.5) by
+/// cos and sin of time x `velocity` + (index / count - 0.5) x `spread`,
+/// scaled by `amplitude`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+pub struct UvWave {
+    pub amplitude: [f32; 2],
+    pub velocity: f32,
+    pub spread: f32,
 }
 
 /// `P_Extra_Point` (`TT Extra`): `activation_points` when the ball comes
@@ -495,7 +538,7 @@ pub struct RingPart {
 
 /// A *Bezier Progression*: over `duration_ms`, a value from 0 to 1 shaped by
 /// a curve.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Progression {
     pub duration_ms: f32,
     pub curve: Vec<CurvePoint>,

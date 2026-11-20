@@ -47,6 +47,7 @@ fn quad_scene(material: bb::Material) -> bb::Scene {
             mesh: Some(0),
             parent: None,
             hidden: false,
+            sprite: None,
         }],
         groups: vec![],
     }

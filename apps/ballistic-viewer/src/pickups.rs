@@ -133,7 +133,6 @@ impl Pickups {
             if on {
                 l.proximity.switch_on();
             }
-            self.visibility.push((l.marker, on));
         }
         for p in self.points.iter_mut().filter(|p| p.sector == sector) {
             if p.used {
@@ -152,7 +151,6 @@ impl Pickups {
             if l.proximity.frame(ball, l.at) == Some(Edge::Enter) {
                 l.taken = true;
                 l.proximity.switch_off();
-                self.visibility.push((l.marker, false));
                 out.push(Event::LifeUp(l.marker));
             }
         }
@@ -218,6 +216,16 @@ impl Pickups {
     }
 
     /// Level objects to show (`true`) or hide since the last call.
+    /// Each extra life's marker (level object) and whether it can show:
+    /// its sector active and not taken. Their markers stay hidden: their
+    /// looks are drawn instead ([`crate::life_look`]).
+    pub fn lives(&self) -> Vec<(usize, bool)> {
+        self.lives
+            .iter()
+            .map(|l| (l.marker, l.active && !l.taken))
+            .collect()
+    }
+
     pub fn take_visibility(&mut self) -> Vec<(usize, bool)> {
         std::mem::take(&mut self.visibility)
     }
@@ -273,6 +281,7 @@ mod tests {
                 life_bonus: 200,
                 level_bonus: Vec::new(),
                 extra_life: ballistic_bundle::ExtraLife {
+                    look: ballistic_bundle::ExtraLifeLook::default(),
                     group: String::new(),
                     reach: ballistic_bundle::WakeParams {
                         object: String::new(),

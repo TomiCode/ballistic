@@ -18,25 +18,26 @@ pub use manifest::{
 };
 pub use physics::{
     BallJointParams, BallParams, BallPieces, BallShape, BallSoundSet, BallSounds, CloudLayer,
-    CurvePoint, EmitterShape, EnergyParams, Environment, EventSound, ExtraLife, ExtraPoint,
-    ForceParams, Glyph, HingeParams, HitTest, Hud, HudFont, HudGlow, HudLives, HudSprite, HudText,
-    LevelEnvironment, LevelFlow, ModuleBody, ModuleSetup, ObjectSoundIds, ParticleEmitter,
-    ParticleRender, PhysicsData, PieceSounds, Progression, PropParams, RingPart, SkyParams,
-    SliderParams, SoundCue, SoundGroup, SpringAnchor, SpringParams, SurfaceParams, TextAlign,
-    TransformerAnimation, TransformerParams, TransformerType, Varied, WakeParams, curve_y,
+    CurvePoint, EmitterShape, EnergyParams, Environment, EventSound, ExtraLife, ExtraLifeLook,
+    ExtraPoint, ForceParams, Glyph, HingeParams, HitTest, Hud, HudFont, HudGlow, HudLives,
+    HudSprite, HudText, LevelEnvironment, LevelFlow, ModuleBody, ModuleSetup, ObjectSoundIds,
+    ParticleEmitter, ParticleRender, PhysicsData, PieceSounds, Progression, PropParams, RingPart,
+    SkyParams, SliderParams, SoundCue, SoundGroup, SpringAnchor, SpringParams, SurfaceParams,
+    TextAlign, TransformerAnimation, TransformerParams, TransformerType, UvWave, Varied,
+    WakeParams, curve_y,
 };
 pub use scene::{
     AddressMode, BlendFactor, CompareFunc, Group, Material, Mesh, ObjectKind, Scene, SceneObject,
-    Submesh, TextureBlend, Vertex,
+    Sprite, Submesh, TextureBlend, Vertex,
 };
 
 /// Value of [`Manifest::format`].
 pub const FORMAT_NAME: &str = "ballistic-bundle";
 /// Version of the bundle layout. Bump on any incompatible change.
 /// v2: adds `data/physics.json`.
-pub const FORMAT_VERSION: u32 = 16;
+pub const FORMAT_VERSION: u32 = 17;
 /// Version of the `.bscn` scene encoding.
-pub const SCENE_VERSION: u32 = 2;
+pub const SCENE_VERSION: u32 = 3;
 /// Magic at the start of every `.bscn` entry.
 pub const SCENE_MAGIC: &[u8; 8] = b"BLSCENE\0";
 

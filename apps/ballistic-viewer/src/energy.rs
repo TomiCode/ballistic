@@ -133,6 +133,7 @@ mod tests {
             life_bonus: 200,
             level_bonus: (1..=12).map(|l| l * 100).collect(),
             extra_life: ExtraLife {
+                look: ballistic_bundle::ExtraLifeLook::default(),
                 group: "P_Extra_Life".into(),
                 reach: WakeParams {
                     object: String::new(),

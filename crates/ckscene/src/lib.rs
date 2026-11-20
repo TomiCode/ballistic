@@ -19,6 +19,7 @@ mod group;
 mod light;
 mod material;
 mod mesh;
+mod sprite;
 mod texture;
 
 pub use decoded::{Decoded, decode_object};
@@ -30,6 +31,7 @@ pub use material::{
     AddressMode, BlendFactor, CompareFunc, FillMode, FilterMode, Material, ShadeMode, TextureBlend,
 };
 pub use mesh::{Face, Mesh};
+pub use sprite::Sprite3d;
 pub use texture::Texture;
 
 /// Object reference: index into [`ckfile::CkFile::objects`].

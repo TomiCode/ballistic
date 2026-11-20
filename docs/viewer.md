@@ -25,7 +25,7 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--screenshot out.png [--size 1920x1080]` | Render one frame off-screen and exit, no window |
 | `--exit-after <frames>` | Quit after N frames and print the average frame rate |
 | `--play` | Play mode: roll a ball on the level |
-| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:4,up:2,rotate+left:0.3` (the ball comes 3 s after the start). Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), `trafo` puts the ball on the nearest transformer of another type (shown ones first), `pickup` on the nearest extra life or extra point, `fan` 2 above the nearest fan in an active sector, and `lose` loses the ball (as **R**), all at the start of their segment. A checkpoint arms a while after the last one, so leave 2 s or more between `next`s. The summary then also prints the points, lives and score, and any moving element that fell below the level's depth cubes. With `--camera` too, the camera stays at that view instead of following the ball |
+| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:4,up:2,rotate+left:0.3` (the ball comes 3 s after the start). Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), `trafo` puts the ball on the nearest transformer of another type (shown ones first), `pickup` on the nearest extra life or extra point, `fan` 2 above the nearest fan in an active sector, `near` 8 from the nearest pickup (to look at it without taking it), and `lose` loses the ball (as **R**), all at the start of their segment. A checkpoint arms a while after the last one, so leave 2 s or more between `next`s. The summary then also prints the points, lives and score, and any moving element that fell below the level's depth cubes. With `--camera` too, the camera stays at that view instead of following the ball |
 
 The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 
@@ -147,10 +147,15 @@ good, and the window title shows the time since the level started.
   stays lost and control is off.
 - **Extra lives** (+1) and **extra points** (+100, then +20 for each of its
   six small balls as they reach the ball: 220 in all) are only there while
-  their sector is active. The level's placeholder markers stand in for them
-  until their own looks exist. Taking an extra life bursts its particles
-  (sparks and fizz lines). An extra life comes back when its sector is
-  entered again; an extra point doesn't.
+  their sector is active.
+  - An **extra life** looks like the original's (research findings 21): an
+    oily bubble with a silver ball inside, squashing, its texture swirling.
+    Over a floor it bounces, with a glowing shadow below. It shows while the
+    ball is within 60 on X and Y. Taking it bursts its particles (sparks and
+    fizz lines).
+  - An **extra point** is still the level's placeholder marker.
+  - An extra life comes back when its sector is entered again; an extra
+    point doesn't.
 - At the finish the score is printed: the level's bonus (100 × its number) +
   the points left + 200 per life left.
 - The status line shows the points and lives, and `[new ball]` or `[ball

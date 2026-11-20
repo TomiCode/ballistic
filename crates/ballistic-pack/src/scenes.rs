@@ -74,7 +74,19 @@ pub fn convert(
         let kind = match file.objects[i].class_id {
             ClassId::LIGHT | ClassId::TARGET_LIGHT => bb::ObjectKind::Light,
             ClassId::CAMERA | ClassId::TARGET_CAMERA => bb::ObjectKind::Camera,
+            ClassId::SPRITE_3D => bb::ObjectKind::Sprite,
             _ => bb::ObjectKind::Entity,
+        };
+        let sprite = match (kind, file.objects[i].chunk.as_ref()) {
+            (bb::ObjectKind::Sprite, Some(chunk)) => {
+                let s = ckscene::Sprite3d::decode(chunk)?;
+                Some(bb::Sprite {
+                    offset: s.offset,
+                    uv: s.uv,
+                    material: s.material.and_then(|m| cx.material(m)),
+                })
+            }
+            _ => None,
         };
         let mesh = match e.current_mesh {
             Some(m) => cx.mesh(m),
@@ -87,6 +99,7 @@ pub fn convert(
             mesh,
             parent: e.parent.and_then(|p| entity_map.get(&p).copied()),
             hidden: e.hidden,
+            sprite,
         });
     }
 

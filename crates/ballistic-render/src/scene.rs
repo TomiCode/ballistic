@@ -317,7 +317,7 @@ impl SceneRenderer {
                     vertices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                         label: Some(&m.name),
                         contents: &m.vertex_data,
-                        usage: wgpu::BufferUsages::VERTEX,
+                        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                     }),
                     // Index buffers must be 4-byte aligned in size.
                     indices: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -472,6 +472,15 @@ impl SceneRenderer {
     /// Changes a material's emissive colour (*Set Emissive*).
     pub fn set_material_emissive(&mut self, gpu: &Gpu, index: usize, rgba: [f32; 4]) {
         self.update_material(gpu, index, |u| u.emissive = rgba);
+    }
+
+    /// Replaces a mesh's vertices (same count; the scripts' vertex and UV
+    /// animations, e.g. `TT_TextureSine`).
+    pub fn set_mesh_vertices(&mut self, gpu: &Gpu, mesh: usize, vertices: &[bb::Vertex]) {
+        if let Some(m) = self.meshes.get(mesh) {
+            gpu.queue
+                .write_buffer(&m.vertices, 0, bytemuck::cast_slice(vertices));
+        }
     }
 
     /// Changes a material's blending and depth writes (the scripts' *Set

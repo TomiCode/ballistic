@@ -47,6 +47,7 @@ fn sample_scene() -> Scene {
             mesh: Some(0),
             parent: None,
             hidden: false,
+            sprite: None,
         }],
         groups: vec![Group {
             name: "Phys_Floors".into(),

@@ -12,10 +12,24 @@ pub struct EncodedTexture {
     pub ktx2: Vec<u8>,
 }
 
-pub fn encode_file(path: &Path, key: &str, encoding: TextureEncoding) -> Result<EncodedTexture> {
-    let img = image::open(path)
+/// `color_key`: black pixels become transparent (a texture with colour
+/// keying on, research findings 07).
+pub fn encode_file(
+    path: &Path,
+    key: &str,
+    encoding: TextureEncoding,
+    color_key: bool,
+) -> Result<EncodedTexture> {
+    let mut img = image::open(path)
         .with_context(|| format!("decoding {}", path.display()))?
         .to_rgba8();
+    if color_key {
+        for p in img.pixels_mut() {
+            if p.0[..3] == [0, 0, 0] {
+                p.0[3] = 0;
+            }
+        }
+    }
     Ok(encode(&img, key, encoding))
 }
 

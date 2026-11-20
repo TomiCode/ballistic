@@ -10,6 +10,7 @@ mod follow;
 mod hud;
 #[cfg(test)]
 mod levels_check;
+mod life_look;
 mod modules;
 mod particles;
 mod pickups;
@@ -213,6 +214,8 @@ pub struct Segment {
     pub pickup: bool,
     /// Put the ball at the nearest fan in an active sector first.
     pub fan: bool,
+    /// Put the ball 8 from the nearest pickup first.
+    pub near: bool,
     /// Lose the ball first (as **R**).
     pub lose: bool,
 }
@@ -236,6 +239,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
             let trafo = keys.split('+').any(|k| k.trim() == "trafo");
             let pickup = keys.split('+').any(|k| k.trim() == "pickup");
             let fan = keys.split('+').any(|k| k.trim() == "fan");
+            let near = keys.split('+').any(|k| k.trim() == "near");
             let lose = keys.split('+').any(|k| k.trim() == "lose");
             let keys = keys
                 .split('+')
@@ -246,7 +250,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                     "right" => Some(Ok(K::Right)),
                     "rotate" => Some(Ok(K::Rotate)),
                     "lift" => Some(Ok(K::Lift)),
-                    "wait" | "next" | "wake" | "trafo" | "pickup" | "fan" | "lose" => None,
+                    "wait" | "next" | "wake" | "trafo" | "pickup" | "fan" | "near" | "lose" => None,
                     other => Some(Err(anyhow::anyhow!("unknown key {other:?}"))),
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -258,6 +262,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                 trafo,
                 pickup,
                 fan,
+                near,
                 lose,
             })
         })
@@ -308,6 +313,9 @@ fn screenshot(
             if seg.fan {
                 p.warp_to_fan();
             }
+            if seg.near {
+                p.warp_near_pickup();
+            }
             if seg.pickup {
                 p.warp_to_pickup();
             }
@@ -355,9 +363,10 @@ fn screenshot(
         );
         eprintln!("{}", p.energy_summary());
         eprintln!(
-            "flames burning: {}, fans running: {}",
+            "flames burning: {}, fans running: {}, extra lives shown: {}",
             p.flames_burning(),
-            p.fans_running()
+            p.fans_running(),
+            p.lives_shown()
         );
         let fallen = p.fallen_modules();
         if !fallen.is_empty() {

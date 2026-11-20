@@ -32,6 +32,7 @@ use crate::flames::Flames;
 use crate::flow::{BallPhase, DepthCubes, EventSounds, LOST_CHECK_FRAMES};
 use crate::follow::Follow;
 use crate::hud::Hud;
+use crate::life_look::LifeLooks;
 use crate::modules::Modules;
 use crate::pickups::{self, Pickups};
 use crate::pieces::Pieces;
@@ -107,6 +108,7 @@ pub struct Play {
     clouds: Option<Clouds>,
     flames: Flames,
     effects: Effects,
+    life_looks: LifeLooks,
     particles: ParticleRenderer,
     /// Texture key (`None`: white) → the particle renderer's texture.
     particle_textures: std::collections::HashMap<Option<String>, usize>,
@@ -207,10 +209,16 @@ impl Play {
         let clouds = Clouds::new(&physics.environment, key, level);
         let flames = Flames::new(level, &physics.particles, |k| bundle.scene(k).ok());
         let effects = Effects::new(level, &physics.particles, |k| bundle.scene(k).ok());
+        let life_looks = LifeLooks::new(gpu, bundle, level, &physics.energy.extra_life, format)?;
         let mut particles = ParticleRenderer::new(gpu, format);
         let mut particle_textures = std::collections::HashMap::new();
-        for e in flames.emitters().chain(effects.emitters()) {
-            let key = e.params.texture.clone();
+        let keys: Vec<Option<String>> = flames
+            .emitters()
+            .chain(effects.emitters())
+            .map(|e| e.params.texture.clone())
+            .chain(life_looks.sprite_textures())
+            .collect();
+        for key in keys {
             if particle_textures.contains_key(&key) {
                 continue;
             }
@@ -273,6 +281,7 @@ impl Play {
             clouds,
             flames,
             effects,
+            life_looks,
             particles,
             particle_textures,
             score: None,
@@ -450,6 +459,22 @@ impl Play {
             .min_by(|a, b| a.distance(ball).total_cmp(&b.distance(ball)));
         if let Some(target) = nearest {
             let at = target + Vec3::Y * 2.0;
+            self.world.reset_body(id, at);
+            self.follow.reset(at, self.heading_view);
+        }
+    }
+
+    /// Development aid: puts the ball, at rest, 8 from the nearest pickup
+    /// (towards where it was), to look at it without taking it.
+    pub fn warp_near_pickup(&mut self) {
+        let Some(id) = self.ball_id() else { return };
+        let Some(ball) = self.world.body(id).map(|b| b.position) else {
+            return;
+        };
+        if let Some(target) = self.pickups.nearest(ball) {
+            let mut away = ball - target;
+            away.y = 0.0;
+            let at = target + away.normalize_or(Vec3::X) * 8.0;
             self.world.reset_body(id, at);
             self.follow.reset(at, self.heading_view);
         }
@@ -882,6 +907,8 @@ impl Play {
         let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
         let reached = self.progress.reached();
         self.flames.update(ball, reached, real_dt * 1000.0);
+        let lives = self.pickups.lives();
+        self.life_looks.update(ball, &lives, real_dt);
         let fans = self.modules.fans();
         self.effects.update(ball, &fans, real_dt * 1000.0);
         if !self.camera_frozen {
@@ -900,6 +927,7 @@ impl Play {
             .chain(&self.modules.placeholders)
             .chain(&self.transformers.placeholders)
             .copied()
+            .chain(self.pickups.lives().into_iter().map(|(marker, _)| marker))
     }
 
     /// (modules placed, modules simulated).
@@ -998,6 +1026,8 @@ impl Play {
         );
         self.transformers
             .render(gpu, encoder, color, depth, camera, aspect, &opts);
+        self.life_looks
+            .render(gpu, encoder, color, depth, camera, aspect, &opts);
         self.render_particles(gpu, encoder, color, depth, camera, aspect);
     }
 
@@ -1009,6 +1039,11 @@ impl Play {
     /// Fans whose particles run now (for headless runs).
     pub fn fans_running(&self) -> usize {
         self.effects.fans_running()
+    }
+
+    /// Extra lives shown now (for headless runs).
+    pub fn lives_shown(&self) -> usize {
+        self.life_looks.shown()
     }
 
     /// The particle systems, last (blended, no depth writes).
@@ -1049,6 +1084,12 @@ impl Play {
                 });
             let g = &mut groups[i];
             e.vertices(facing, &mut g.2, &mut g.3);
+        }
+        // The extra lives' silver balls (sprites).
+        if let Some((key, blend, quads)) = self.life_looks.sprites(facing)
+            && let Some(&texture) = self.particle_textures.get(&key)
+        {
+            groups.push((texture, blend, quads, Vec::new()));
         }
         let batches: Vec<ParticleBatch<'_>> = groups
             .iter()

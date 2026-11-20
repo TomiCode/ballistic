@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 16,
+  "format_version": 17,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -47,7 +47,7 @@ support, and tells the user to re-run the packer. The manifest has no timestamps
 
 ```
 8 bytes  magic   "BLSCENE\0"
-u32 LE   scene format version (2)
+u32 LE   scene format version (3)
 …        postcard-encoded `Scene` (see `crates/ballistic-bundle/src/scene.rs`)
 ```
 
@@ -60,11 +60,14 @@ ball models, the menu background):
   GPU as-is. Faces are sorted into **submeshes**, one per material.
   `visible` is false for collision and helper meshes: physics uses them, the
   renderer doesn't draw them.
+- **objects** of kind `Sprite` carry `sprite`: a 1 x 1 quad (scaled by the
+  object's transform) facing the camera, with its pivot `offset`, texture
+  rectangle `uv` and `material`.
 - **materials**: the original's fixed-function material state as plain enums.
   Colours are `[f32; 4]` RGBA in the original's gamma space. Textures are
   referenced by key.
 - **objects**: name, world transform, optional mesh, optional parent, kind
-  (entity, light, camera), hidden flag.
+  (entity, light, camera, sprite), hidden flag.
 - **groups**: name and member object indices. Group names carry the gameplay
   meaning (`Phys_Floors`, `PC_Checkpoints`, `Sector_01`, …). Resolving them into
   gameplay structures happens in a later version of the format.
@@ -192,7 +195,16 @@ and useful to read). Since version 2.
     "start_points": 1000, "start_lives": 3, "tick_ms": 500.0, "life_bonus": 200,
     "level_bonus": [100, 200, "…", 1200],
     "extra_life": { "group": "P_Extra_Life",
-      "reach": { "object": "P_Extra_Life_MF", "distance": 4.5, "…": "…" } },
+      "reach": { "object": "P_Extra_Life_MF", "distance": 4.5, "…": "…" },
+      "look": { "show_distance": 60.0, "sphere": "P_Extra_Life_Sphere",
+        "ball": "P_Extra_Life_SilverBall", "shadow": "P_Extra_Life_Shadow",
+        "shadow_material": "P_Extra_Life_Schatten",
+        "bounce_from": [0.0, -0.4, 0.0], "bounce_to": [0.0, 1.2, 0.0], "bounce": "…",
+        "shadow_from": [0.6, 0.47, 0.66, 0.0], "shadow_to": [0.28, 0.2, 0.32, 0.0],
+        "squash_from": [1.0, 1.2, 1.0], "squash_to": [1.0, 0.8, 1.0], "squash": "…",
+        "floor_ray_origin": [0.0, -2.0, 0.0], "floor_ray_depth": 1.5,
+        "floor_group": "Phys_Floors",
+        "uv_wave": { "amplitude": [0.2, 0.2], "velocity": 1.0, "spread": 4.0 } } },
     "extra_point": { "group": "P_Extra_Point", "small_balls": 6,
       "activation_distance": 3.0, "hit_distance": 4.0, "away_force": 1.0,
       "away_damping": 0.3, "away_ms": 1000.0, "force": 0.12, "damping": 0.95,
@@ -344,7 +356,11 @@ and useful to read). Since version 2.
   - The score is the level's `level_bonus` (in level order) + the points
     left + the lives left × `life_bonus`.
   - `extra_life`: one life more when the ball passes the `reach` proximity
-    test of a `P_Extra_Life`.
+    test of a `P_Extra_Life`. `look`: its prefab objects (by name), shown
+    within `show_distance` on X and Y; the sphere's squash (scale) always and
+    its bounce (position in the frame, with the shadow material's emissive)
+    over a floor (the ray), each from/to by a 2 s curve, looping; the texture
+    wave on the sphere's texture coordinates.
   - `extra_point`: `activation_points` when the ball comes within
     `activation_distance`, then `hit_points` per small ball (of
     `small_balls`) that reaches it. The rest are *TT Extra*'s flight
@@ -420,4 +436,5 @@ and useful to read). Since version 2.
   `sound` and the pieces' `sounds`. **10** adds the ball's `sounds`. **11**
   adds `energy`. **12** adds `flow`, and `delay_ms` to sound cues. **13** adds `hud`. **14** adds
   `environment`. **15** adds `particles`. **16** adds the
-  meshes' `visible` (scene encoding 2).
+  meshes' `visible` (scene encoding 2). **17** adds sprite objects (scene
+  encoding 3) and the extra life's `look`; colour-keyed textures get alpha.

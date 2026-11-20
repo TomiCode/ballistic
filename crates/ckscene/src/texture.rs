@@ -22,6 +22,9 @@ pub struct Texture {
     /// Requested video-memory pixel format (raw: 1 for 32-bit with alpha, 6 for
     /// most BMPs; meaning tentative).
     pub video_format: Option<u32>,
+    /// Colour keying on (options word bit `0x100`): its black pixels are
+    /// transparent. Only `ExtraBall` has it.
+    pub color_key: bool,
     pub hidden: bool,
 }
 
@@ -47,12 +50,13 @@ impl Texture {
                 bpp = Some(w[10]);
             }
         }
-        let video_format = match chunk.section(SECTION_OPTIONS)? {
+        let (video_format, color_key) = match chunk.section(SECTION_OPTIONS)? {
             Some(mut o) if o.remaining() >= 3 => {
-                o.skip(2)?;
-                Some(o.u32()?)
+                let options = o.u32()?;
+                o.skip(1)?;
+                (Some(o.u32()?), options & 0x100 != 0)
             }
-            _ => None,
+            _ => (None, false),
         };
         Ok(Self {
             files,
@@ -61,6 +65,7 @@ impl Texture {
             bits_per_pixel: bpp,
             source_format,
             video_format,
+            color_key,
             hidden: is_hidden(chunk)?,
         })
     }

@@ -43,7 +43,9 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      right-handed coordinate system. Files without geometry are skipped, except
      prefabs (`3D Entities/PH/`), whose frames the engine uses (e.g. a
      checkpoint's flame position)
-   - textures (BMP/TGA) → KTX2 with a full mip chain, BC1 (opaque) or BC3 (alpha)
+   - textures (BMP/TGA) → KTX2 with a full mip chain, BC1 (opaque) or BC3 (alpha).
+     A texture some texture object has colour keying on for (`ExtraBall`) gets
+     its black made transparent
    - sounds (WAV) → Ogg Vorbis
    - physics parameters (gravity, time factor, ball types, level surfaces,
      props) read from the original's scripts and tables, and each moving

@@ -145,6 +145,20 @@ pub enum ObjectKind {
     Entity,
     Light,
     Camera,
+    /// A camera-facing quad ([`SceneObject::sprite`]).
+    Sprite,
+}
+
+/// A 3D sprite: a 1 x 1 quad (scaled by the object's transform) facing the
+/// camera.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sprite {
+    /// The quad's pivot within it (0.5, 0.5: centred).
+    pub offset: [f32; 2],
+    /// Left, top, right, bottom in texture coordinates.
+    pub uv: [f32; 4],
+    /// Index into [`Scene::materials`].
+    pub material: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -159,6 +173,8 @@ pub struct SceneObject {
     pub parent: Option<u32>,
     /// Hidden when the scene loads (scripts may show it later).
     pub hidden: bool,
+    /// For [`ObjectKind::Sprite`].
+    pub sprite: Option<Sprite>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

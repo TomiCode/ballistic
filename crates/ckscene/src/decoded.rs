@@ -29,7 +29,8 @@ pub fn decode_object(obj: &FileObject) -> Option<Result<Decoded>> {
         | ClassId::CAMERA
         | ClassId::TARGET_CAMERA
         | ClassId::LIGHT
-        | ClassId::TARGET_LIGHT => Entity3d::decode(chunk).map(Decoded::Entity),
+        | ClassId::TARGET_LIGHT
+        | ClassId::SPRITE_3D => Entity3d::decode(chunk).map(Decoded::Entity),
         _ => return None,
     })
 }

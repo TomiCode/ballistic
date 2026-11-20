@@ -11,7 +11,7 @@ use ckscript::extract::{Extractor, NodeParams};
 
 use crate::install::Install;
 use crate::physics::load;
-use crate::transformers::{float, input, text};
+use crate::transformers::{float, input, progression, target, text, vector, writer_of};
 
 pub fn extract(install: &Install) -> Result<bb::EnergyParams> {
     let g = load(install, "3d entities/gameplay.nmo")?;
@@ -54,6 +54,113 @@ fn extra_life(install: &Install) -> Result<bb::ExtraLife> {
     Ok(bb::ExtraLife {
         group: "P_Extra_Life".into(),
         reach,
+        look: extra_life_look(install)?,
+    })
+}
+
+/// `TT_TextureSine`'s phase spread over the vertices (a constant in
+/// `TT_Gravity_RT.dll`, `0x10010274`).
+const UV_WAVE_SPREAD: f32 = 4.0;
+
+/// `P_Extra_Life_MF Script` and `P_Extra_Life Anim Script`: which objects
+/// show, and the animation, followed from its targets back through the
+/// interpolators to their progressions.
+fn extra_life_look(install: &Install) -> Result<bb::ExtraLifeLook> {
+    let g = load(install, "3d entities/ph/p_extra_life.nmo")?;
+    let nodes = Extractor::new(&g.file, &g.scripts).nodes(&|_| true);
+    let anim = |bb_name: &str| {
+        nodes
+            .iter()
+            .find(|n| {
+                n.building_block == bb_name
+                    && n.path.iter().any(|p| p == "P_Extra_Life Anim Script")
+            })
+            .with_context(|| format!("P_Extra_Life Anim Script: {bb_name} not found"))
+    };
+    let node = |id| nodes.iter().find(|n| n.node == id);
+    // The interpolator feeding `pin` of `n`, and the progression feeding it.
+    let driven = |n: &NodeParams, pin: &str| -> Result<(&NodeParams, &NodeParams)> {
+        let interp = writer_of(&g.file, &g.scripts, n.node, pin)
+            .and_then(node)
+            .with_context(|| format!("{}: {pin} isn't interpolated", n.building_block))?;
+        let prog = writer_of(&g.file, &g.scripts, interp.node, "Value")
+            .and_then(node)
+            .with_context(|| format!("{}: no progression", n.building_block))?;
+        Ok((interp, prog))
+    };
+    let vec3 = |n: &NodeParams, pin: &str| -> Result<[f32; 3]> {
+        vector(input(n, pin))
+            .and_then(|v| <[f32; 3]>::try_from(v).ok())
+            .with_context(|| format!("{}: {pin}", n.building_block))
+    };
+    let color = |n: &NodeParams, pin: &str| -> Result<[f32; 4]> {
+        vector(input(n, pin))
+            .and_then(|v| <[f32; 4]>::try_from(v).ok())
+            .with_context(|| format!("{}: {pin}", n.building_block))
+    };
+    let mirror = |v: [f32; 3]| [v[0], v[1], -v[2]];
+
+    let set_position = anim("Set Position")?;
+    let (bounce_i, bounce_p) = driven(set_position, "Position")?;
+    let scale = anim("Scale")?;
+    let (squash_i, squash_p) = driven(scale, "Scaling Vector")?;
+    let emissive = anim("Set Emissive")?;
+    let (shadow_i, _) = driven(emissive, "Emissive Color")?;
+    let sphere = target(scale).context("Scale: target")?;
+    let shadow = target(anim("Show")?).context("Show: target")?;
+    let sine = anim("TT_TextureSine")?;
+
+    let main = |bb_name: &str| {
+        nodes
+            .iter()
+            .filter(|n| {
+                n.building_block == bb_name && n.path.iter().any(|p| p == "P_Extra_Life_MF Script")
+            })
+            .collect::<Vec<_>>()
+    };
+    let ball = main("Show")
+        .into_iter()
+        .filter_map(target)
+        .find(|t| *t != sphere && *t != shadow)
+        .context("P_Extra_Life_MF Script: the ball sprite")?;
+    let show_distance = main("TT Scaleable Proximity")
+        .into_iter()
+        .filter_map(|n| float(input(n, "Distance")))
+        .fold(0.0_f32, f32::max);
+    let ray = main("Ray Intersection")
+        .into_iter()
+        .next()
+        .context("P_Extra_Life_MF Script: Ray Intersection")?;
+    let floor_group = writer_of(&g.file, &g.scripts, ray.node, "Filter")
+        .and_then(node)
+        .and_then(|op| text(input(op, "p1")))
+        .context("Ray Intersection: the floor group")?;
+
+    Ok(bb::ExtraLifeLook {
+        show_distance,
+        sphere,
+        ball,
+        shadow,
+        shadow_material: target(emissive).context("Set Emissive: target")?,
+        bounce_from: mirror(vec3(bounce_i, "A")?),
+        bounce_to: mirror(vec3(bounce_i, "B")?),
+        bounce: progression(bounce_p)?,
+        shadow_from: color(shadow_i, "A")?,
+        shadow_to: color(shadow_i, "B")?,
+        squash_from: vec3(squash_i, "A")?,
+        squash_to: vec3(squash_i, "B")?,
+        squash: progression(squash_p)?,
+        floor_ray_origin: mirror(vec3(ray, "Ray Origin")?),
+        floor_ray_depth: float(input(ray, "Depth")).context("Ray Intersection: Depth")?,
+        floor_group,
+        uv_wave: bb::UvWave {
+            amplitude: [
+                float(input(sine, "X Amplitude")).context("TT_TextureSine: X Amplitude")?,
+                float(input(sine, "Y Amplitude")).context("TT_TextureSine: Y Amplitude")?,
+            ],
+            velocity: float(input(sine, "Velocity")).context("TT_TextureSine: Velocity")?,
+            spread: UV_WAVE_SPREAD,
+        },
     })
 }
 
@@ -93,4 +200,30 @@ fn extra_point(install: &Install) -> Result<bb::ExtraPoint> {
         hit_points: points[1],
         hit_frames,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Needs `BALLANCE_DIR`; skipped otherwise.
+    #[test]
+    fn extracts_the_extra_life_look() {
+        let Some(dir) = std::env::var_os("BALLANCE_DIR") else {
+            eprintln!("skipping: BALLANCE_DIR not set");
+            return;
+        };
+        let install = Install::index(std::path::Path::new(&dir)).unwrap();
+        let look = extra_life_look(&install).unwrap();
+        assert_eq!(look.sphere, "P_Extra_Life_Sphere");
+        assert_eq!(look.ball, "P_Extra_Life_SilverBall");
+        assert_eq!(look.shadow, "P_Extra_Life_Shadow");
+        assert_eq!(look.shadow_material, "P_Extra_Life_Schatten");
+        assert!((look.show_distance - 60.0).abs() < 1e-4);
+        assert_eq!(look.bounce_to[1], 1.2);
+        assert_eq!(look.squash_from, [1.0, 1.2, 1.0]);
+        assert!((look.bounce.duration_ms - 2000.0).abs() < 1e-3);
+        assert_eq!(look.floor_group, "Phys_Floors");
+        assert!((look.uv_wave.amplitude[0] - 0.2).abs() < 1e-6);
+    }
 }

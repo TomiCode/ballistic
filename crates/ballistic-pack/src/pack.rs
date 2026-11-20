@@ -113,6 +113,48 @@ impl Resolver {
     }
 }
 
+/// Encodes the textures; colour-keyed ones get transparent black.
+fn encode_textures(
+    inputs: &Inputs,
+    resolver: &Resolver,
+    encoding: TextureEncoding,
+) -> Result<Vec<textures::EncodedTexture>> {
+    let keyed = color_keyed(&inputs.scenes, resolver)?;
+    inputs
+        .textures
+        .par_iter()
+        .map(|(key, path)| textures::encode_file(path, key, encoding, keyed.contains(key)))
+        .collect()
+}
+
+/// The texture keys some texture object in the scenes has colour keying on
+/// for.
+fn color_keyed(
+    scenes: &[(String, &Path)],
+    resolver: &Resolver,
+) -> Result<std::collections::BTreeSet<String>> {
+    use scenes::TextureResolver;
+    let mut keyed = std::collections::BTreeSet::new();
+    for (_, path) in scenes {
+        let file =
+            ckfile::CkFile::open(path).with_context(|| format!("reading {}", path.display()))?;
+        for o in &file.objects {
+            if o.class_id != ckfile::ClassId::TEXTURE {
+                continue;
+            }
+            let Some(Ok(ckscene::Decoded::Texture(t))) = ckscene::decode_object(o) else {
+                continue;
+            };
+            if let (true, Some(f)) = (t.color_key, t.file())
+                && let Some(key) = resolver.resolve(f)
+            {
+                keyed.insert(key);
+            }
+        }
+    }
+    Ok(keyed)
+}
+
 impl scenes::TextureResolver for Resolver {
     fn resolve(&self, file_name: &str) -> Option<String> {
         let name = file_name
@@ -140,15 +182,10 @@ pub fn build(opts: &Options) -> Result<Report> {
         ));
     }
 
-    // Textures.
-    let encoded_textures: Vec<textures::EncodedTexture> = inputs
-        .textures
-        .par_iter()
-        .map(|(key, path)| textures::encode_file(path, key, opts.texture_encoding))
-        .collect::<Result<_>>()?;
+    let resolver = Resolver::new(&inputs.textures);
+    let encoded_textures = encode_textures(&inputs, &resolver, opts.texture_encoding)?;
 
     // Scenes.
-    let resolver = Resolver::new(&inputs.textures);
     let converted: Vec<Option<(String, scenes::Converted)>> = inputs
         .scenes
         .par_iter()
