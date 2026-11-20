@@ -1,7 +1,7 @@
 //! The push-stone puzzle (`P_Modul_34`), headless: a stone on a vertical
 //! slider over a crate. Pushed by a stone ball, the crate slides out and the
 //! stone stays on its line; with the crate gone, the stone drops into its
-//! place and rests there. Needs `BALLISTIC_BUNDLE` and a GPU adapter; skipped
+//! place and rests there. And the pusher (`P_Modul_01`) stays in its channel. Needs `BALLISTIC_BUNDLE` and a GPU adapter; skipped
 //! otherwise.
 
 use ballistic_bundle::BundleReader;
@@ -108,6 +108,88 @@ fn the_push_stone_drops_into_the_crates_place() {
             assert!(
                 (drop + 4.8).abs() < 0.2,
                 "level {level} {dir}: the stone dropped {drop}"
+            );
+        }
+    }
+}
+
+/// Levels with the pusher (`P_Modul_01`) whose every pusher a stone ball
+/// can reach from where the test puts it.
+const PUSHER_LEVELS: [u32; 4] = [7, 9, 10, 11];
+
+/// The pusher: a stone ball against its disc shoves it 5 along its channel,
+/// where the disc meets the channel walls' ends. It stays in the channel
+/// (it was once thrown sideways through a wall there and fell).
+#[test]
+fn the_pusher_stops_in_its_channel() {
+    let Some(path) = std::env::var_os("BALLISTIC_BUNDLE") else {
+        eprintln!("skipping: BALLISTIC_BUNDLE not set");
+        return;
+    };
+    let Ok(gpu) = pollster::block_on(Gpu::headless()) else {
+        eprintln!("skipping: no GPU adapter");
+        return;
+    };
+    let mut bundle: Bundle = BundleReader::open(path).unwrap();
+    let physics = bundle.physics().unwrap();
+    let stone = physics
+        .balls
+        .iter()
+        .find(|b| b.name == "Ball_Stone")
+        .unwrap()
+        .clone();
+    let save = SaveFile::in_memory(&physics.highscores).shared();
+    for level in PUSHER_LEVELS {
+        let key = format!("level/level_{level:02}");
+        let scene = bundle.scene(&key).unwrap();
+        let sectors = {
+            let mut p = Play::new(
+                &gpu,
+                &mut bundle,
+                &key,
+                &scene,
+                OFFSCREEN_FORMAT,
+                save.clone(),
+            )
+            .unwrap();
+            step(&mut p, 0.1);
+            p.module_sectors("P_Modul_01")
+        };
+        for (m, sector) in sectors.into_iter().enumerate() {
+            let mut p = Play::new(
+                &gpu,
+                &mut bundle,
+                &key,
+                &scene,
+                OFFSCREEN_FORMAT,
+                save.clone(),
+            )
+            .unwrap();
+            step(&mut p, 0.1);
+            p.activate_sector_for_test(sector);
+            let pusher = p.module_bodies("P_Modul_01")[m][0];
+            let b0 = p.world.body(pusher).unwrap();
+            let (c0, q) = (b0.position, b0.orientation);
+            p.world.wake(pusher);
+            // In front of the disc (the pusher's own −X end), on the floor.
+            let r = stone.shape.radius();
+            let ball = p.world.add_body(BodyDesc {
+                position: c0 + q * Vec3::new(-8.01 - r - 0.3, 1.49 + r + 0.05, 0.0),
+                shape: Shape::Sphere { radius: r },
+                mass: stone.mass,
+                friction: stone.friction,
+                elasticity: stone.elasticity,
+                linear_damping: stone.linear_damping,
+                rotational_damping: stone.rotational_damping,
+                group: stone.collision_group.clone(),
+                ..BodyDesc::default()
+            });
+            p.world.add_push(ball, q * Vec3::X, stone.force);
+            step(&mut p, 12.0);
+            let at = q.inverse() * (p.world.body(pusher).unwrap().position - c0);
+            assert!(
+                (at.x - 5.0).abs() < 0.05 && at.y.abs() < 0.2 && at.z.abs() < 0.15,
+                "level {level} pusher {m}: at {at} in its own frame"
             );
         }
     }

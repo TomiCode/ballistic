@@ -289,9 +289,16 @@ const FACE_REL: f32 = 0.98;
 const EDGE_REL: f32 = 0.95;
 const ABS_TOL: f32 = 0.005;
 
+/// How far (cosine) a separating direction may point into a one-sided
+/// triangle: about 3°. Directions along the triangle's plane must stay
+/// allowed for a slightly tilted body: with a tolerance of 1e-4, a hull
+/// tilted by 0.007° lost its own face's axis against a wall and was pushed
+/// out sideways through the wall's whole width instead.
+const ONE_SIDED_TOL: f32 = 0.05;
+
 /// Contact of convex polyhedron `a` against convex polyhedron `b`.
 pub(crate) fn poly_poly(a: &Poly, b: &Poly) -> Option<Contact> {
-    let allowed = |n: Vec3| b.one_sided.is_none_or(|s| n.dot(s) >= -1e-4);
+    let allowed = |n: Vec3| b.one_sided.is_none_or(|s| n.dot(s) >= -ONE_SIDED_TOL);
     let mut best: Option<Axis> = None;
 
     // Faces of `b`: `a` leaves along the outward normal.
@@ -587,6 +594,28 @@ mod tests {
         let corner = Vec3::splat(1.0 + 0.5 / 3f32.sqrt());
         let c = sphere_box(corner, 1.0, Vec3::ZERO, Quat::IDENTITY, Vec3::ONE).unwrap();
         assert!((c.points[0].depth - 0.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_slightly_tilted_plate_against_a_walls_end_backs_off() {
+        // A wall face in z = 0 (facing +z) starting at x = 0, and a plate
+        // straddling that plane whose front face just reaches x = 0.01. It
+        // backs off along -x, not 1.48 along +z through the wall, even
+        // tilted so that -x points a hair into the wall.
+        let wall = Poly::triangle(
+            Vec3::ZERO,
+            Vec3::new(8.0, 0.0, 0.0),
+            Vec3::new(0.0, 3.0, 0.0),
+            Vec3::Z,
+        );
+        let plate = Poly::cuboid(
+            Vec3::new(-0.24, 1.0, 0.5),
+            Quat::from_rotation_y(-0.0003),
+            Vec3::new(0.25, 1.8, 1.98),
+        );
+        let c = poly_poly(&plate, &wall).expect("contact");
+        assert!(c.normal.x < -0.99, "{}", c.normal);
+        assert!(c.max_depth() < 0.05, "{}", c.max_depth());
     }
 
     #[test]

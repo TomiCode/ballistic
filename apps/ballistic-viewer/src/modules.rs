@@ -489,6 +489,15 @@ impl Modules {
             .collect()
     }
 
+    #[cfg(test)]
+    pub fn sectors_of(&self, prefix: &str) -> Vec<u32> {
+        self.items
+            .iter()
+            .filter(|m| m.group.starts_with(prefix))
+            .map(|m| m.sector)
+            .collect()
+    }
+
     /// The bodies of modules whose group starts with `prefix`, per module
     /// (empty while inactive), in the plan's order.
     #[cfg(test)]

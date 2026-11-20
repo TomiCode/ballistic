@@ -1386,6 +1386,11 @@ impl Play {
     }
 
     #[cfg(test)]
+    pub fn module_sectors(&self, prefix: &str) -> Vec<u32> {
+        self.modules.sectors_of(prefix)
+    }
+
+    #[cfg(test)]
     pub fn module_bodies(&self, prefix: &str) -> Vec<Vec<BodyId>> {
         self.modules.bodies_of(prefix)
     }

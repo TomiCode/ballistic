@@ -141,7 +141,10 @@ penetration, then the incident face is clipped against the reference face
 (or, for two edges, their closest points are taken), keeping at most four
 points. Face axes win over edge axes, and a triangle's face over the box's,
 when depths are within a few per cent, so a box doesn't catch on a floor's
-internal edges. A level triangle only pushes things out of its front side.
+internal edges. A level triangle only pushes things out of its front side:
+a separating direction may point at most about 3° into it. (With a
+tolerance of 1e-4, a pusher tilted by 0.007° lost its own face's axis
+against the channel walls' ends and was thrown sideways through a wall.)
 
 ## Parameters
 
