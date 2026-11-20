@@ -8,12 +8,14 @@ mod camera;
 mod gpu;
 mod overlay;
 mod scene;
+mod sky;
 mod texture;
 
 pub use camera::Camera;
 pub use gpu::{Gpu, RenderTarget, depth_view as gpu_depth_view};
 pub use overlay::{Overlay, Quad};
 pub use scene::{CullMode, RenderOptions, SceneRenderer};
+pub use sky::{SkyRenderer, sky_mesh};
 pub use texture::{GpuTexture, upload_ktx2};
 
 /// Colour format used for off-screen targets (gamma space, like the original).

@@ -20,7 +20,7 @@ use ballistic_bundle::{BallParams, BundleReader, PhysicsData};
 use ballistic_physics::{
     BodyDesc, BodyId, PushId, Quat, Shape, Vec3, World, WorldConfig, build_level,
 };
-use ballistic_render::{Camera, Gpu, RenderOptions};
+use ballistic_render::{Camera, Gpu, RenderOptions, SkyRenderer, upload_ktx2};
 use glam::Mat4;
 
 use crate::ballsounds::BallSoundsPlayer;
@@ -96,6 +96,11 @@ pub struct Play {
     ball_sounds: BallSoundsPlayer,
     energy: Energy,
     hud: Hud,
+    /// The level's sky (none if it has no entry).
+    sky: Option<SkyRenderer>,
+    /// The light, ambient and background in play.
+    lighting: Lighting,
+    clouds: Option<Clouds>,
     pickups: Pickups,
     flow: ballistic_bundle::LevelFlow,
     phase: BallPhase,
@@ -189,6 +194,8 @@ impl Play {
             format,
             u32::try_from(energy.lives).unwrap_or(0),
         )?;
+        let (sky, lighting) = environment(gpu, bundle, &physics, key, format)?;
+        let clouds = Clouds::new(&physics.environment, key, level);
         let depth = DepthCubes::new(level, &physics.flow.depth_cubes);
         let events = EventSounds::new(&physics.flow);
         let flow = physics.flow.clone();
@@ -234,6 +241,9 @@ impl Play {
             energy,
             pickups,
             hud,
+            sky,
+            lighting,
+            clouds,
             score: None,
             flow,
             phase: BallPhase::Alive,
@@ -724,6 +734,9 @@ impl Play {
     /// One frame: camera script, then physics.
     pub fn update(&mut self, real_dt: f32) {
         self.hud.frame(real_dt);
+        if let Some(c) = self.clouds.as_mut() {
+            c.seconds += real_dt;
+        }
         // Deferred steps from earlier frames (the scripts' one-frame link delays).
         if let Some(h) = self.snap_next_frame.take() {
             self.heading_ref = h;
@@ -929,6 +942,50 @@ impl Play {
             .render(gpu, encoder, color, depth, camera, aspect, &opts);
     }
 
+    /// The options to draw the level and play objects with: the level's
+    /// light and the scene's ambient, over the sky.
+    pub fn scene_options(&self, opts: &RenderOptions) -> RenderOptions {
+        let l = &self.lighting;
+        RenderOptions {
+            light_dir: l.towards_light,
+            light_color: l.light_color,
+            ambient: l.ambient,
+            clear_color: l.background,
+            keep_color: self.sky.is_some(),
+            fog: None,
+            ..*opts
+        }
+    }
+
+    /// Changes to the level's own rendering: the cloud layer (shown, blended,
+    /// scrolled). Call each frame before drawing the level.
+    pub fn apply_level(&mut self, gpu: &Gpu, level: &mut ballistic_render::SceneRenderer) {
+        if let Some(c) = self.clouds.as_mut() {
+            c.apply(gpu, level);
+        }
+    }
+
+    /// Clears `color` and draws the sky (if the level has one).
+    pub fn render_sky(
+        &self,
+        gpu: &Gpu,
+        encoder: &mut wgpu::CommandEncoder,
+        color: &wgpu::TextureView,
+        camera: &Camera,
+        aspect: f32,
+    ) {
+        if let Some(sky) = &self.sky {
+            sky.render(
+                gpu,
+                encoder,
+                color,
+                camera,
+                aspect,
+                self.lighting.background,
+            );
+        }
+    }
+
     /// The HUD over a `size` (pixels) frame.
     pub fn render_hud(
         &mut self,
@@ -1034,4 +1091,120 @@ fn heading_of(f: Vec3) -> f32 {
 fn snap90(h: f32) -> f32 {
     let q = std::f32::consts::FRAC_PI_2;
     (h / q).round() * q
+}
+
+/// Light, ambient and background for the scene renderer.
+struct Lighting {
+    towards_light: glam::Vec3,
+    light_color: glam::Vec3,
+    ambient: glam::Vec3,
+    background: [f64; 4],
+}
+
+/// The level's sky and lighting (research findings 19). Without an entry
+/// for the level, no sky and the renderer's default light.
+fn environment(
+    gpu: &Gpu,
+    bundle: &mut Bundle,
+    physics: &PhysicsData,
+    key: &str,
+    format: wgpu::TextureFormat,
+) -> Result<(Option<SkyRenderer>, Lighting)> {
+    let env = &physics.environment;
+    let Some(level) = env.levels.iter().find(|l| l.level == key) else {
+        let d = RenderOptions::default();
+        return Ok((
+            None,
+            Lighting {
+                towards_light: d.light_dir,
+                light_color: d.light_color,
+                ambient: d.ambient,
+                background: d.clear_color,
+            },
+        ));
+    };
+    let faces = env
+        .sky
+        .sides
+        .iter()
+        .chain(&env.sky.top)
+        .chain(&env.sky.bottom)
+        .map(|suffix| {
+            let key = format!("{}{suffix}", level.sky);
+            let bytes = bundle.texture(&key)?;
+            Ok(upload_ktx2(gpu, &key, &bytes)?)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let sky = SkyRenderer::new(gpu, format, &env.sky, &faces);
+    let [r, g, b, _] = level.light;
+    Ok((
+        Some(sky),
+        Lighting {
+            towards_light: -glam::Vec3::from(env.light_direction),
+            light_color: glam::Vec3::new(r, g, b),
+            ambient: glam::Vec3::from(env.ambient),
+            background: env.background.map(f64::from),
+        },
+    ))
+}
+
+/// The level's cloud layer, if it has one and it's on (`init SkyLayer`,
+/// `animate SkyLayer`): shown, prelit, blended, its texture scrolling.
+struct Clouds {
+    object: usize,
+    materials: Vec<usize>,
+    params: ballistic_bundle::CloudLayer,
+    scroll: [f32; 2],
+    set_up: bool,
+    seconds: f32,
+}
+
+impl Clouds {
+    fn new(
+        env: &ballistic_bundle::Environment,
+        key: &str,
+        level: &ballistic_bundle::Scene,
+    ) -> Option<Self> {
+        let params = &env.cloud_layer;
+        if !params.enabled {
+            return None;
+        }
+        let scroll = env.levels.iter().find(|l| l.level == key)?.cloud_scroll;
+        let object = level.objects.iter().position(|o| o.name == params.object)?;
+        let mesh = level.meshes.get(level.objects[object].mesh? as usize)?;
+        let mut materials: Vec<usize> = mesh
+            .submeshes
+            .iter()
+            .filter_map(|s| s.material.map(|m| m as usize))
+            .collect();
+        materials.dedup();
+        Some(Self {
+            object,
+            materials,
+            params: params.clone(),
+            scroll,
+            set_up: false,
+            seconds: 0.0,
+        })
+    }
+
+    fn apply(&mut self, gpu: &Gpu, level: &mut ballistic_render::SceneRenderer) {
+        use ballistic_bundle::BlendFactor as B;
+        if !self.set_up {
+            self.set_up = true;
+            level.set_object_hidden(self.object, false);
+            for &m in &self.materials {
+                level.set_material_blend(
+                    m,
+                    self.params.additive.then_some((B::One, B::One)),
+                    self.params.z_write,
+                );
+                level.set_material_prelit(gpu, m, self.params.color);
+            }
+        }
+        let offset = self.scroll.map(|v| (v * self.seconds).rem_euclid(1.0));
+        for &m in &self.materials {
+            level.set_material_uv_offset(gpu, m, offset);
+        }
+    }
 }

@@ -4,6 +4,7 @@
 pub mod audio;
 mod ballsounds;
 mod energy;
+mod environment;
 mod flow;
 mod hud;
 pub mod install;

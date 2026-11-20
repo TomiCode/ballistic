@@ -353,6 +353,7 @@ impl State {
             for (i, show) in play.take_level_visibility() {
                 self.scene.renderer.set_object_hidden(i, !show);
             }
+            play.apply_level(&self.gpu, &mut self.scene.renderer);
             self.camera = play.camera(self.camera);
             return;
         }
@@ -409,6 +410,13 @@ impl State {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         let aspect = self.config.width as f32 / self.config.height.max(1) as f32;
+        let opts = match self.play.as_ref() {
+            Some(p) => {
+                p.render_sky(&self.gpu, &mut encoder, &view, &self.camera, aspect);
+                p.scene_options(&self.opts)
+            }
+            None => self.opts,
+        };
         self.scene.renderer.render(
             &self.gpu,
             &mut encoder,
@@ -416,7 +424,7 @@ impl State {
             &self.depth,
             &self.camera,
             aspect,
-            &self.opts,
+            &opts,
         );
         if let Some(play) = self.play.as_mut() {
             play.render(
@@ -426,7 +434,7 @@ impl State {
                 &self.depth,
                 &self.camera,
                 aspect,
-                &self.opts,
+                &opts,
             );
             play.render_hud(
                 &self.gpu,

@@ -27,6 +27,8 @@ pub struct PhysicsData {
     pub flow: LevelFlow,
     /// The in-game HUD: points and lives.
     pub hud: Hud,
+    /// Sky, light and background.
+    pub environment: Environment,
 }
 
 /// Points, lives and score.
@@ -202,6 +204,68 @@ pub struct EventSound {
     /// The message's name, e.g. `Checkpoint reached`.
     pub message: String,
     pub cues: Vec<SoundCue>,
+}
+
+/// Sky, light and background during play (`Gameplay_Sky`, `Light_Ingame`,
+/// the scene's settings). There's no fog in play.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Environment {
+    /// Behind everything (`Set Background Color`), RGBA.
+    pub background: [f32; 4],
+    /// The scene's ambient light (RGB).
+    pub ambient: [f32; 3],
+    /// The direction `Light_Ingame` shines (bundle space, normalised). Its
+    /// colour is the level's.
+    pub light_direction: [f32; 3],
+    pub sky: SkyParams,
+    pub cloud_layer: CloudLayer,
+    pub levels: Vec<LevelEnvironment>,
+}
+
+/// *TT Sky*: textured faces around the camera, following its position, not
+/// its rotation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SkyParams {
+    /// The faces' corners lie on a circle of this radius.
+    pub radius: f32,
+    /// The sky's field of view goes this fraction of the way to 180°.
+    pub distortion: f32,
+    /// The faces' height; `None` for square faces.
+    pub height: Option<f32>,
+    /// The centre's height relative to the camera.
+    pub y: f32,
+    pub color: [f32; 4],
+    /// Texture key suffixes of the side faces, in order (e.g. `_back`).
+    pub sides: Vec<String>,
+    pub top: Option<String>,
+    pub bottom: Option<String>,
+}
+
+/// A level's own environment, from `AllLevel`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LevelEnvironment {
+    /// Scene key, e.g. `level/level_01`.
+    pub level: String,
+    /// The sky's texture key prefix, e.g. `sky/sky_l` (+ a face suffix).
+    pub sky: String,
+    /// `Light_Ingame`'s colour (RGBA).
+    pub light: [f32; 4],
+    /// The cloud layer's texture scroll per second.
+    pub cloud_scroll: [f32; 2],
+}
+
+/// An optional cloud layer: the level object `object`, if it has one (`init
+/// SkyLayer`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CloudLayer {
+    pub object: String,
+    /// Its vertex colour (lighting off).
+    pub color: [f32; 4],
+    /// Added to what's behind it (blend One / One).
+    pub additive: bool,
+    pub z_write: bool,
+    /// On unless the player turns it off (`DB_Options`).
+    pub enabled: bool,
 }
 
 /// The in-game HUD (`Camera.nmo`'s 2D entities, driven by `Gameplay_Energy`).

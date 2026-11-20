@@ -87,6 +87,24 @@ fn hud_entities_decode() {
 }
 
 #[test]
+fn the_ingame_light_is_directional() {
+    let Some(dir) = install_dir() else {
+        eprintln!("skipping: BALLANCE_DIR not set");
+        return;
+    };
+    let f = CkFile::open(dir.join("3D Entities").join("Gameplay.nmo")).unwrap();
+    let o = f
+        .objects
+        .iter()
+        .find(|o| o.name.as_deref() == Some("Light_Ingame"))
+        .unwrap();
+    let l = ckscene::Light::decode(o.chunk.as_ref().unwrap()).unwrap();
+    assert_eq!(l.kind, ckscene::Light::DIRECTIONAL);
+    assert_eq!(l.color, 0xFFFF_FFFF);
+    assert!((l.range - 1000.0).abs() < 1e-3);
+}
+
+#[test]
 fn level_one_floors_are_placed_in_world_space() {
     let Some(dir) = install_dir() else {
         eprintln!("skipping: BALLANCE_DIR not set");

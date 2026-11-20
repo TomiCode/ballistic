@@ -225,6 +225,13 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 
 ## How it renders
 
+- In play mode, the level's **sky** first, like the original's *TT Sky*
+  (research findings 19): a cube of five textures around the camera's
+  position, turning with the camera, with a field of view widened 15 % of
+  the way to 180° and no depth. The level then draws over it, lit by the
+  original's light (its direction, the level's colour) and the scene's 6 %
+  ambient. There's no fog in play. Level 12's cloud layer is shown,
+  additive, and scrolls. Outside play mode, a default light, no sky.
 - Fixed-function-style shading: one directional light plus ambient, material
   diffuse/ambient/emissive, texture blend modes, alpha test, alpha blending
   (sorted back to front), per-material depth state, two-sided materials, and
@@ -236,7 +243,7 @@ ballistic-viewer ballance.bpk --play --scene level/level_03   --play-script "wai
 
 ## Not yet
 
-- Sky boxes, per-level fog and lighting (they're set by the game's scripts)
+- The sky and the original's lighting outside play mode
 - Placeholder markers (`P_*` objects) show as simple shapes. The game replaces
   them with prefabs at load time (play mode does this for props)
 - Debug overlay UI

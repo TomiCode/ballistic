@@ -66,7 +66,10 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      `Camera.nmo`'s 2D entities and `HUD_sprites`, `Menu.nmo`'s font texture
      and glyph table, and `Gameplay_Energy`'s font settings, life-ball step,
      fades and glow (its objects are looked up by name, so the names are
-     followed through the scripts) → `data/physics.json`
+     followed through the scripts). The environment: `AllLevel`'s skies and
+     light colours, *TT Sky*'s settings and face order, `Light_Ingame`'s
+     direction, the scene's ambient, the background, and the cloud layer's
+     settings → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

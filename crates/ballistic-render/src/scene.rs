@@ -29,6 +29,8 @@ pub struct RenderOptions {
     pub clear_color: [f64; 4],
     /// Clear colour and depth before drawing (false to draw over a previous scene).
     pub clear: bool,
+    /// With `clear`: clear only depth, keeping what's drawn (the sky).
+    pub keep_color: bool,
     /// Direction *towards* the light.
     pub light_dir: Vec3,
     pub light_color: Vec3,
@@ -44,6 +46,7 @@ impl Default for RenderOptions {
             cull: CullMode::Back,
             clear_color: [0.30, 0.36, 0.45, 1.0],
             clear: true,
+            keep_color: false,
             light_dir: Vec3::new(0.35, 1.0, 0.25).normalize(),
             light_color: Vec3::splat(0.85),
             ambient: Vec3::splat(0.45),
@@ -468,6 +471,30 @@ impl SceneRenderer {
         self.update_material(gpu, index, |u| u.emissive = rgba);
     }
 
+    /// Changes a material's blending and depth writes (the scripts' *Set
+    /// Blend Modes*, *Set Material Z Buffer*).
+    pub fn set_material_blend(
+        &mut self,
+        index: usize,
+        blend: Option<(bb::BlendFactor, bb::BlendFactor)>,
+        z_write: bool,
+    ) {
+        if let Some(m) = self.materials.get_mut(index) {
+            m.blend = blend;
+            m.z_write = z_write;
+        }
+    }
+
+    /// Unlit: the material shows `rgba` (× its texture), like a prelit mesh
+    /// (*Set Prelit Color*).
+    pub fn set_material_prelit(&mut self, gpu: &Gpu, index: usize, rgba: [f32; 4]) {
+        self.update_material(gpu, index, |u| {
+            u.emissive = rgba;
+            u.ambient = [0.0, 0.0, 0.0, 0.0];
+            u.diffuse = [0.0, 0.0, 0.0, rgba[3]];
+        });
+    }
+
     /// Offsets a material's texture coordinates (a scrolled texture).
     pub fn set_material_uv_offset(&mut self, gpu: &Gpu, index: usize, offset: [f32; 2]) {
         self.update_material(gpu, index, |u| u.uv = [offset[0], offset[1], 0.0, 0.0]);
@@ -631,7 +658,7 @@ impl SceneRenderer {
                 depth_slice: None,
                 resolve_target: None,
                 ops: wgpu::Operations {
-                    load: if opts.clear {
+                    load: if opts.clear && !opts.keep_color {
                         wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a })
                     } else {
                         wgpu::LoadOp::Load

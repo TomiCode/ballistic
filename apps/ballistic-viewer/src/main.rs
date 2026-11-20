@@ -317,6 +317,7 @@ fn screenshot(
                 for (i, show) in p.take_level_visibility() {
                     scene.renderer.set_object_hidden(i, !show);
                 }
+                p.apply_level(&gpu, &mut scene.renderer);
                 // Headless: counted, not played.
                 p.take_sounds();
                 p.loops();
@@ -363,6 +364,19 @@ fn screenshot(
     let mut encoder = gpu
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    let opts = match play.as_ref() {
+        Some(p) => {
+            p.render_sky(
+                &gpu,
+                &mut encoder,
+                &target.color_view,
+                &camera,
+                w as f32 / h as f32,
+            );
+            p.scene_options(&options(args))
+        }
+        None => options(args),
+    };
     scene.renderer.render(
         &gpu,
         &mut encoder,
@@ -370,7 +384,7 @@ fn screenshot(
         &target.depth_view,
         &camera,
         w as f32 / h as f32,
-        &options(args),
+        &opts,
     );
     if let Some(p) = play.as_mut() {
         p.render(
@@ -380,7 +394,7 @@ fn screenshot(
             &target.depth_view,
             &camera,
             w as f32 / h as f32,
-            &options(args),
+            &opts,
         );
         p.render_hud(&gpu, &mut encoder, &target.color_view, (w, h));
     }

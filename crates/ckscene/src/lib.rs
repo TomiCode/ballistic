@@ -16,6 +16,7 @@ mod decoded;
 mod entity;
 mod entity2d;
 mod group;
+mod light;
 mod material;
 mod mesh;
 mod texture;
@@ -24,6 +25,7 @@ pub use decoded::{Decoded, decode_object};
 pub use entity::Entity3d;
 pub use entity2d::Entity2d;
 pub use group::Group;
+pub use light::Light;
 pub use material::{
     AddressMode, BlendFactor, CompareFunc, FillMode, FilterMode, Material, ShadeMode, TextureBlend,
 };

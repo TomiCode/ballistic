@@ -83,6 +83,23 @@ impl Row<'_> {
         }
     }
 
+    /// A colour or vector cell's components.
+    pub(crate) fn floats(&self, col: &str) -> Result<Vec<f32>> {
+        match self.cell(col)? {
+            Cell::Float(v) => Ok(vec![*v]),
+            Cell::Int(v) => Ok(vec![*v as f32]),
+            Cell::Parameter(Some(p)) => match self.owner.scripts.objects.get(*p) {
+                Some(Some(ScriptObject::Out(o))) => buffer_floats(&o.value),
+                Some(Some(ScriptObject::Local(l) | ScriptObject::Parameter(l))) => {
+                    buffer_floats(&l.value)
+                }
+                _ => None,
+            }
+            .with_context(|| format!("column {col:?}: parameter cell not decodable")),
+            c => bail!("column {col:?}: expected numbers, got {c:?}"),
+        }
+    }
+
     pub(crate) fn string(&self, col: &str) -> Result<String> {
         match self.cell(col)? {
             Cell::String(s) => Ok(s.clone()),
@@ -228,6 +245,7 @@ pub fn extract(install: &Install) -> Result<bb::PhysicsData> {
         energy: crate::energy::extract(install)?,
         flow: crate::flow::extract(install)?,
         hud: crate::hud::extract(install)?,
+        environment: crate::environment::extract(install)?,
         balls,
     })
 }
@@ -317,6 +335,19 @@ fn mesh_radius(file: &CkFile, object: &str) -> Result<f32> {
         .iter()
         .map(|p| (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt())
         .fold(0.0, f32::max))
+}
+
+fn buffer_floats(v: &ckscript::ParamValue) -> Option<Vec<f32>> {
+    match v {
+        ckscript::ParamValue::Buffer(b) => Some(
+            b.as_chunks::<4>()
+                .0
+                .iter()
+                .map(|c| f32::from_le_bytes(*c))
+                .collect(),
+        ),
+        _ => None,
+    }
 }
 
 fn buffer_f32(v: &ckscript::ParamValue) -> Option<f32> {

@@ -5,7 +5,7 @@
 | Path | What |
 |---|---|
 | `crates/ckfile` | Reader for Virtools composition files (`.nmo` / `.cmo`, file version 8): container, object table, `StateChunk` sections and sub-chunks. Used by the asset packer. Never used by the game at runtime. |
-| `crates/ckscene` | Decoders for scene classes on top of `ckfile`: `Mesh`, `Material`, `Texture`, `Entity3d` (3D objects, lights, cameras), `Entity2d` (screen rectangles), `Group` |
+| `crates/ckscene` | Decoders for scene classes on top of `ckfile`: `Mesh`, `Material`, `Texture`, `Entity3d` (3D objects, lights, cameras), `Light` (a light's own section), `Entity2d` (screen rectangles), `Group` |
 | `crates/ckscript` | Decoders for behaviour graphs on top of `ckfile`: behaviours, pins, links, parameters, operations, 2D curves (progression curves), message type names, object attributes, plus a resolved tree/DOT view. Embeds the building-block catalogue (`data/bb-catalogue.json`: names, GUIDs, pin and parameter declarations, parameter types; regenerated from the research repo with `export_catalogue.py`) |
 | `crates/ballistic-bundle` | Bundle format: manifest and scene types, zip reader/writer. The engine's only data dependency |
 | `crates/ballistic-pack` | The packer (library and CLI): install verification, scene/texture/audio conversion, physics parameter extraction |

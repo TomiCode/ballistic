@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 13,
+  "format_version": 14,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -221,7 +221,18 @@ and useful to read). Since version 2.
       "fade_in": { "duration_ms": 300.0, "curve": ["…"] }, "fade_out": "…", "slide": "…",
       "lost_delay_ms": 2000.0 },
     "glow": { "sprite": "Interface_Points_glow",
-      "fade": { "duration_ms": 500.0, "curve": ["…"] } } }
+      "fade": { "duration_ms": 500.0, "curve": ["…"] } } },
+  "environment": {
+    "background": [0.0, 0.0, 0.0, 1.0], "ambient": [0.0588, 0.0588, 0.0588],
+    "light_direction": [0.302, -0.733, -0.609],
+    "sky": { "radius": 100.0, "distortion": 0.15, "height": null, "y": 0.0,
+      "color": [1.0, 1.0, 1.0, 1.0], "sides": ["_back", "_right", "_front", "_left"],
+      "top": null, "bottom": "_down" },
+    "cloud_layer": { "object": "SkyLayer", "color": [0.7843, 0.7843, 0.7843, 1.0],
+      "additive": true, "z_write": false, "enabled": true },
+    "levels": [
+      { "level": "level/level_01", "sky": "sky/sky_l", "light": [1.0, 1.0, 1.0, 1.0],
+        "cloud_scroll": [0.01, 0.01] }, "…" ] }
 }
 ```
 
@@ -351,6 +362,21 @@ and useful to read). Since version 2.
     back.
   - `glow`: on an extra point, that sprite's opacity follows `fade`, then it
     hides.
+- `environment`: sky, light and background in play. There's no fog.
+  - `background`: behind everything. `ambient`: the scene's ambient light.
+  - `light_direction`: the way the one light shines (bundle space); its
+    colour is the level's `light`.
+  - `sky`: *TT Sky*. Side faces with corners on a circle of `radius` around
+    the camera (square unless `height`), the first centred on +Z (Virtools
+    −Z), each next one to its left seen from inside; plus `bottom` (and
+    `top`). Each face's texture is the level's `sky` + its suffix. It turns
+    with the camera but doesn't move away, and its horizontal field of view is
+    widened `distortion` of the way to 180°.
+  - `levels`: per level scene, the sky, the light colour and the cloud
+    layer's texture scroll per second.
+  - `cloud_layer`: the level object of that name, if any, is shown (when
+    `enabled`) with a constant `color`, blended additively, without depth
+    writes, its texture scrolling.
 
 ## Versioning rules
 
@@ -364,4 +390,5 @@ and useful to read). Since version 2.
   **7** adds `transformers`. **8** adds the transformer `animation`, the
   ball `pieces` and `pieces_fade_after_ms`. **9** adds the transformer
   `sound` and the pieces' `sounds`. **10** adds the ball's `sounds`. **11**
-  adds `energy`. **12** adds `flow`, and `delay_ms` to sound cues. **13** adds `hud`.
+  adds `energy`. **12** adds `flow`, and `delay_ms` to sound cues. **13** adds `hud`. **14** adds
+  `environment`.
