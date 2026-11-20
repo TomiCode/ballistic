@@ -433,6 +433,28 @@ impl Modules {
         }
     }
 
+    /// Development aid: active modules with a body that exploded or fell
+    /// below `y`.
+    pub fn fallen(&self, world: &World, y: f32) -> Vec<String> {
+        self.items
+            .iter()
+            .filter_map(|m| {
+                let parts: Vec<String> = m
+                    .bodies
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, &id)| {
+                        world
+                            .body(id)
+                            .is_some_and(|b| !b.position.is_finite() || b.position.y < y)
+                    })
+                    .map(|(i, _)| i.to_string())
+                    .collect();
+                (!parts.is_empty()).then(|| format!("{} (bodies {})", m.group, parts.join(" ")))
+            })
+            .collect()
+    }
+
     /// Development aid: wakes every active module as its proximity test
     /// would (its wake-up targets; modules without a test are awake anyway).
     pub fn wake_all(&mut self, world: &mut World) {

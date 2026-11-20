@@ -561,6 +561,13 @@ impl Play {
         self.pickups.take_visibility()
     }
 
+    /// Development aid: active moving elements with a part that exploded or
+    /// fell below the lowest depth cube.
+    pub fn fallen_modules(&self) -> Vec<String> {
+        self.modules
+            .fallen(&self.world, self.depth.bottom.unwrap_or(self.fall_y))
+    }
+
     /// Points, lives, pickups and score, for headless runs.
     pub fn energy_summary(&self) -> String {
         let (lives, points) = self.pickups.count();

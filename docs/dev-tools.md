@@ -63,3 +63,22 @@ Physics tests on real level geometry read a bundle instead. Point
 ```bash
 BALLISTIC_BUNDLE=ballance.bpk cargo test -p ballistic-physics
 ```
+
+The viewer's bundle tests include **every level's flow**
+(`levels_check.rs`). On each of the 12 levels, headless:
+- the ball comes after 3 s;
+- it's warped through every checkpoint in turn, and each one counts;
+- it's lost at the last checkpoint, comes back there with a life less and
+  stays;
+- it's warped to the level end, and the level finishes;
+- no moving element has fallen below the level's depth cubes.
+
+It needs a GPU adapter too (play mode loads its renderers), and takes about
+100 s in a debug build:
+
+```bash
+BALLISTIC_BUNDLE=ballance.bpk cargo test -p ballistic-viewer levels_check
+```
+
+It checks the flow, not the routes between checkpoints: those still need
+playing.

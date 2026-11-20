@@ -5,6 +5,8 @@ mod ballsounds;
 mod energy;
 mod flow;
 mod follow;
+#[cfg(test)]
+mod levels_check;
 mod modules;
 mod pickups;
 mod pieces;
@@ -205,6 +207,8 @@ pub struct Segment {
     pub trafo: bool,
     /// Put the ball on the nearest pickup first.
     pub pickup: bool,
+    /// Lose the ball first (as **R**).
+    pub lose: bool,
 }
 
 /// Parses `up:2,rotate+left:0.4,wait:1,next:1` into segments.
@@ -225,6 +229,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
             let wake = keys.split('+').any(|k| k.trim() == "wake");
             let trafo = keys.split('+').any(|k| k.trim() == "trafo");
             let pickup = keys.split('+').any(|k| k.trim() == "pickup");
+            let lose = keys.split('+').any(|k| k.trim() == "lose");
             let keys = keys
                 .split('+')
                 .filter_map(|k| match k.trim() {
@@ -234,7 +239,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                     "right" => Some(Ok(K::Right)),
                     "rotate" => Some(Ok(K::Rotate)),
                     "lift" => Some(Ok(K::Lift)),
-                    "wait" | "next" | "wake" | "trafo" | "pickup" => None,
+                    "wait" | "next" | "wake" | "trafo" | "pickup" | "lose" => None,
                     other => Some(Err(anyhow::anyhow!("unknown key {other:?}"))),
                 })
                 .collect::<Result<Vec<_>>>()?;
@@ -245,6 +250,7 @@ pub fn parse_play_script(s: &str) -> Result<Vec<Segment>> {
                 wake,
                 trafo,
                 pickup,
+                lose,
             })
         })
         .collect()
@@ -294,6 +300,9 @@ fn screenshot(
             if seg.pickup {
                 p.warp_to_pickup();
             }
+            if seg.lose {
+                p.respawn();
+            }
             for &k in &keys {
                 p.input(k, true);
             }
@@ -333,6 +342,10 @@ fn screenshot(
             p.progress().2
         );
         eprintln!("{}", p.energy_summary());
+        let fallen = p.fallen_modules();
+        if !fallen.is_empty() {
+            eprintln!("fallen modules: {}", fallen.join(", "));
+        }
         if !p.sound_counts.is_empty() {
             let s: Vec<String> = p
                 .sound_counts
