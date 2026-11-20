@@ -30,7 +30,7 @@ Keys are lowercase paths relative to their source folder, without extension:
 ```json
 {
   "format": "ballistic-bundle",
-  "format_version": 24,
+  "format_version": 25,
   "packer_version": "0.1.0",
   "source": { "variant": "gog", "verified_files": 312, "modified_files": 0, "unknown_files": 0 },
   "options": { "texture_encoding": "bc", "audio_encoding": "vorbis", "audio_quality": 0.6 },
@@ -342,7 +342,22 @@ and useful to read). Since version 2.
     "progression": { "duration_ms": 44000.0, "curve": ["…"] }, "target": "Cam_MenuLevel_Target",
     "sky_level": "level/level_05", "light_color": [1.0, 1.0, 1.0, 1.0],
     "fog": [100.0, 800.0], "fog_color": [0.8275, 0.7843, 0.5804, 1.0],
-    "atmo": "menu_atmo", "atmo_gap_ms": [1000.0, 10000.0] }
+    "atmo": "menu_atmo", "atmo_gap_ms": [1000.0, 10000.0] },
+  "tutorial": {
+    "level": 1, "scene": "tutorial", "texts": { "english": ["…", "…"], "…": "…" },
+    "font": { "texture": "font_1", "…": "…" }, "text": { "rect": [0.243, 0.748, 0.733, 0.989], "…": "…" },
+    "back": { "rect": [0.235, 0.74, 0.815, 1.0], "color": [0.0, 0.0, 0.0, 0.4706], "…": "…" },
+    "fade_ms": 200.0, "back_delay_ms": 300.0, "start_ms": 100.0, "next_ms": 510.0,
+    "arrow_fade_ms": 500.0, "quit_after_ms": 25000.0,
+    "ball_arrows": "Tut_Pfeile", "pointer": "Pfeil_Runter", "grow": [1.0, 1.0, 1.8], "grow_ms": 150.0,
+    "freeze_sound": "hit_stone_kuppel", "continue_key": 28, "quit_key": 16,
+    "chapters": [
+      { "wait": "now", "action": "intro" },
+      { "wait": "now", "action": { "arrows": { "arrows": ["Pfeil_Rund01", "Pfeil_Rund02"], "camera": true } } },
+      { "wait": "now", "action": { "move": { "arrows": ["Tut_Richt_Pfeil03", "…"], "end": "Tut_KeyEnd", "distance": 4.0 } } },
+      { "wait": { "near": { "object": "Tut_ExtraLife", "distance": 16.0, "unless_ball": null } },
+        "action": { "reach": { "object": "Tut_ExtraLife", "distance": 3.0, "away": null } } },
+      { "wait": { "delay": { "ms": 4000.0 } }, "action": "pause" }, "…" ] }
 }
 ```
 
@@ -584,6 +599,25 @@ and useful to read). Since version 2.
   `light_color`, linear `fog` (start, end) in `fog_color`, and `atmo` played
   after random waits in `atmo_gap_ms`. Its flames are in `particles` (scene
   `menulevel`).
+- `tutorial`: level 1's tutorial (in level `level`, 1-based), its arrows and
+  places the objects of `scene`. `texts`: ten per language. The text in
+  `font` in the `text` box over the `back` box (its colour when shown);
+  both fade over `fade_ms`, the box `back_delay_ms` after being asked to.
+  The first text `start_ms` after the start; a chapter's text goes
+  `next_ms` after its action ends. Arrows fade over `arrow_fade_ms`. The
+  intro ends the tutorial after `quit_after_ms` without a key. The ball's
+  arrows hang on `ball_arrows` (at the ball, its X axis turned to the
+  camera); `pointer` sits on a chapter's place (its Z axis to the camera).
+  A move arrow grows to `grow` over `grow_ms` while its key is held. The
+  physics stops for a text with `freeze_sound`. `continue_key` goes on,
+  `quit_key` quits in the intro. Each of `chapters`: its `wait` (`now`,
+  `near` an object on X and Z, skipped for the `unless_ball` type, or a
+  `delay`) and `action`: `intro`; `arrows` shown until Continue (`camera`:
+  the camera's navigation goes on); `move` (the four arrows forward,
+  backward, left, right; done when all four were pressed, or near `end`);
+  `reach` (the pointer on `object`, the physics stopped until Continue;
+  done within `distance`, or beyond `away`); `pause` (stopped until
+  Continue).
 
 - `music`: `Sound.nmo`'s `Music_Manager` and the last level's storm. Times
   in milliseconds, sounds as bundle keys.
@@ -623,3 +657,4 @@ and useful to read). Since version 2.
   `highscores`) and the table's `back_text`. **22** adds `music` and
   `sounds.flaps`. **23** adds `menus.settings` and text's `top`. **24** adds
   `menu_level`, `menus.credits` and the menu level's particle systems.
+  **25** adds `tutorial`.

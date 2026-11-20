@@ -355,7 +355,7 @@ pub(crate) fn language_row(
 
 /// A wave sound's file, as a bundle sound key (`Sound.nmo` holds the menu's
 /// sounds; the file name is the chunk's section `0x1000`, after a word).
-fn wave_key(install: &Install, name: &str) -> Result<String> {
+pub(crate) fn wave_key(install: &Install, name: &str) -> Result<String> {
     let file = CkFile::open(
         install
             .get("3d entities/sound.nmo")

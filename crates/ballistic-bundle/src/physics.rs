@@ -43,6 +43,103 @@ pub struct PhysicsData {
     pub music: Music,
     /// The scene behind the main menu.
     pub menu_level: MenuLevel,
+    /// Level 1's tutorial.
+    pub tutorial: Tutorial,
+}
+
+/// Level 1's tutorial (`Gameplay.nmo`'s `Gameplay_Tutorial`, the arrows and
+/// places of `Tutorial.nmo`). Distances are on X and Z only; keys are
+/// `DirectInput` scan codes.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct Tutorial {
+    /// The level it runs in (1 for the first).
+    pub level: u32,
+    /// The scene with the arrows and the places.
+    pub scene: String,
+    /// The chapters' texts by language (`english`, `german`, …).
+    pub texts: std::collections::BTreeMap<String, Vec<String>>,
+    pub font: HudFont,
+    /// The text's box (its `text` is empty: the chapters fill it in).
+    pub text: MenuText,
+    /// The dark box behind the text, its colour when shown.
+    pub back: HudSprite,
+    /// The text and the box fade in and out this long.
+    pub fade_ms: f32,
+    /// The box starts fading out this long after the text.
+    pub back_delay_ms: f32,
+    /// From the start to the first text.
+    pub start_ms: f32,
+    /// From a chapter's end to the next one's wait.
+    pub next_ms: f32,
+    /// Arrows fade in and out this long.
+    pub arrow_fade_ms: f32,
+    /// The intro quits the tutorial when nothing is pressed this long.
+    pub quit_after_ms: f32,
+    /// The frame the ball's arrows hang on: it follows the ball, turned to
+    /// the camera.
+    pub ball_arrows: String,
+    /// The arrow put on a chapter's place, turned to the camera.
+    pub pointer: String,
+    /// A move arrow's scale while its key is held, and how long it takes.
+    pub grow: [f32; 3],
+    pub grow_ms: f32,
+    /// Played when the physics stops for a text (bundle sound key).
+    pub freeze_sound: String,
+    /// Goes on; quits (in the intro).
+    pub continue_key: u32,
+    pub quit_key: u32,
+    pub chapters: Vec<TutorialChapter>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TutorialChapter {
+    /// When its text comes.
+    pub wait: TutorialWait,
+    pub action: TutorialAction,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TutorialWait {
+    Now,
+    /// The ball comes this near the object. With `unless_ball`, a ball of
+    /// that type skips the chapter.
+    Near {
+        object: String,
+        distance: f32,
+        unless_ball: Option<String>,
+    },
+    Delay {
+        ms: f32,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TutorialAction {
+    /// Continue goes on; quit, or nothing pressed for a while, ends the
+    /// tutorial. The ball comes after it.
+    Intro,
+    /// These arrows are shown (with the camera's navigation switched on
+    /// first, `camera`) until Continue.
+    Arrows { arrows: Vec<String>, camera: bool },
+    /// The physics runs; each move arrow (forward, backward, left, right)
+    /// grows while its key is held. Done once all four were pressed, or the
+    /// ball comes near `end`, or is lost.
+    Move {
+        arrows: [String; 4],
+        end: String,
+        distance: f32,
+    },
+    /// The pointer on `object`; the physics stops until Continue. Done when
+    /// the ball comes this near (or goes `away` that far).
+    Reach {
+        object: String,
+        distance: f32,
+        away: Option<f32>,
+    },
+    /// The physics stops until Continue.
+    Pause,
 }
 
 /// The scene behind the main menu (`MenuLevel.nmo`'s `MenuLevel_Init`).

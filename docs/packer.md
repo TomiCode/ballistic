@@ -101,8 +101,15 @@ ballistic-pack inspect ballance.bpk               # summarise a bundle
      their box, fonts and timing, the cheat word. The menu level
      (`MenuLevel.nmo`): the camera's curve (its points decoded from the
      curve's chunk) and progression, the sky's level, the light, the fog
-     and the ambient sound; its flames join the particle systems →
-     `data/physics.json`
+     and the ambient sound; its flames join the particle systems. Level
+     1's tutorial (`Gameplay_Tutorial`): its texts (`Text/Tutorial<n>.txt`,
+     split at `*`, by the language's column in `Language.nmo`), its font
+     (the texture and glyph table its `Op`s look up), the text's box and
+     the dark one behind it (`Tutorial.nmo`), the delays and fades, and the
+     chapters: each `Kapitel Wait` graph's object and distance, the ball
+     type the ramp's test skips, the arrows each `Kapitel Aktion` graph
+     shows (the move arrows by the key that grows each) and the distances
+     that end them → `data/physics.json`
 3. **Writes** the bundle (see [bundle-format.md](bundle-format.md)).
 
 The same install with the same packer version and options always produces a

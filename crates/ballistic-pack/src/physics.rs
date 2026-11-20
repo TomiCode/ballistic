@@ -269,6 +269,7 @@ pub fn extract(install: &Install) -> Result<bb::PhysicsData> {
         menus: crate::menus::extract(install)?,
         music: crate::music::extract(install)?,
         menu_level: crate::menu_level::extract(install)?,
+        tutorial: crate::tutorial::extract(install)?,
         balls,
     })
 }

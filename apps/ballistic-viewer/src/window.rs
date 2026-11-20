@@ -597,6 +597,18 @@ impl State {
             if play.in_level_end() && level_end_key(play, code, ev) {
                 return Ok(());
             }
+            // The tutorial's Return and Q.
+            let scan = match code {
+                KeyCode::Enter | KeyCode::NumpadEnter => Some(28),
+                KeyCode::KeyQ => Some(16),
+                _ => None,
+            };
+            if pressed
+                && let Some(scan) = scan
+                && play.tutorial_key(scan)
+            {
+                return Ok(());
+            }
             // The options' keys (forward, backward, left, right, rotate,
             // lift).
             let bound =

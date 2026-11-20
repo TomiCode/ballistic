@@ -27,6 +27,8 @@ pub enum BallPhase {
     /// Shown; woken (and control on) next frame.
     Waking,
     Alive,
+    /// Level 1's tutorial: the ball waits for its intro (`Tutorial Ready`).
+    Tutorial,
     /// Deactivate Ball: frames to the lives check, then the time left
     /// before the ball is taken away.
     Lost {

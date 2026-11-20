@@ -42,6 +42,7 @@ use crate::props::Props;
 use crate::save::SharedSave;
 use crate::score_screen::{self, ScoreScreen};
 use crate::transformers::{self, Transformers};
+use crate::tutorial::{self, Tutorial};
 use crate::{LoadedScene, load_scene};
 
 pub type Bundle = BundleReader<BufReader<std::fs::File>>;
@@ -82,6 +83,10 @@ struct Turn {
     elapsed: f32,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "independent flags of the play state"
+)]
 pub struct Play {
     pub world: World,
     ball: BodyId,
@@ -168,6 +173,10 @@ pub struct Play {
     music_cmds: Vec<music::Cmd>,
     /// Tells play modes apart (a restart is a new one).
     serial: u64,
+    /// Level 1's tutorial.
+    tutorial: Option<Tutorial>,
+    /// The ball was lost this frame (for the tutorial).
+    ball_off_now: bool,
 }
 
 fn key_index(k: PlayKey) -> usize {
@@ -302,6 +311,17 @@ impl Play {
         let events = EventSounds::new(&physics.flow);
         let flow = physics.flow.clone();
 
+        let tutorial = if crate::energy::level_index(key)
+            == usize::try_from(physics.tutorial.level)
+                .ok()
+                .and_then(|l| l.checked_sub(1))
+            && !physics.tutorial.chapters.is_empty()
+        {
+            Some(Tutorial::new(gpu, bundle, &physics.tutorial, format)?)
+        } else {
+            None
+        };
+
         let balls = load_scene(gpu, bundle, "balls", format)?;
         let ball_scene = bundle.scene("balls")?;
         let pieces = Pieces::new(&physics, &ball_scene);
@@ -377,6 +397,8 @@ impl Play {
             pending: None,
             music,
             music_cmds: Vec::new(),
+            tutorial,
+            ball_off_now: false,
             serial: {
                 static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
                 NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
@@ -385,7 +407,13 @@ impl Play {
         // Start Level (and Start Music), then the BallManager's New Ball.
         play.events.emit("Start Level");
         play.music.start_music();
-        play.begin_new_ball();
+        if play.tutorial.is_some() {
+            // The tutorial's intro first; the ball comes after it.
+            play.place_new_ball();
+            play.phase = BallPhase::Tutorial;
+        } else {
+            play.begin_new_ball();
+        }
         play.show_active_ball();
         Ok(play)
     }
@@ -471,7 +499,8 @@ impl Play {
                 self.nav_on_in = None;
                 self.nav_on();
             }
-            PlayKey::Left | PlayKey::Right if rotating => {
+            // The camera's navigation is off during the tutorial's intro.
+            PlayKey::Left | PlayKey::Right if rotating && self.phase != BallPhase::Tutorial => {
                 if pressed && self.turn.is_none() && self.snap_next_frame.is_none() {
                     // Cam Left = +90° in the original's left-handed space = −90° here
                     // (the other way with the options' *InvertCamRot?*).
@@ -616,6 +645,15 @@ impl Play {
     /// New Ball: ball and camera rig to the reset point, the lightning, and
     /// the ball after `new_ball_ms`.
     fn begin_new_ball(&mut self) {
+        self.place_new_ball();
+        self.events.emit("Ball_Lightning");
+        self.phase = BallPhase::Coming {
+            ms: self.flow.new_ball_ms,
+        };
+    }
+
+    /// The ball (not shown) and the camera rig at the reset point.
+    fn place_new_ball(&mut self) {
         if self.held.is_none() {
             self.world.remove_body(self.ball);
             self.pushes = [None; 4];
@@ -629,10 +667,6 @@ impl Play {
         self.heading_view = self.start_heading;
         self.turn = None;
         self.snap_next_frame = None;
-        self.events.emit("Ball_Lightning");
-        self.phase = BallPhase::Coming {
-            ms: self.flow.new_ball_ms,
-        };
     }
 
     /// The ball's phase, one frame on.
@@ -711,7 +745,7 @@ impl Play {
                 }
             },
             BallPhase::Gone => self.begin_new_ball(),
-            BallPhase::Alive | BallPhase::GameOver => {}
+            BallPhase::Alive | BallPhase::GameOver | BallPhase::Tutorial => {}
         }
     }
 
@@ -725,6 +759,7 @@ impl Play {
         self.ball_sounds.set_active(false);
         self.energy.set_counting(false);
         self.camera_frozen = true;
+        self.ball_off_now = true;
         self.events.emit("Ball Off");
         self.hud.ball_off();
         self.phase = BallPhase::Lost {
@@ -1144,7 +1179,11 @@ impl Play {
         }
 
         self.advance_phase(real_dt);
-        self.world.advance(real_dt);
+        self.tutorial_frame(real_dt);
+        // The tutorial stops the physics (time factor 0) for its texts.
+        if !self.tutorial.as_ref().is_some_and(Tutorial::frozen) {
+            self.world.advance(real_dt);
+        }
         // DepthTest: props of its groups this far below the lowest cube go.
         let prop_fall_y = self
             .depth
@@ -1201,9 +1240,68 @@ impl Play {
         self.effects.update(ball, &fans, real_dt * 1000.0);
         if !self.camera_frozen {
             let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
-            let lifted = self.keys_held[key_index(PlayKey::Lift)];
+            let lifted =
+                self.keys_held[key_index(PlayKey::Lift)] && self.phase != BallPhase::Tutorial;
             self.follow.update(real_dt, ball, self.heading_view, lifted);
         }
+    }
+
+    /// One frame of the tutorial, and what it asks for.
+    fn tutorial_frame(&mut self, real_dt: f32) {
+        if self.tutorial.is_none() {
+            return;
+        }
+        let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
+        let held = tutorial::held(self.keys_held, key_index);
+        let ball_type = self.ball_name().to_owned();
+        let ball_off = std::mem::take(&mut self.ball_off_now);
+        if let Some(t) = self.tutorial.as_mut() {
+            t.update(&tutorial::Frame {
+                real_dt,
+                ball,
+                ball_type: &ball_type,
+                held,
+                ball_off,
+            });
+        }
+        self.tutorial_events();
+    }
+
+    fn tutorial_events(&mut self) {
+        let events = self
+            .tutorial
+            .as_mut()
+            .map(Tutorial::take_events)
+            .unwrap_or_default();
+        for e in events {
+            match e {
+                // `Tutorial Ready`: the level's New Ball goes on.
+                tutorial::Event::Ready => {
+                    if self.phase == BallPhase::Tutorial {
+                        self.events.emit("Ball_Lightning");
+                        self.phase = BallPhase::Coming {
+                            ms: self.flow.new_ball_ms,
+                        };
+                    }
+                }
+                tutorial::Event::Message(m) => self.events.emit(m),
+                tutorial::Event::Sound(key) => self.queue_sounds([(key, 1.0)]),
+            }
+        }
+    }
+
+    /// The tutorial's keys (Return, Q). Whether it took the key.
+    pub fn tutorial_key(&mut self, scan: u32) -> bool {
+        let taken = self.tutorial.as_mut().is_some_and(|t| t.key(scan));
+        if taken {
+            self.tutorial_events();
+        }
+        taken
+    }
+
+    /// The tutorial's chapter, while it runs.
+    pub fn tutorial_chapter(&self) -> Option<usize> {
+        self.tutorial.as_ref().and_then(Tutorial::chapter)
     }
 
     /// Level objects that props and modules replace; hide them in the
@@ -1323,6 +1421,10 @@ impl Play {
             .render(gpu, encoder, color, depth, camera, aspect, &opts);
         self.point_looks
             .render(gpu, encoder, color, depth, camera, aspect, &opts);
+        let ball = self.ball_pose().map_or(self.start, |(p, _)| p);
+        if let Some(t) = self.tutorial.as_mut() {
+            t.render(gpu, encoder, color, depth, camera, aspect, &opts, ball);
+        }
         self.render_particles(gpu, encoder, color, depth, camera, aspect);
     }
 
@@ -1445,6 +1547,9 @@ impl Play {
     ) {
         self.hud
             .render(gpu, encoder, color, size, self.energy.points);
+        if let Some(t) = self.tutorial.as_mut() {
+            t.render_text(gpu, encoder, color, size);
+        }
         self.score_screen.render(gpu, encoder, color, size);
         let save = self.save.borrow();
         self.highscores
@@ -1452,7 +1557,17 @@ impl Play {
     }
 
     pub fn status(&self) -> String {
+        use std::fmt::Write as _;
         let b = self.ball_id().and_then(|id| self.world.body(id));
+        let mut phase = match self.phase {
+            BallPhase::Coming { .. } | BallPhase::Waking => "[new ball] ",
+            BallPhase::Lost { .. } | BallPhase::Gone => "[ball lost] ",
+            _ => "",
+        }
+        .to_owned();
+        if let Some(c) = self.tutorial_chapter() {
+            let _ = write!(phase, "[tutorial {c}] ");
+        }
         format!(
             "{} speed {:.1} points {} lives {} checkpoint {}/{} {}{}{}{}{}{}{}",
             self.ball_name(),
@@ -1464,11 +1579,7 @@ impl Play {
             self.finished_at
                 .map(|(t, _)| format!("[finished {t:.2} s] "))
                 .unwrap_or_default(),
-            match self.phase {
-                BallPhase::Coming { .. } | BallPhase::Waking => "[new ball] ",
-                BallPhase::Lost { .. } | BallPhase::Gone => "[ball lost] ",
-                _ => "",
-            },
+            phase,
             match (self.score, self.energy.game_over) {
                 (Some(_), _) if self.level_end.is_some() => "[level end] ".to_owned(),
                 (Some(_), _) if self.highscores.typing() => "[highscore entry] ".to_owned(),

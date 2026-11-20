@@ -52,6 +52,10 @@ fn every_level_flows_to_the_finish() {
             save.clone(),
         )
         .unwrap();
+        // Level 1's tutorial: Q ends it once its intro is up (the ball
+        // comes then).
+        run(&mut p, 0.5);
+        p.tutorial_key(16);
         // The ball comes 3 s after the start.
         run(&mut p, 4.0);
         assert!(!p.status().contains("[new ball]"), "level {level}: no ball");

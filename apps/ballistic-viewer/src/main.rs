@@ -30,6 +30,7 @@ mod props;
 mod save;
 mod score_screen;
 mod transformers;
+mod tutorial;
 mod window;
 
 use std::path::PathBuf;
@@ -397,7 +398,7 @@ fn screenshot(
             if seg.skip {
                 p.menu_key(57);
             }
-            if seg.enter {
+            if seg.enter && !p.tutorial_key(28) {
                 p.menu_key(28);
             }
             for &k in &keys {

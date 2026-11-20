@@ -23,3 +23,4 @@ pub mod scenes;
 mod score;
 pub mod textures;
 mod transformers;
+mod tutorial;

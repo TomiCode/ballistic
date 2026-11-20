@@ -28,7 +28,7 @@ ballistic-viewer ballance.bpk --scene ph/pe_balloon --show-hidden
 | `--game` | The game: starts at the main menu over the menu level; levels are played from its level select, with pause (Escape), end and game over menus. Implies play mode |
 | `--menu-keys <codes>` | With `--game --screenshot`: menu keys to press first, as `DirectInput` scan codes (`28,208`: Enter, Down); `--play-script wait:N` lets N seconds pass (the menu level's flight, the credits). Development aid |
 | `--save <path>` | Play mode's save file (open levels, highscores, the last name). In a window it defaults to the platform's data folder (`%APPDATA%\Ballistic\save.json`, `~/Library/Application Support/Ballistic/save.json`, `$XDG_DATA_HOME/ballistic/save.json`); headless runs keep it in memory unless given. A file that can't be read is left alone and the session isn't saved |
-| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:4,up:2,rotate+left:0.3` (the ball comes 3 s after the start). Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), `trafo` puts the ball on the nearest transformer of another type (shown ones first), `pickup` on the nearest extra life or extra point, `fan` 2 above the nearest fan in an active sector, `near` 8 from the nearest pickup (to look at it without taking it), `lose` loses the ball (as **R**), `skip` presses Space (cuts the level end's wait short, scores fast, leaves the score screen), and `enter` presses Enter (confirms the highscore name, leaves the table), all at the start of their segment. A checkpoint arms a while after the last one, so leave 2 s or more between `next`s. The summary then also prints the points, lives and score, and any moving element that fell below the level's depth cubes. With `--camera` too, the camera stays at that view instead of following the ball |
+| `--play-script <keys:seconds,...>` | With `--play --screenshot`: inputs to simulate before the frame, e.g. `wait:4,up:2,rotate+left:0.3` (the ball comes 3 s after the start). Keys: `up`, `down`, `left`, `right`, `rotate`, `lift`, `wait`; `next` warps to the next checkpoint (then the level end), `wake` wakes every active moving element as if the ball came near (its wake-up targets), `trafo` puts the ball on the nearest transformer of another type (shown ones first), `pickup` on the nearest extra life or extra point, `fan` 2 above the nearest fan in an active sector, `near` 8 from the nearest pickup (to look at it without taking it), `lose` loses the ball (as **R**), `skip` presses Space (cuts the level end's wait short, scores fast, leaves the score screen), and `enter` presses Enter (goes on in level 1's tutorial, confirms the highscore name, leaves the table), all at the start of their segment. A checkpoint arms a while after the last one, so leave 2 s or more between `next`s. The summary then also prints the points, lives and score, and any moving element that fell below the level's depth cubes. With `--camera` too, the camera stays at that view instead of following the ball |
 
 The window is resizable, any size and aspect ratio work, and HiDPI is handled.
 
@@ -82,6 +82,18 @@ Details carried over from the original's scripts:
 
 Level 1 starts facing away from the path, as in the original (its tutorial
 teaches turning first): press Shift + Left twice.
+
+**Level 1's tutorial** (research findings 29) runs at its every start. Its
+texts come in a dark box at the bottom; the first ball waits for the
+intro: **Return** goes on, **Q** (or 25 s without either) ends the
+tutorial. Then: turning the view and lifting it (arrows round the ball;
+Return goes on), rolling (the physics runs; each move arrow grows while
+its key is held, until all four were used or the ball reaches the end of
+the first track), and as the ball comes near the extra life, the stone
+and wood transformers (a wooden ball skips the latter), the extra point and
+the first checkpoint: the physics stops with a sound and an arrow points
+at the place; Return lets the ball roll on. 4 s after the checkpoint, the
+hints; Return ends it.
 
 Physics is described in [physics.md](physics.md).
 
